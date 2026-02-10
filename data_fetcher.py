@@ -283,11 +283,20 @@ class TushareDataFetcher:
     # ===== 私有辅助方法 =====
 
     def _get_latest_trade_date(self) -> str:
-        """获取最近交易日"""
+        """获取最近交易日（必须是今天或之前的最后一个交易日）"""
         try:
             df = self.pro.trade_cal(exchange='SSE', is_open=1)
-            latest = df.iloc[-1]['cal_date']
-            return latest
+            # 交易日历按日期降序返回（最新的在前）
+            # 找到第一个小于等于今天的日期
+            today_str = self.today
+            for date in df['cal_date']:
+                if date <= today_str:
+                    return date
+            # 如果没找到，返回最后一个可用的过去日期
+            past_dates = df[df['cal_date'] <= today_str]['cal_date']
+            if len(past_dates) > 0:
+                return past_dates.iloc[0]
+            return today_str
         except:
             # 默认返回今天
             return self.today

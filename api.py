@@ -17,6 +17,12 @@ from stress_test import StressTester
 from sensitivity_analysis import SensitivityAnalyzer
 
 
+# ===== 全局配置 =====
+
+# Tushare Token存储（会话级）
+TUSHARE_TOKEN = os.getenv("TUSHARE_TOKEN", "f2380d8761bcbf165f87b85f04ed105b1bdcf8721574562294671265")
+
+
 # ===== FastAPI应用 =====
 
 app = FastAPI(
@@ -33,8 +39,11 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",  # Vue开发服务器
         "http://localhost:3000",
+        "http://localhost:8888",  # 静态文件服务器
         "http://127.0.0.1:5173",
         "http://127.0.0.1:3000",
+        "http://127.0.0.1:8888",
+        "*"  # 允许所有来源（开发环境）
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -164,6 +173,13 @@ class ScenarioInput(BaseModel):
         )
 
 
+class RelativeValuationRequest(BaseModel):
+    """相对估值请求模型（包装类）"""
+    company: CompanyInput
+    comparables: List[ComparableInput]
+    methods: Optional[List[str]] = None
+
+
 # ===== API端点 =====
 
 @app.get("/")
@@ -185,21 +201,17 @@ async def health_check():
 # ===== 估值相关API =====
 
 @app.post("/api/valuation/relative")
-async def relative_valuation(
-    company: CompanyInput,
-    comparables: List[ComparableInput],
-    methods: Optional[List[str]] = None
-):
+async def relative_valuation(request: RelativeValuationRequest):
     """
     相对估值法
 
     支持P/E、P/S、P/B、EV/EBITDA等多种相对估值方法
     """
     try:
-        comp = company.to_company()
-        comp_list = [c.to_comparable() for c in comparables]
+        comp = request.company.to_company()
+        comp_list = [c.to_comparable() for c in request.comparables]
 
-        results = RelativeValuation.auto_comparable_analysis(comp, comp_list, methods)
+        results = RelativeValuation.auto_comparable_analysis(comp, comp_list, request.methods)
 
         return {
             "success": True,
@@ -455,6 +467,141 @@ async def comprehensive_sensitivity(company: CompanyInput):
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# ===== 数据获取API =====
+
+@app.post("/api/data/tushare/configure")
+async def configure_tushare(token: str = Query(..., description="Tushare API Token")):
+    """
+    配置Tushare Token
+
+    配置后可使用数据获取功能
+    """
+    global TUSHARE_TOKEN
+    TUSHARE_TOKEN = token
+
+    return {
+        "success": True,
+        "message": "Token已配置",
+        "token_prefix": token[:8] + "***" if len(token) > 8 else "***"
+    }
+
+
+@app.get("/api/data/comparable/{industry}")
+async def get_comparable_companies(
+    industry: str,
+    market_cap_min: Optional[float] = Query(None, description="最小市值（亿元）"),
+    market_cap_max: Optional[float] = Query(None, description="最大市值（亿元）"),
+    limit: int = Query(20, ge=1, le=100, description="返回数量")
+):
+    """
+    获取可比公司列表
+
+    从Tushare获取指定行业的上市公司数据
+    """
+    try:
+        from data_fetcher import TushareDataFetcher
+
+        if not TUSHARE_TOKEN:
+            raise HTTPException(
+                status_code=400,
+                detail="未配置Tushare Token。请先通过 /api/data/tushare/configure 配置"
+            )
+
+        fetcher = TushareDataFetcher(TUSHARE_TOKEN)
+
+        market_cap_range = None
+        if market_cap_min and market_cap_max:
+            market_cap_range = (market_cap_min, market_cap_max)
+
+        companies = fetcher.get_comparable_companies(
+            industry,
+            market_cap_range=market_cap_range,
+            limit=limit
+        )
+
+        return {
+            "success": True,
+            "industry": industry,
+            "count": len(companies),
+            "companies": [c.to_dict() for c in companies],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取数据失败: {str(e)}")
+
+
+@app.get("/api/data/industry-multiples/{industry}")
+async def get_industry_multiples(
+    industry: str,
+    method: str = Query("median", description="统计方法：mean或median")
+):
+    """
+    获取行业估值倍数
+
+    返回指定行业的平均P/E、P/S、P/B等估值倍数
+    """
+    try:
+        from data_fetcher import TushareDataFetcher
+
+        if not TUSHARE_TOKEN:
+            raise HTTPException(
+                status_code=400,
+                detail="未配置Tushare Token"
+            )
+
+        fetcher = TushareDataFetcher(TUSHARE_TOKEN)
+        multiples = fetcher.get_industry_multiples(industry, method=method)
+
+        if not multiples:
+            raise HTTPException(status_code=404, detail=f"未找到{industry}行业的数据")
+
+        return {
+            "success": True,
+            "industry": industry,
+            "method": method,
+            "multiples": multiples,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取数据失败: {str(e)}")
+
+
+@app.post("/api/data/search")
+async def search_companies(
+    keywords: List[str],
+    limit: int = Query(10, ge=1, le=50)
+):
+    """
+    按关键词搜索公司
+
+    根据公司名称关键词搜索相关上市公司
+    """
+    try:
+        from data_fetcher import TushareDataFetcher
+
+        if not TUSHARE_TOKEN:
+            raise HTTPException(
+                status_code=400,
+                detail="未配置Tushare Token"
+            )
+
+        fetcher = TushareDataFetcher(TUSHARE_TOKEN)
+        companies = fetcher.search_by_keywords(keywords, limit)
+
+        return {
+            "success": True,
+            "keywords": keywords,
+            "count": len(companies),
+            "companies": [c.to_dict() for c in companies],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"搜索失败: {str(e)}")
 
 
 # ===== 启动服务器 =====

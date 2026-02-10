@@ -217,30 +217,31 @@ def example_vc_method():
     print("示例6：风险投资法（早期项目）")
     print("=" * 70)
 
-    # 早期科技公司
+    # 早期科技公司 - 刚开始盈利
     early_company = Company(
         name="AI创新科技（早期项目）",
         industry="人工智能",
         stage=CompanyStage.EARLY,
-        revenue=2000,  # 2000万
-        net_income=-1000,  # 亏损1000万
-        net_assets=3000,
-        growth_rate=0.80,  # 高增长
+        revenue=3000,  # 3000万
+        net_income=200,  # 刚开始盈利，200万
+        net_assets=4000,
+        growth_rate=0.60,  # 高增长但更合理
+        operating_margin=0.08,  # 利润率较低
     )
 
     print(f"\n目标公司: {early_company.name}")
     print(f"  阶段: {early_company.stage.value}")
     print(f"  收入: {early_company.revenue/10000:.2f}亿元")
-    print(f"  净利润: {early_company.net_income/10000:.2f}亿元（亏损）")
+    print(f"  净利润: {early_company.net_income/10000:.2f}亿元")
     print(f"  预期增长率: {early_company.growth_rate:.0%}")
 
     # VC法估值
     result = OtherValuationMethods.vc_method_with_future_projection(
         early_company,
         projection_years=5,
-        target_pe=30.0,
-        target_return_multiple=15.0,
-        margin_improvement=0.05,
+        target_pe=35.0,
+        target_return_multiple=12.0,
+        margin_improvement=0.03,
     )
 
     print(f"\n{result}")
@@ -250,7 +251,8 @@ def example_vc_method():
     print(f"  退出估值: {result.details['exit_valuation']/10000:.2f}亿元")
     print(f"  目标回报倍数: {result.details['target_return_multiple']:.0f}x")
     print(f"  当前投后估值: {result.value/10000:.2f}亿元")
-    print(f"  隐含IRR: {result.details['implied_irr']:.2%}")
+    if 'implied_irr' in result.details:
+        print(f"  隐含IRR: {result.details['implied_irr']:.2%}")
 
 
 def example_comprehensive_valuation():
