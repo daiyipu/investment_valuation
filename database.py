@@ -2,13 +2,18 @@
 数据库模型 - 估值历史记录
 """
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Float, Text
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import Column, Integer, String, DateTime, Float, Text, create_engine
+from sqlalchemy.orm import DeclarativeBase, Session
 from pydantic import BaseModel
+from typing import Optional, List
+
+
+# SQLAlchemy 声明式基类
+Base = DeclarativeBase()
 
 
 # 估值历史记录表
-class ValuationHistory(BaseModel):
+class ValuationHistory(Base):
     """估值历史记录"""
     __tablename__ = 'valuation_history'
 
@@ -55,8 +60,57 @@ class ValuationHistory(BaseModel):
     # 备注
     notes = Column(Text, comment='备注', index=True)
 
+    def to_dict(self):
+        """转换为字典"""
+        return {
+            'id': self.id,
+            'company_name': self.company_name,
+            'industry': self.industry,
+            'stage': self.stage,
+            'revenue': self.revenue,
+            'net_income': self.net_income,
+            'net_assets': self.net_assets,
+            'ebitda': self.ebitda,
+            'growth_rate': self.growth_rate,
+            'operating_margin': self.operating_margin,
+            'beta': self.beta,
+            'risk_free_rate': self.risk_free_rate,
+            'market_risk_premium': self.market_risk_premium,
+            'terminal_growth_rate': self.terminal_growth_rate,
+            'dcf_value': self.dcf_value,
+            'dcf_wacc': self.dcf_wacc,
+            'pe_value': self.pe_value,
+            'pe_ratio': self.pe_ratio,
+            'ps_value': self.ps_value,
+            'ps_ratio': self.ps_ratio,
+            'pb_value': self.pb_value,
+            'ev_value': self.ev_value,
+            'ev_ebitda_ratio': self.ev_ebitda_ratio,
+            'comparables_count': self.comparables_count,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'notes': self.notes,
+        }
 
-# 数据库操作基类
+
+# Pydantic 模型用于API响应
+class ValuationHistoryResponse(BaseModel):
+    """估值历史记录响应模型"""
+    id: int
+    company_name: str
+    industry: Optional[str] = None
+    stage: Optional[str] = None
+    revenue: Optional[float] = None
+    dcf_value: Optional[float] = None
+    dcf_wacc: Optional[float] = None
+    pe_value: Optional[float] = None
+    ps_value: Optional[float] = None
+    pb_value: Optional[float] = None
+    ev_value: Optional[float] = None
+    comparables_count: Optional[int] = None
+    created_at: Optional[str] = None
+
+
+# 数据库操作类
 class DatabaseManager:
     """数据库管理器"""
 
@@ -67,7 +121,6 @@ class DatabaseManager:
     def get_engine(self):
         """获取数据库引擎"""
         if self.engine is None:
-            from sqlalchemy import create_engine
             self.engine = create_engine(
                 self.database_url,
                 connect_args={'check_same_thread': False},
@@ -77,43 +130,103 @@ class DatabaseManager:
 
     def create_tables(self):
         """创建所有表"""
-        from sqlalchemy import create_all_tables
         Base.metadata.create_all(self.engine)
 
     def init_history(self, company_data: dict, results: dict) -> int:
         """初始化估值历史记录"""
-        session = Session(self.engine)
+        session = Session(self.get_engine())
 
-        # 创建历史记录
-        history = ValuationHistory(
-            company_name=company_data.get('name', ''),
-            industry=company_data.get('industry', ''),
-            stage=company_data.get('stage', ''),
-            revenue=float(company_data.get('revenue', 0)) / 10000,  # 转换为万元
-            net_income=float(company_data.get('net_income', 0)) / 10000,
-            net_assets=float(company_data.get('net_assets', 0)) / 10000,
-            ebitda=float(company_data.get('ebitda', 0)) / 10000,
-            growth_rate=float(company_data.get('growth_rate', 0)),
-            operating_margin=float(company_data.get('operating_margin', 0)),
-            beta=float(company_data.get('beta', 0)),
-            risk_free_rate=float(company_data.get('risk_free_rate', 0)),
-            market_risk_premium=float(company_data.get('market_risk_premium', 0)),
-            terminal_growth_rate=float(company_data.get('terminal_growth_rate', 0)),
-            # DCF结果
-            dcf_value=float(results.get('dcf', {}).get('value', 0)) / 10000,
-            dcf_wacc=float(results.get('dcf', {}).get('details', {}).get('wacc', 0)),
-            # 相对估值结果
-            pe_value=float(results.get('relative', {}).get('result', {}).get('pe_valuation', 0)) / 10000 if results.get('relative', {}).get('result', {}).get('pe_ratio', 0) else None,
-            ps_value=float(results.get('relative', {}).get('result', {}).get('ps_valuation', 0)) / 10000 if results.get('relative', {}).get('result', {}).get('ps_ratio', 0) else None,
-            pb_value=float(results.get('relative', {}).get('result', {}).get('pb_valuation', 0)) / 10000 if results.get('relative', {}).get('result', {}).get('pb_ratio', 0) else None,
-            ev_value=float(results.get('relative', {}).get('result', {}).get('ev_valuation', 0)) / 10000 if results.get('relative', {}).get('result', {}).get('ev_ebitda_ratio', 0) else None,
-            ev_ebitda_ratio=results.get('relative', {}).get('ev_ebitda', 0) if results.get('relative', {}).get('ev_ebitda_ratio', 0) else None,
-            # 可比公司数量
-            comparables_count=len(results.get('relative', {}).get('comparables', [])),
-        )
+        try:
+            # 创建历史记录
+            history = ValuationHistory(
+                company_name=company_data.get('name', ''),
+                industry=company_data.get('industry', ''),
+                stage=company_data.get('stage', ''),
+                revenue=float(company_data.get('revenue', 0)) / 10000,  # 转换为万元
+                net_income=float(company_data.get('net_income', 0)) / 10000,
+                net_assets=float(company_data.get('net_assets', 0)) / 10000,
+                ebitda=float(company_data.get('ebitda', 0)) / 10000,
+                growth_rate=float(company_data.get('growth_rate', 0)),
+                operating_margin=float(company_data.get('operating_margin', 0)),
+                beta=float(company_data.get('beta', 0)),
+                risk_free_rate=float(company_data.get('risk_free_rate', 0)),
+                market_risk_premium=float(company_data.get('market_risk_premium', 0)),
+                terminal_growth_rate=float(company_data.get('terminal_growth_rate', 0)),
+                # DCF结果
+                dcf_value=float(results.get('dcf', {}).get('result', {}).get('value', 0)) / 10000,
+                dcf_wacc=float(results.get('dcf', {}).get('result', {}).get('details', {}).get('wacc', 0)),
+                # 相对估值结果
+                pe_value=self._get_relative_value(results, 'pe') / 10000 if self._has_relative_method(results, 'pe') else None,
+                ps_value=self._get_relative_value(results, 'ps') / 10000 if self._has_relative_method(results, 'ps') else None,
+                pb_value=self._get_relative_value(results, 'pb') / 10000 if self._has_relative_method(results, 'pb') else None,
+                ev_value=self._get_relative_value(results, 'ev') / 10000 if self._has_relative_method(results, 'ev') else None,
+                ev_ebitda_ratio=results.get('relative', {}).get('result', {}).get('ev_ebitda', 0) if self._has_relative_method(results, 'ev') else None,
+                # 可比公司数量
+                comparables_count=len(results.get('relative', {}).get('comparables', [])),
+            )
 
-        session.commit()
-        session.flush()
-        session.refresh(history)
+            session.add(history)
+            session.commit()
+            session.flush()
+            session.refresh(history)
 
-        return history.id
+            return history.id
+        finally:
+            session.close()
+
+    def _get_relative_value(self, results: dict, method: str) -> float:
+        """获取相对估值方法的结果值"""
+        rel_result = results.get('relative', {}).get('result', {})
+        if method == 'pe':
+            return rel_result.get('pe_valuation', 0)
+        elif method == 'ps':
+            return rel_result.get('ps_valuation', 0)
+        elif method == 'pb':
+            return rel_result.get('pb_valuation', 0)
+        elif method == 'ev':
+            return rel_result.get('ev_valuation', 0)
+        return 0
+
+    def _has_relative_method(self, results: dict, method: str) -> bool:
+        """检查是否有某种相对估值方法的结果"""
+        rel_result = results.get('relative', {}).get('result', {})
+        if method == 'pe':
+            return rel_result.get('pe_ratio', 0) > 0
+        elif method == 'ps':
+            return rel_result.get('ps_ratio', 0) > 0
+        elif method == 'pb':
+            return rel_result.get('pb_ratio', 0) > 0
+        elif method == 'ev':
+            return rel_result.get('ev_ebitda', 0) > 0
+        return False
+
+    def get_history(self, limit: int = 50) -> List[ValuationHistoryResponse]:
+        """获取历史记录列表"""
+        session = Session(self.get_engine())
+
+        try:
+            records = session.query(ValuationHistory)\
+                .order_by(ValuationHistory.created_at.desc())\
+                .limit(limit)\
+                .all()
+
+            return [
+                ValuationHistoryResponse(
+                    id=r.id,
+                    company_name=r.company_name,
+                    industry=r.industry,
+                    stage=r.stage,
+                    revenue=r.revenue,
+                    dcf_value=r.dcf_value,
+                    dcf_wacc=r.dcf_wacc,
+                    pe_value=r.pe_value,
+                    ps_value=r.ps_value,
+                    pb_value=r.pb_value,
+                    ev_value=r.ev_value,
+                    comparables_count=r.comparables_count,
+                    created_at=r.created_at.isoformat() if r.created_at else None,
+                )
+                for r in records
+            ]
+        finally:
+            session.close()

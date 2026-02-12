@@ -15,6 +15,11 @@ from other_methods import OtherValuationMethods
 from scenario_analysis import ScenarioAnalyzer
 from stress_test import StressTester
 from sensitivity_analysis import SensitivityAnalyzer
+from database import DatabaseManager
+
+# 初始化数据库
+db = DatabaseManager()
+db.create_tables()
 
 
 # ===== 全局配置 =====
@@ -194,56 +199,25 @@ async def root():
 
     @app.get("/api/history", tags=["历史记录"])
     async def get_history(
-        limit: int = 100,
-        offset: int = 0,
-        company_name: Optional[str] = None
-        industry: Optional[str] = None
+        limit: int = 50,
+        offset: int = 0
     ):
         """
         获取估值历史记录
 
         Args:
-            limit: 每页数量
+            limit: 返回数量限制
             offset: 偏移量（分页）
-            company_name: 公司名称筛选（模糊匹配）
-            industry: 所属行业筛选
 
         Returns:
             历史记录列表
         """
-        db = DatabaseManager()
-        query = db.session.query(ValuationHistory).order_by(
-            ValuationHistory.created_at.desc()
-        )
-
-        # 应用筛选条件
-        if company_name:
-            query = query.filter(ValuationHistory.company_name.like(f"%{company_name}%"))
-        if industry:
-            query = query.filter(ValuationHistory.industry.like(f"%{industry}%"))
-
-        # 分页
-        total = query.count()
-        results = query.offset(offset).limit(limit).all()
+        history_list = db.get_history(limit=limit)
 
         return {
             "success": True,
-            "total": total,
-            "history": [
-                {
-                    "id": h.id,
-                    "company_name": h.company_name,
-                    "industry": h.industry,
-                    "stage": h.stage,
-                    "dcf_value": h.dcf_value,
-                    "pe_value": h.pe_value,
-                    "ps_value": h.ps_value,
-                    "pb_value": h.pb_value,
-                    "ev_value": h.ev_value,
-                    "comparables_count": h.comparables_count,
-                    "created_at": h.created_at.isoformat()
-                } for h in results
-            ]
+            "total": len(history_list),
+            "history": [h.dict() for h in history_list]
         }
 
     @app.get("/api/valuation/compare")
@@ -251,7 +225,6 @@ async def root():
         """
         交叉验证估值（相对估值和绝对估值）
         """
-        db = DatabaseManager()
         history_id = db.init_history(company, comparables)
         results = db.auto_comparable_analysis(comparables)
 
@@ -266,7 +239,6 @@ async def root():
         """
         相对估值法
         """
-        db = DatabaseManager()
         history_id = db.init_history(request.company, request.comparables)
         results = db.auto_relative_valuation(history_id, request.methods)
 
@@ -286,7 +258,6 @@ async def root():
         """
         DCF绝对估值法
         """
-        db = DatabaseManager()
         history_id = db.init_history(company, [])
 
         results = db.dcf_valuation(history_id, company)
@@ -302,7 +273,6 @@ async def root():
         """
         情景分析
         """
-        db = DatabaseManager()
         history_id = db.init_history(request.company, [])
 
         # 解析情景配置
