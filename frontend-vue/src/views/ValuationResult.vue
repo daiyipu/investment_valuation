@@ -131,6 +131,33 @@
           </div>
         </div>
       </div>
+
+      <!-- 历史记录 -->
+      <div class="card">
+        <div class="card-title">
+          📋 历史记录
+          <button @click="loadHistory" class="btn-refresh" :disabled="loadingHistory" type="button">
+            {{ loadingHistory ? '加载中...' : '🔄 刷新' }}
+          </button>
+        </div>
+        <div v-if="history.length === 0 && !loadingHistory" class="no-history">
+          <p>暂无历史记录</p>
+        </div>
+        <div v-else-if="history.length > 0" class="history-list">
+          <div v-for="item in history" :key="item.id" class="history-item" @click="loadHistoryItem(item.id)">
+            <div class="history-header">
+              <span class="history-company">{{ item.company_name }}</span>
+              <span class="history-date">{{ formatDate(item.created_at) }}</span>
+              <span class="history-industry">{{ item.industry }}</span>
+            </div>
+            <div class="history-values">
+              <span v-if="item.dcf_value">DCF: {{ formatMoney(item.dcf_value * 10000) }}</span>
+              <span v-if="item.pe_value">P/E: {{ formatMoney(item.pe_value * 10000) }}</span>
+              <span v-if="item.ev_value">EV: {{ formatMoney(item.ev_value * 10000) }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </template>
   </div>
 </template>
@@ -138,6 +165,7 @@
 <script setup lang="ts">
 import { ref, onMounted, nextTick, computed } from 'vue'
 import * as echarts from 'echarts'
+import axios from 'axios'
 
 const results = ref<any>(null)
 const company = ref<any>(null)
@@ -150,6 +178,10 @@ const monteCarloChart = ref<HTMLElement>()
 const monteCarloData = computed(() => {
   return results.value?.stress?.report?.monte_carlo || null
 })
+
+// 历史记录
+const history = ref<any[]>([])
+const loadingHistory = ref(false)
 
 const hasMultipleValuations = computed(() => {
   const hasRelative = results.value?.relative && Object.keys(results.value.relative.results || {}).length > 0
@@ -167,6 +199,9 @@ onMounted(async () => {
     await nextTick()
     initCharts()
   }
+
+  // 加载历史记录
+  loadHistory()
 })
 
 const initCharts = () => {
@@ -414,6 +449,46 @@ const formatMoney = (value: number | undefined) => {
 const formatPercent = (value: number | undefined) => {
   if (!value) return '--'
   return (value * 100).toFixed(2) + '%'
+}
+
+// 加载历史记录
+const loadHistory = async () => {
+  loadingHistory.value = true
+  try {
+    const response = await axios.get('http://localhost:8000/api/history?limit=10')
+    if (response.data.success) {
+      history.value = response.data.history
+    }
+  } catch (err: any) {
+    console.error('加载历史记录失败:', err)
+  } finally {
+    loadingHistory.value = false
+  }
+}
+
+// 加载历史记录项
+const loadHistoryItem = async (id: number) => {
+  try {
+    const response = await axios.get(`http://localhost:8000/api/history/${id}`)
+    if (response.data.success) {
+      const item = response.data.history
+      // 存储到sessionStorage并跳转
+      sessionStorage.setItem('valuationResults', JSON.stringify(item))
+      results.value = item
+      company.value = { name: item.company_name, industry: item.industry }
+      await nextTick()
+      initCharts()
+    }
+  } catch (err: any) {
+    console.error('加载历史记录项失败:', err)
+  }
+}
+
+// 格式化日期
+const formatDate = (dateStr: string) => {
+  if (!dateStr) return '--'
+  const date = new Date(dateStr)
+  return date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
 }
 </script>
 
@@ -681,5 +756,95 @@ const formatPercent = (value: number | undefined) => {
 .info-message .hint {
   color: #999;
   font-size: 0.9em;
+}
+
+/* 历史记录样式 */
+.btn-refresh {
+  background: #667eea;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9em;
+  transition: all 0.3s;
+}
+
+.btn-refresh:hover:not(:disabled) {
+  background: #5568d3;
+}
+
+.btn-refresh:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.no-history {
+  text-align: center;
+  padding: 40px 20px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  color: #666;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.history-item {
+  background: #f8f9fa;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 15px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.history-item:hover {
+  background: #e8f4ff;
+  border-color: #667eea;
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.history-company {
+  font-weight: 600;
+  color: #333;
+  font-size: 1.05em;
+}
+
+.history-date {
+  font-size: 0.85em;
+  color: #666;
+}
+
+.history-industry {
+  font-size: 0.9em;
+  color: #888;
+  background: #f0f0f0;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.history-values {
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
+.history-values span {
+  font-size: 0.9em;
+  color: #555;
+  background: white;
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid #e0e0e0;
 }
 </style>

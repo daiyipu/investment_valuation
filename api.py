@@ -220,6 +220,28 @@ async def root():
             "history": [h.dict() for h in history_list]
         }
 
+    @app.get("/api/history/{history_id}", tags=["历史记录"])
+    async def get_history_item(history_id: int):
+        """
+        获取单个历史记录详情
+
+        Args:
+            history_id: 历史记录ID
+
+        Returns:
+            历史记录详情
+        """
+        history_list = db.get_history(limit=1000)
+
+        for h in history_list:
+            if h.id == history_id:
+                return {
+                    "success": True,
+                    "history": h.dict()
+                }
+
+        raise HTTPException(status_code=404, detail="历史记录不存在")
+
     @app.get("/api/valuation/compare")
     async def compare_valuation(company: CompanyInput, comparables: List[ComparableInput]):
         """
