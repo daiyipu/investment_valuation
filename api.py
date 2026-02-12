@@ -189,7 +189,151 @@ async def root():
         "message": "投资估值系统API",
         "version": "1.0.0",
         "docs": "/docs",
+        "history_api": "/api/history",  # 新增：历史记录API
     }
+
+    @app.get("/api/history", tags=["历史记录"])
+    async def get_history(
+        limit: int = 100,
+        offset: int = 0,
+        company_name: Optional[str] = None
+        industry: Optional[str] = None
+    ):
+        """
+        获取估值历史记录
+
+        Args:
+            limit: 每页数量
+            offset: 偏移量（分页）
+            company_name: 公司名称筛选（模糊匹配）
+            industry: 所属行业筛选
+
+        Returns:
+            历史记录列表
+        """
+        db = DatabaseManager()
+        query = db.session.query(ValuationHistory).order_by(
+            ValuationHistory.created_at.desc()
+        )
+
+        # 应用筛选条件
+        if company_name:
+            query = query.filter(ValuationHistory.company_name.like(f"%{company_name}%"))
+        if industry:
+            query = query.filter(ValuationHistory.industry.like(f"%{industry}%"))
+
+        # 分页
+        total = query.count()
+        results = query.offset(offset).limit(limit).all()
+
+        return {
+            "success": True,
+            "total": total,
+            "history": [
+                {
+                    "id": h.id,
+                    "company_name": h.company_name,
+                    "industry": h.industry,
+                    "stage": h.stage,
+                    "dcf_value": h.dcf_value,
+                    "pe_value": h.pe_value,
+                    "ps_value": h.ps_value,
+                    "pb_value": h.pb_value,
+                    "ev_value": h.ev_value,
+                    "comparables_count": h.comparables_count,
+                    "created_at": h.created_at.isoformat()
+                } for h in results
+            ]
+        }
+
+    @app.get("/api/valuation/compare")
+    async def compare_valuation(company: CompanyInput, comparables: List[ComparableInput]):
+        """
+        交叉验证估值（相对估值和绝对估值）
+        """
+        db = DatabaseManager()
+        history_id = db.init_history(company, comparables)
+        results = db.auto_comparable_analysis(comparables)
+
+        return {
+            "success": True,
+            "history_id": history_id,
+            "results": results.to_dict()
+        }
+
+    @app.get("/api/valuation/relative")
+    async def relative_valuation(request: RelativeValuationRequest):
+        """
+        相对估值法
+        """
+        db = DatabaseManager()
+        history_id = db.init_history(request.company, request.comparables)
+        results = db.auto_relative_valuation(history_id, request.methods)
+
+        return {
+            "success": True,
+            "history_id": history_id,
+            "results": results.to_dict()
+        }
+
+    @app.get("/health")
+    async def health_check():
+        """健康检查"""
+        return {"status": "healthy"}
+
+    @app.post("/api/valuation/absolute")
+    async def absolute_valuation(company: CompanyInput):
+        """
+        DCF绝对估值法
+        """
+        db = DatabaseManager()
+        history_id = db.init_history(company, [])
+
+        results = db.dcf_valuation(history_id, company)
+
+        return {
+            "success": True,
+            "history_id": history_id,
+            "results": results.to_dict()
+        }
+
+    @app.get("/api/valuation/scenario")
+    async def scenario_analysis(request: ScenarioConfig):
+        """
+        情景分析
+        """
+        db = DatabaseManager()
+        history_id = db.init_history(request.company, [])
+
+        # 解析情景配置
+        bull_config = {
+            "name": request.revenue_growth_adj or 0.2,
+            "margin_adj": request.margin_adj or 0.0,
+            "wacc_adj": request.wacc_adj or 0.0,
+            "terminal_growth_adj": request.terminal_growth_adj or 0.0
+        }
+
+        bear_config = {
+            "name": request.revenue_growth_adj or -0.2,
+            "margin_adj": request.margin_adj or -0.0,
+            "wacc_adj": request.wacc_adj or 0.0,
+            "terminal_growth_adj": request.terminal_growth_adj or -0.0,
+        }
+
+        base_config = {
+            "name": request.revenue_growth_adj or 0.0,
+            "margin_adj": request.margin_adj or 0.0,
+            "wacc_adj": request.wacc_adj or 0.0,
+            "terminal_growth_adj": request.terminal_growth_adj or 0.0,
+        }
+
+        results = db.scenario_analysis(history_id, [base_config, bull_config, bear_config])
+
+        return {
+            "success": True,
+            "history_id": history_id,
+            "results": results.to_dict()
+        }
 
 
 @app.get("/health")
