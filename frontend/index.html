@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>投资估值系统</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        .card-title {
+            font-size: 1.3em;
+            color: #333;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 500;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+        .results {
+            display: none;
+        }
+        .results.show {
+            display: block;
+        }
+        .result-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        .result-label {
+            color: #666;
+            font-size: 0.9em;
+        }
+        .result-value {
+            font-size: 1.8em;
+            color: #667eea;
+            font-weight: bold;
+        }
+        .chart-container {
+            height: 400px;
+            margin-top: 20px;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            display: none;
+        }
+        .loading.show {
+            display: block;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .error.show {
+            display: block;
+        }
+        .tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 10px 20px;
+            background: #f0f0f0;
+            border: none;
+            border-radius: 6px 6px 0 0;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .tab.active {
+            background: white;
+            color: #667eea;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏦 投资估值系统</h1>
+            <p>专业股权投资基金估值工具 v1.0</p>
+        </div>
+
+        <!-- 错误提示 -->
+        <div id="error" class="error"></div>
+
+        <!-- 公司信息输入 -->
+        <div class="card">
+            <div class="card-title">📊 公司基本信息</div>
+            <form id="valuationForm">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>公司名称</label>
+                        <input type="text" id="companyName" value="云数科技有限公司" required>
+                    </div>
+                    <div class="form-group">
+                        <label>所属行业</label>
+                        <input type="text" id="industry" value="软件服务" required>
+                    </div>
+                    <div class="form-group">
+                        <label>发展阶段</label>
+                        <select id="stage">
+                            <option value="早期">早期</option>
+                            <option value="成长期" selected>成长期</option>
+                            <option value="成熟期">成熟期</option>
+                            <option value="上市公司">上市公司</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>营业收入（万元）</label>
+                        <input type="number" id="revenue" value="50000" required>
+                    </div>
+                    <div class="form-group">
+                        <label>净利润（万元）</label>
+                        <input type="number" id="netIncome" value="8000" required>
+                    </div>
+                    <div class="form-group">
+                        <label>净资产（万元）</label>
+                        <input type="number" id="netAssets" value="20000" required>
+                    </div>
+                    <div class="form-group">
+                        <label>EBITDA（万元）</label>
+                        <input type="number" id="ebitda" value="12000">
+                    </div>
+                    <div class="form-group">
+                        <label>总债务（万元）</label>
+                        <input type="number" id="totalDebt" value="5000">
+                    </div>
+                    <div class="form-group">
+                        <label>货币资金（万元）</label>
+                        <input type="number" id="cash" value="2000">
+                    </div>
+                    <div class="form-group">
+                        <label>预期增长率（%）</label>
+                        <input type="number" id="growthRate" value="25" step="0.1">
+                    </div>
+                    <div class="form-group">
+                        <label>营业利润率（%）</label>
+                        <input type="number" id="operatingMargin" value="25" step="0.1">
+                    </div>
+                    <div class="form-group">
+                        <label>贝塔系数（β）</label>
+                        <input type="number" id="beta" value="1.2" step="0.1">
+                    </div>
+                </div>
+                <div class="btn-group">
+                    <button type="submit" class="btn btn-primary">🚀 开始估值</button>
+                    <button type="button" class="btn btn-secondary" onclick="resetForm()">🔄 重置</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- 加载中 -->
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <p style="margin-top: 15px;">正在计算估值...</p>
+        </div>
+
+        <!-- 估值结果 -->
+        <div id="results" class="results">
+            <!-- DCF估值结果 -->
+            <div class="card">
+                <div class="card-title">💰 DCF绝对估值</div>
+                <div class="result-item">
+                    <div class="result-label">股权价值</div>
+                    <div class="result-value" id="dcfValue">-- 亿元</div>
+                </div>
+                <div class="form-grid" style="margin-top: 15px;">
+                    <div class="result-item">
+                        <div class="result-label">WACC</div>
+                        <div id="wacc">--</div>
+                    </div>
+                    <div class="result-item">
+                        <div class="result-label">预测期现值</div>
+                        <div id="pvForecasts">--</div>
+                    </div>
+                    <div class="result-item">
+                        <div class="result-label">终值现值</div>
+                        <div id="pvTerminal">--</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 情景分析 -->
+            <div class="card">
+                <div class="card-title">📈 情景分析</div>
+                <div id="scenarioChart" class="chart-container"></div>
+            </div>
+
+            <!-- 敏感性分析 -->
+            <div class="card">
+                <div class="card-title">📊 参数敏感性（龙卷风图）</div>
+                <div id="tornadoChart" class="chart-container"></div>
+            </div>
+
+            <!-- 压力测试 -->
+            <div class="card">
+                <div class="card-title">⚠️ 压力测试</div>
+                <div id="stressResults"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+
+        // 表单提交
+        document.getElementById('valuationForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            showError('');
+            showLoading(true);
+
+            try {
+                const company = getCompanyData();
+
+                // 并行执行多个估值请求
+                const [dcfResult, scenarioResult, stressResult, sensitivityResult] = await Promise.all([
+                    // DCF估值
+                    axios.post(`${API_BASE}/api/valuation/absolute`, company),
+                    // 情景分析（需要包装在company对象中）
+                    axios.post(`${API_BASE}/api/scenario/analyze`, { company }),
+                    // 压力测试
+                    axios.post(`${API_BASE}/api/stress-test/full`, company),
+                    // 敏感性分析
+                    axios.post(`${API_BASE}/api/sensitivity/comprehensive`, company),
+                ]);
+
+                // 显示结果
+                displayDcfResult(dcfResult.data);
+                displayScenarioChart(scenarioResult.data);
+                displayTornadoChart(sensitivityResult.data);
+                displayStressResults(stressResult.data);
+
+                showLoading(false);
+                document.getElementById('results').classList.add('show');
+            } catch (error) {
+                console.error('估值失败:', error);
+                showError('估值计算失败: ' + (error.response?.data?.detail || error.message));
+                showLoading(false);
+            }
+        });
+
+        // 获取表单数据
+        function getCompanyData() {
+            return {
+                name: document.getElementById('companyName').value,
+                industry: document.getElementById('industry').value,
+                stage: document.getElementById('stage').value,
+                revenue: parseFloat(document.getElementById('revenue').value),
+                net_income: parseFloat(document.getElementById('netIncome').value),
+                net_assets: parseFloat(document.getElementById('netAssets').value),
+                ebitda: parseFloat(document.getElementById('ebitda').value) || null,
+                total_debt: parseFloat(document.getElementById('totalDebt').value) || null,
+                cash_and_equivalents: parseFloat(document.getElementById('cash').value) || null,
+                growth_rate: parseFloat(document.getElementById('growthRate').value) / 100,
+                operating_margin: parseFloat(document.getElementById('operatingMargin').value) / 100,
+                beta: parseFloat(document.getElementById('beta').value),
+            };
+        }
+
+        // 显示DCF结果
+        function displayDcfResult(data) {
+            const result = data.result;
+            document.getElementById('dcfValue').textContent = (result.value / 10000).toFixed(2) + ' 亿元';
+            document.getElementById('wacc').textContent = (result.details.wacc * 100).toFixed(2) + '%';
+            document.getElementById('pvForecasts').textContent = (result.details.pv_forecasts / 10000).toFixed(2) + ' 亿元';
+            document.getElementById('pvTerminal').textContent = (result.details.pv_terminal / 10000).toFixed(2) + ' 亿元';
+        }
+
+        // 显示情景分析图表
+        function displayScenarioChart(data) {
+            const chart = echarts.init(document.getElementById('scenarioChart'));
+
+            const scenarios = [];
+            const values = [];
+
+            for (const [name, result] of Object.entries(data.results)) {
+                if (name !== 'statistics' && result.valuation) {
+                    scenarios.push(name);
+                    values.push((result.valuation.value / 10000).toFixed(2));
+                }
+            }
+
+            if (scenarios.length === 0) {
+                document.getElementById('scenarioChart').innerHTML = '<p style="text-align:center;padding:50px;">暂无数据</p>';
+                return;
+            }
+
+            const option = {
+                title: {
+                    text: '情景分析对比',
+                    left: 'center'
+                },
+                tooltip: {
+                    trigger: 'axis',
+                    formatter: '{b}: {c} 亿元'
+                },
+                xAxis: {
+                    type: 'category',
+                    data: scenarios
+                },
+                yAxis: {
+                    type: 'value',
+                    name: '估值（亿元）'
+                },
+                series: [{
+                    type: 'bar',
+                    data: values,
+                    itemStyle: {
+                        color: function(params) {
+                            const colors = ['#91cc75', '#5470c6', '#ee6666'];
+                            return colors[params.dataIndex % colors.length];
+                        }
+                    }
+                }]
+            };
+
+            chart.setOption(option);
+        }
+
+        // 显示龙卷风图
+        function displayTornadoChart(data) {
+            const chartContainer = document.getElementById('tornadoChart');
+
+            // 检查是否有tornado_chart数据
+            if (!data.results || !data.results.tornado_chart) {
+                // 如果没有tornado_chart，从parameters数据生成
+                const params = [];
+                const impacts = [];
+
+                if (data.results.parameters) {
+                    for (const [paramName, paramData] of Object.entries(data.results.parameters)) {
+                        if (paramData.valuation_range) {
+                            params.push(paramName);
+                            impacts.push((paramData.valuation_range / 2 / 10000).toFixed(2));
+                        }
+                    }
+                }
+
+                if (params.length === 0) {
+                    chartContainer.innerHTML = '<p style="text-align:center;padding:50px;">暂无敏感性数据</p>';
+                    return;
+                }
+
+                const chart = echarts.init(chartContainer);
+                const option = {
+                    title: {
+                        text: '参数敏感性分析（估值波动范围）',
+                        left: 'center'
+                    },
+                    tooltip: {
+                        trigger: 'axis',
+                        formatter: '{b}: ±{c} 亿元'
+                    },
+                    xAxis: {
+                        type: 'value',
+                        name: '估值波动（亿元）'
+                    },
+                    yAxis: {
+                        type: 'category',
+                        data: params
+                    },
+                    series: [{
+                        type: 'bar',
+                        data: impacts,
+                        itemStyle: { color: '#5470c6' }
+                    }]
+                };
+                chart.setOption(option);
+                return;
+            }
+
+            // 原有的tornado_chart逻辑
+            const chart = echarts.init(chartContainer);
+            const tornadoData = data.results.tornado_chart;
+
+            const params = tornadoData.map(d => d.parameter);
+            const upValues = tornadoData.map(d => -(d.impact_up / 10000));
+            const downValues = tornadoData.map(d => d.impact_down / 10000);
+
+            const option = {
+                title: {
+                    text: '参数敏感性分析',
+                    left: 'center'
+                },
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: { type: 'shadow' }
+                },
+                xAxis: {
+                    type: 'value',
+                    name: '估值变化（亿元）'
+                },
+                yAxis: {
+                    type: 'category',
+                    data: params
+                },
+                series: [
+                    {
+                        name: '正向影响',
+                        type: 'bar',
+                        stack: 'total',
+                        data: upValues,
+                        itemStyle: { color: '#91cc75' }
+                    },
+                    {
+                        name: '负向影响',
+                        type: 'bar',
+                        stack: 'total',
+                        data: downValues,
+                        itemStyle: { color: '#ee6666' }
+                    }
+                ]
+            };
+
+            chart.setOption(option);
+        }
+
+        // 显示压力测试结果
+        function displayStressResults(data) {
+            const container = document.getElementById('stressResults');
+            const report = data.report;
+
+            let html = '<div class="form-grid">';
+
+            // 收入冲击
+            if (report.tests.revenue_shock) {
+                report.tests.revenue_shock.forEach(test => {
+                    html += `
+                        <div class="result-item">
+                            <div class="result-label">${test.scenario_description}</div>
+                            <div style="font-size: 1.2em; color: #667eea;">
+                                ${(test.stressed_value / 10000).toFixed(2)} 亿元
+                                <span style="color: ${test.change_pct < 0 ? '#ee6666' : '#91cc75'};">
+                                    (${test.change_pct > 0 ? '+' : ''}${(test.change_pct * 100).toFixed(1)}%)
+                                </span>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        // 显示/隐藏加载状态
+        function showLoading(show) {
+            document.getElementById('loading').classList.toggle('show', show);
+        }
+
+        // 显示错误
+        function showError(message) {
+            const errorEl = document.getElementById('error');
+            errorEl.textContent = message;
+            errorEl.classList.toggle('show', message !== '');
+        }
+
+        // 重置表单
+        function resetForm() {
+            document.getElementById('valuationForm').reset();
+            document.getElementById('results').classList.remove('show');
+        }
+
+        // 窗口大小变化时重新渲染图表
+        window.addEventListener('resize', () => {
+            const scenarioChart = echarts.getInstanceByDom(document.getElementById('scenarioChart'));
+            const tornadoChart = echarts.getInstanceByDom(document.getElementById('tornadoChart'));
+
+            if (scenarioChart) scenarioChart.resize();
+            if (tornadoChart) tornadoChart.resize();
+        });
+    </script>
+</body>
+</html>

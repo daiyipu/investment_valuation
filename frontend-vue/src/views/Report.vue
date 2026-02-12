@@ -142,12 +142,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onBeforeMount, computed } from 'vue'
 
 const results = ref<any>(null)
 const company = ref<any>(null)
 
-onMounted(() => {
+onBeforeMount(() => {
   const data = sessionStorage.getItem('valuationResults')
   if (data) {
     const parsed = JSON.parse(data)

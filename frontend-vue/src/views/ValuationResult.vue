@@ -148,7 +148,7 @@ const tornadoChart = ref<HTMLElement>()
 const monteCarloChart = ref<HTMLElement>()
 
 const monteCarloData = computed(() => {
-  return results.value?.stress?.report?.tests?.monte_carlo || null
+  return results.value?.stress?.report?.monte_carlo || null
 })
 
 const hasMultipleValuations = computed(() => {

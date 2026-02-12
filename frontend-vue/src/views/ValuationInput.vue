@@ -1266,11 +1266,13 @@ const resetForm = () => {
 /* 申万三级分类级联选择器 */
 .industry-cascade {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
 .industry-select {
-  flex: 1;
+  flex: 1 1 120px;
+  min-width: 120px;
   padding: 8px 12px;
   border: 1px solid #ddd;
   border-radius: 4px;

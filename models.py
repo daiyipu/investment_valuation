@@ -321,6 +321,19 @@ class MonteCarloResult:
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
+        import numpy as np
+
+        # 生成直方图分布数据（用于前端图表展示）
+        arr = np.array(self.values)
+        hist, bin_edges = np.histogram(arr, bins=30)
+        distribution = []
+        for i in range(len(hist)):
+            distribution.append({
+                'bin_lower': float(bin_edges[i]),
+                'bin_upper': float(bin_edges[i + 1]),
+                'count': int(hist[i])
+            })
+
         return {
             'iterations': self.iterations,
             'mean': self.mean,
@@ -330,6 +343,9 @@ class MonteCarloResult:
             'max_value': self.max_value,
             'percentiles': self.percentiles,
             'confidence_interval_90': self.confidence_interval_90,
+            'distribution': distribution,
+            'percentile_5': self.percentiles['p5'],
+            'percentile_95': self.percentiles['p95'],
         }
 
 
