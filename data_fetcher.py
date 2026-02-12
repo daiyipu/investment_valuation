@@ -52,6 +52,8 @@ class TushareDataFetcher:
         """
         self.pro = ts.pro_api(token)
         self.today = datetime.now().strftime('%Y%m%d')
+        # 缓存最新交易日，避免重复查询
+        self._cached_trade_date = None
 
     def get_comparable_companies(
         self,
@@ -63,7 +65,7 @@ class TushareDataFetcher:
         获取同类上市公司列表
 
         Args:
-            industry: 行业名称
+            industry: 行业代码（如 "851041.SI"）或行业名称（如 "计算机"）
             market_cap_range: 市值范围（亿元），如(10, 100)表示10-100亿
             limit: 最大返回数量
 
@@ -71,43 +73,70 @@ class TushareDataFetcher:
             可比公司列表
         """
         try:
-            # 获取股票基本信息
-            df = self.pro.stock_basic(
-                exchange='',
-                list_status='L',  # 只获取上市股票
-                fields='ts_code,symbol,name,area,industry,list_date,market'
-            )
+            # 判断是申万行业代码还是行业名称
+            is_index_code = '.' in industry and industry.endswith('.SI')
 
-            # 筛选行业
-            # 简化处理：如果行业名称包含关键字
-            if industry:
-                df = df[df['industry'].str.contains(industry, na=False) |
-                       df['industry'].isin(self._get_related_industries(industry))]
+            if is_index_code:
+                # 使用 index_member API 获取申万行业成分股
+                df_index = self.pro.index_member(
+                    index_code=industry,
+                    fields='con_code,index_code,in_date,out_date,is_new'
+                )
+                print(f"申万行业 {industry} 成分股数量: {len(df_index)}")
 
-            # 获取最新交易日数据
+                if df_index.empty:
+                    print(f"警告: 申万行业 {industry} 没有找到成分股")
+                    return []
+
+                # 筛选当前成分股（out_date 为空或在之后）
+                df_index = df_index[(df_index['out_date'].isna()) | (df_index['out_date'] > self.today)]
+                ts_codes = df_index['con_code'].tolist()
+            else:
+                # 使用 stock_basic API 按行业名称筛选（旧方式）
+                df_basic = self.pro.stock_basic(
+                    exchange='',
+                    list_status='L',
+                    fields='ts_code,symbol,name,area,industry,list_date,market'
+                )
+
+                # 筛选行业
+                if industry:
+                    df_basic = df_basic[df_basic['industry'] == industry]
+
+                ts_codes = df_basic['ts_code'].tolist()
+
+            print(f"筛选后的股票数量: {len(ts_codes)}")
+
+            # 获取最新交易日数据（用于获取市值和估值倍数）
             trade_date = self._get_latest_trade_date()
 
-            # 获取每日行情
+            # 获取每日行情（用于市值筛选和排序）
             df_daily = self.pro.daily_basic(
                 trade_date=trade_date,
                 fields='ts_code,trade_date,total_mv,circ_mv'
             )
 
-            # 合并数据
-            df = df.merge(df_daily, on='ts_code', how='inner')
+            # 筛选出目标行业的股票
+            df_daily = df_daily[df_daily['ts_code'].isin(ts_codes)]
+
+            if df_daily.empty:
+                print(f"警告: 没有找到 {trade_date} 的行情数据")
+                return []
 
             # 市值筛选
             if market_cap_range:
                 min_cap, max_cap = market_cap_range
-                df = df[(df['total_mv'] >= min_cap) & (df['total_mv'] <= max_cap)]
+                df_daily = df_daily[(df_daily['total_mv'] >= min_cap) & (df_daily['total_mv'] <= max_cap)]
 
-            # 排序并限制数量
-            df = df.sort_values('total_mv', ascending=False).head(limit)
+            # 按市值排序并限制数量
+            df_daily = df_daily.sort_values('total_mv', ascending=False).head(limit)
+
+            print(f"最终获取 {len(df_daily)} 家公司")
 
             # 获取财务数据
             comparables = []
-            for _, row in df.iterrows():
-                comp = self._get_company_financials(row['ts_code'])
+            for ts_code in df_daily['ts_code']:
+                comp = self._get_company_financials(ts_code)
                 if comp:
                     comparables.append(comp)
 
@@ -115,6 +144,8 @@ class TushareDataFetcher:
 
         except Exception as e:
             print(f"获取可比公司失败: {e}")
+            import traceback
+            traceback.print_exc()
             return []
 
     def get_financial_metrics(self, ts_code: str) -> Optional[Dict[str, Any]]:
@@ -283,23 +314,30 @@ class TushareDataFetcher:
     # ===== 私有辅助方法 =====
 
     def _get_latest_trade_date(self) -> str:
-        """获取最近交易日（必须是今天或之前的最后一个交易日）"""
+        """
+        获取最近的交易日（用于获取行情数据）
+        直接使用昨天，简化逻辑
+        """
         try:
-            df = self.pro.trade_cal(exchange='SSE', is_open=1)
-            # 交易日历按日期降序返回（最新的在前）
-            # 找到第一个小于等于今天的日期
-            today_str = self.today
-            for date in df['cal_date']:
-                if date <= today_str:
-                    return date
-            # 如果没找到，返回最后一个可用的过去日期
-            past_dates = df[df['cal_date'] <= today_str]['cal_date']
-            if len(past_dates) > 0:
-                return past_dates.iloc[0]
-            return today_str
-        except:
-            # 默认返回今天
-            return self.today
+            # 如果已有缓存，直接返回
+            if self._cached_trade_date:
+                return self._cached_trade_date
+
+            # 直接使用昨天的日期
+            from datetime import timedelta
+            yesterday = datetime.now() - timedelta(days=1)
+            yesterday_str = yesterday.strftime('%Y%m%d')
+
+            # 缓存结果
+            self._cached_trade_date = yesterday_str
+            return yesterday_str
+
+        except Exception as e:
+            print(f"获取交易日失败: {e}")
+            # 默认返回昨天
+            from datetime import timedelta
+            yesterday = datetime.now() - timedelta(days=1)
+            return yesterday.strftime('%Y%m%d')
 
     def _get_related_industries(self, industry: str) -> List[str]:
         """获取相关行业列表"""

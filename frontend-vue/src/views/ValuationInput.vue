@@ -13,134 +13,25 @@
           <input v-model="form.name" type="text" placeholder="输入公司名称" />
         </div>
         <div class="form-group">
-          <label>所属行业</label>
-          <select v-model="form.industry">
-            <option value="">请选择行业...</option>
-            <optgroup label="Tushare行业分类">
-              <option value="软件服务">软件服务</option>
-              <option value="互联网">互联网</option>
-              <option value="IT设备">IT设备</option>
-              <option value="通信设备">通信设备</option>
-              <option value="半导体">半导体</option>
-              <option value="元器件">元器件</option>
-              <option value="电器仪表">电器仪表</option>
-              <option value="电气设备">电气设备</option>
-            </optgroup>
-            <optgroup label="医药生物">
-              <option value="生物制药">生物制药</option>
-              <option value="化学制药">化学制药</option>
-              <option value="中成药">中成药</option>
-              <option value="医药商业">医药商业</option>
-              <option value="医疗保健">医疗保健</option>
-            </optgroup>
-            <optgroup label="消费">
-              <option value="食品">食品</option>
-              <option value="白酒">白酒</option>
-              <option value="红黄酒">红黄酒</option>
-              <option value="软饮料">软饮料</option>
-              <option value="乳制品">乳制品</option>
-              <option value="纺织">纺织</option>
-              <option value="服饰">服饰</option>
-              <option value="家居用品">家居用品</option>
-              <option value="家用电器">家用电器</option>
-              <option value="文教休闲">文教休闲</option>
-              <option value="影视音像">影视音像</option>
-              <option value="广告包装">广告包装</option>
-              <option value="出版业">出版业</option>
-              <option value="商贸代理">商贸代理</option>
-              <option value="百货">百货</option>
-              <option value="超市连锁">超市连锁</option>
-              <option value="酒店餐饮">酒店餐饮</option>
-              <option value="旅游景点">旅游景点</option>
-              <option value="旅游服务">旅游服务</option>
-            </optgroup>
-            <optgroup label="金融">
-              <option value="银行">银行</option>
-              <option value="证券">证券</option>
-              <option value="保险">保险</option>
-              <option value="多元金融">多元金融</option>
-            </optgroup>
-            <optgroup label="房地产">
-              <option value="全国地产">全国地产</option>
-              <option value="区域地产">区域地产</option>
-              <option value="房产服务">房产服务</option>
-              <option value="园区开发">园区开发</option>
-            </optgroup>
-            <optgroup label="建筑建材">
-              <option value="建筑工程">建筑工程</option>
-              <option value="建筑装饰">建筑装饰</option>
-              <option value="其他建材">其他建材</option>
-              <option value="水泥">水泥</option>
-              <option value="玻璃">玻璃</option>
-            </optgroup>
-            <optgroup label="汽车">
-              <option value="汽车整车">汽车整车</option>
-              <option value="汽车配件">汽车配件</option>
-              <option value="汽车服务">汽车服务</option>
-              <option value="摩托车">摩托车</option>
-              <option value="其他交运设备">其他交运设备</option>
-            </optgroup>
-            <optgroup label="机械制造">
-              <option value="工程机械">工程机械</option>
-              <option value="专用机械">专用机械</option>
-              <option value="通用机械">通用机械</option>
-              <option value="机械基件">机械基件</option>
-              <option value="机床制造">机床制造</option>
-              <option value="轻工机械">轻工机械</option>
-              <option value="纺织机械">纺织机械</option>
-              <option value="运输设备">运输设备</option>
-            </optgroup>
-            <optgroup label="化工">
-              <option value="化工原料">化工原料</option>
-              <option value="化工机械">化工机械</option>
-              <option value="化纤">化纤</option>
-              <option value="塑料">塑料</option>
-              <option value="橡胶">橡胶</option>
-              <option value="日用化工">日用化工</option>
-              <option value="农药化肥">农药化肥</option>
-              <option value="染料涂料">染料涂料</option>
-            </optgroup>
-            <optgroup label="能源电力">
-              <option value="电力设备">电力设备</option>
-              <option value="新型电力">新型电力</option>
-              <option value="火力发电">火力发电</option>
-              <option value="水力发电">水力发电</option>
-              <option value="水务">水务</option>
-              <option value="供气供热">供气供热</option>
-              <option value="石油开采">石油开采</option>
-              <option value="石油加工">石油加工</option>
-              <option value="石油贸易">石油贸易</option>
-              <option value="煤炭开采">煤炭开采</option>
-              <option value="焦炭加工">焦炭加工</option>
-              <option value="燃气">燃气</option>
-            </optgroup>
-            <optgroup label="金属采矿">
-              <option value="钢铁">钢铁</option>
-              <option value="特钢">特种钢</option>
-              <option value="普钢">普钢</option>
-              <option value="有色金属">有色金属</option>
-              <option value="铜">铜</option>
-              <option value="铝">铝</option>
-              <option value="铅锌">铅锌</option>
-              <option value="黄金">黄金</option>
-              <option value="小金属">小金属</option>
-              <option value="矿物制品">矿物制品</option>
-            </optgroup>
-            <optgroup label="交通运输">
-              <option value="铁路">铁路</option>
-              <option value="公路">公路</option>
-              <option value="水路">水路</option>
-              <option value="港口">港口</option>
-              <option value="机场">机场</option>
-              <option value="航空">航空</option>
-              <option value="航运">航运</option>
-              <option value="空运">空运</option>
-            </optgroup>
-            <optgroup label="其他">
-              <option value="综合类">综合类</option>
-              <option value="其他商业">其他商业</option>
-            </optgroup>
-          </select>
+          <label>所属行业（申万三级分类）</label>
+          <div class="industry-cascade">
+            <select v-model="selectedL1" @change="onL1Change" class="industry-select">
+              <option value="">请选择一级行业...</option>
+              <option v-for="l1 in shenwanIndustries" :key="l1.code" :value="l1.code">{{ l1.name }}</option>
+            </select>
+            <select v-model="selectedL2" @change="onL2Change" class="industry-select" :disabled="!selectedL1">
+              <option value="">请选择二级行业...</option>
+              <option v-for="l2 in l2Industries" :key="l2.code" :value="l2.code">{{ l2.name }}</option>
+            </select>
+            <select v-model="selectedL3" @change="onL3Change" class="industry-select" :disabled="!selectedL2">
+              <option value="">请选择三级行业...</option>
+              <option v-for="l3 in l3Industries" :key="l3.code" :value="l3.code">{{ l3.name }}</option>
+            </select>
+          </div>
+          <input v-model="form.industry" type="hidden" />
+          <div class="industry-selected" v-if="form.industry">
+            已选择: {{ selectedIndustryPath }}
+          </div>
         </div>
         <div class="form-group">
           <label>发展阶段</label>
@@ -222,7 +113,7 @@
 
       <!-- 导入选项 -->
       <div class="import-options">
-        <button @click="showImportModal = true" class="btn-import" type="button">
+        <button @click="openImportModal" class="btn-import" type="button">
           📥 从Tushare导入行业上市公司
         </button>
         <button @click="addComparable" class="btn-add" type="button">
@@ -282,130 +173,25 @@
         </div>
         <div class="modal-body">
           <div class="form-group">
-            <label>选择行业</label>
-            <select v-model="importIndustry" @change="onIndustryChange">
-              <option value="">请选择行业...</option>
-              <optgroup label="热门行业">
-                <option value="软件服务">软件服务</option>
-                <option value="互联网">互联网</option>
-                <option value="IT设备">IT设备</option>
-                <option value="通信设备">通信设备</option>
-                <option value="半导体">半导体</option>
-                <option value="元器件">元器件</option>
-                <option value="电气设备">电气设备</option>
-                <option value="生物制药">生物制药</option>
-                <option value="化学制药">化学制药</option>
-                <option value="中成药">中成药</option>
-                <option value="医药商业">医药商业</option>
-                <option value="医疗保健">医疗保健</option>
-                <option value="汽车整车">汽车整车</option>
-                <option value="汽车配件">汽车配件</option>
-                <option value="银行">银行</option>
-                <option value="证券">证券</option>
-                <option value="保险">保险</option>
-              </optgroup>
-              <optgroup label="TMT科技">
-                <option value="IT设备">IT设备</option>
-                <option value="互联网">互联网</option>
-                <option value="半导体">半导体</option>
-                <option value="元器件">元器件</option>
-                <option value="通信设备">通信设备</option>
-                <option value="软件服务">软件服务</option>
-                <option value="电信运营">电信运营</option>
-              </optgroup>
-              <optgroup label="医药生物">
-                <option value="生物制药">生物制药</option>
-                <option value="化学制药">化学制药</option>
-                <option value="中成药">中成药</option>
-                <option value="医药商业">医药商业</option>
-                <option value="医疗保健">医疗保健</option>
-                <option value="医疗器械">医疗器械</option>
-                <option value="医疗服务">医疗服务</option>
-              </optgroup>
-              <optgroup label="消费零售">
-                <option value="百货">百货</option>
-                <option value="超市连锁">超市连锁</option>
-                <option value="商贸代理">商贸代理</option>
-                <option value="纺织">纺织</option>
-                <option value="服饰">服饰</option>
-                <option value="家居">家居</option>
-                <option value="旅游服务">旅游服务</option>
-                <option value="旅游景点">旅游景点</option>
-                <option value="酒店餐饮">酒店餐饮</option>
-                <option value="农业综合">农业综合</option>
-                <option value="农产品加工">农产品加工</option>
-                <option value="食品加工">食品加工</option>
-              </optgroup>
-              <optgroup label="汽车制造">
-                <option value="汽车整车">汽车整车</option>
-                <option value="汽车配件">汽车配件</option>
-                <option value="摩托车">摩托车</option>
-                <option value="其他交运设备">其他交运设备</option>
-              </optgroup>
-              <optgroup label="机械设备">
-                <option value="机械基件">机械基件</option>
-                <option value="机床制造">机床制造</option>
-                <option value="电气设备">电气设备</option>
-                <option value="电器仪表">电器仪表</option>
-                <option value="运输设备">运输设备</option>
-                <option value="重工机械">重工机械</option>
-                <option value="农用机械">农用机械</option>
-              </optgroup>
-              <optgroup label="房地产建材">
-                <option value="全国地产">全国地产</option>
-                <option value="区域地产">区域地产</option>
-                <option value="房产服务">房产服务</option>
-                <option value="园区开发">园区开发</option>
-                <option value="房屋建设">房屋建设</option>
-                <option value="建筑装饰">建筑装饰</option>
-                <option value="建筑材料">建筑材料</option>
-                <option value="水泥建材">水泥建材</option>
-                <option value="其他建材">其他建材</option>
-              </optgroup>
-              <optgroup label="化工能源">
-                <option value="基础化工">基础化工</option>
-                <option value="化工原料">化工原料</option>
-                <option value="化纤">化纤</option>
-                <option value="农药化肥">农药化肥</option>
-                <option value="石油">石油</option>
-                <option value="煤炭">煤炭</option>
-                <option value="电力">电力</option>
-                <option value="供气供热">供气供热</option>
-                <option value="环境保护">环境保护</option>
-                <option value="新材料">新材料</option>
-              </optgroup>
-              <optgroup label="金融">
-                <option value="银行">银行</option>
-                <option value="证券">证券</option>
-                <option value="保险">保险</option>
-                <option value="多元金融">多元金融</option>
-              </optgroup>
-              <optgroup label="交通运输">
-                <option value="公路">公路</option>
-                <option value="机场">机场</option>
-                <option value="港口">港口</option>
-                <option value="水运">水运</option>
-                <option value="铁路">铁路</option>
-                <option value="物流">物流</option>
-              </optgroup>
-              <optgroup label="文化传媒教育">
-                <option value="文化传媒">文化传媒</option>
-                <option value="出版业">出版业</option>
-                <option value="影视动漫">影视动漫</option>
-                <option value="营销传播">营销传播</option>
-                <option value="教育">教育</option>
-                <option value="体育">体育</option>
-                <option value="文教休闲">文教休闲</option>
-              </optgroup>
-              <optgroup label="其他">
-                <option value="航空航天">航空航天</option>
-                <option value="船舶制造">船舶制造</option>
-                <option value="造纸">造纸</option>
-                <option value="包装印刷">包装印刷</option>
-                <option value="建筑施工">建筑施工</option>
-                <option value="其他">其他</option>
-              </optgroup>
-            </select>
+            <label>选择行业（申万三级分类）</label>
+            <div class="industry-cascade">
+              <select v-model="importSelectedL1" @change="onImportL1Change" class="industry-select">
+                <option value="">请选择一级行业...</option>
+                <option v-for="l1 in shenwanIndustries" :key="l1.code" :value="l1.code">{{ l1.name }}</option>
+              </select>
+              <select v-model="importSelectedL2" @change="onImportL2Change" class="industry-select" :disabled="!importSelectedL1">
+                <option value="">请选择二级行业...</option>
+                <option v-for="l2 in importL2Industries" :key="l2.code" :value="l2.code">{{ l2.name }}</option>
+              </select>
+              <select v-model="importSelectedL3" @change="onImportL3Change" class="industry-select" :disabled="!importSelectedL2">
+                <option value="">请选择三级行业...</option>
+                <option v-for="l3 in importL3Industries" :key="l3.code" :value="l3.code">{{ l3.name }}</option>
+              </select>
+            </div>
+            <input v-model="importIndustry" type="hidden" />
+            <div class="industry-selected" v-if="importIndustry">
+              已选择: {{ importSelectedIndustryPath }}
+            </div>
           </div>
 
           <div class="form-group">
@@ -522,6 +308,85 @@ const comparables = ref<any[]>([])
 const loading = ref(false)
 const error = ref('')
 
+// 申万三级分类级联选择
+const shenwanIndustries = ref<any[]>([])
+const selectedL1 = ref('')
+const selectedL2 = ref('')
+const selectedL3 = ref('')
+
+// 加载申万行业分类数据
+fetch('/shenwan_industries.json')
+  .then(res => res.json())
+  .then(data => {
+    shenwanIndustries.value = data
+    // 设置默认选择（计算机 -> IT服务 -> 垂直应用软件）
+    const l1 = data.find((i: any) => i.name === '计算机')
+    if (l1) {
+      selectedL1.value = l1.code
+      onL1Change()
+      const l2 = l1.children?.find((c: any) => c.name === '软件开发')
+      if (l2) {
+        selectedL2.value = l2.code
+        onL2Change()
+        const l3 = l2.children?.find((c: any) => c.name === '垂直应用软件')
+        if (l3) {
+          selectedL3.value = l3.code
+          onL3Change()
+        }
+      }
+    }
+  })
+  .catch(err => console.error('加载行业分类失败:', err))
+
+// 二级行业列表
+const l2Industries = computed(() => {
+  if (!selectedL1.value) return []
+  const l1 = shenwanIndustries.value.find((i: any) => i.code === selectedL1.value)
+  return l1?.children || []
+})
+
+// 三级行业列表
+const l3Industries = computed(() => {
+  if (!selectedL2.value) return []
+  const l2 = l2Industries.value.find((i: any) => i.code === selectedL2.value)
+  return l2?.children || []
+})
+
+// 显示选择的完整路径
+const selectedIndustryPath = computed(() => {
+  const l1 = shenwanIndustries.value.find((i: any) => i.code === selectedL1.value)
+  const l2 = l2Industries.value.find((i: any) => i.code === selectedL2.value)
+  const l3 = l3Industries.value.find((i: any) => i.code === selectedL3.value)
+  const parts = [l1?.name, l2?.name, l3?.name].filter(Boolean)
+  return parts.join(' > ')
+})
+
+// L1选择变化
+const onL1Change = () => {
+  selectedL2.value = ''
+  selectedL3.value = ''
+  form.value.industry = ''
+}
+
+// L2选择变化
+const onL2Change = () => {
+  selectedL3.value = ''
+  form.value.industry = ''
+}
+
+// L3选择变化
+const onL3Change = () => {
+  if (selectedL3.value) {
+    form.value.industry = selectedL3.value
+    // 如果导入弹窗中的行业为空，自动填充
+    if (!importIndustry.value) {
+      importIndustry.value = selectedL3.value
+    }
+  } else {
+    form.value.industry = ''
+  }
+}
+
 // Tushare导入相关
 const showImportModal = ref(false)
 const importIndustry = ref('')
@@ -534,6 +399,60 @@ const availableCompanies = ref<any[]>([])
 const selectedCompanyCodes = ref<Set<string>>(new Set())
 
 const selectedCompaniesCount = computed(() => selectedCompanyCodes.value.size)
+
+// 导入弹窗的申万三级分类级联选择
+const importSelectedL1 = ref('')
+const importSelectedL2 = ref('')
+const importSelectedL3 = ref('')
+
+// 导入弹窗的二级行业列表
+const importL2Industries = computed(() => {
+  if (!importSelectedL1.value) return []
+  const l1 = shenwanIndustries.value.find((i: any) => i.code === importSelectedL1.value)
+  return l1?.children || []
+})
+
+// 导入弹窗的三级行业列表
+const importL3Industries = computed(() => {
+  if (!importSelectedL2.value) return []
+  const l2 = importL2Industries.value.find((i: any) => i.code === importSelectedL2.value)
+  return l2?.children || []
+})
+
+// 导入弹窗的已选择完整路径
+const importSelectedIndustryPath = computed(() => {
+  const l1 = shenwanIndustries.value.find((i: any) => i.code === importSelectedL1.value)
+  const l2 = importL2Industries.value.find((i: any) => i.code === importSelectedL2.value)
+  const l3 = importL3Industries.value.find((i: any) => i.code === importSelectedL3.value)
+  const parts = [l1?.name, l2?.name, l3?.name].filter(Boolean)
+  return parts.join(' > ')
+})
+
+// 导入弹窗L1选择变化
+const onImportL1Change = () => {
+  importSelectedL2.value = ''
+  importSelectedL3.value = ''
+  importIndustry.value = ''
+}
+
+// 导入弹窗L2选择变化
+const onImportL2Change = () => {
+  importSelectedL3.value = ''
+  importIndustry.value = ''
+}
+
+// 导入弹窗L3选择变化
+const onImportL3Change = () => {
+  if (importSelectedL3.value) {
+    importIndustry.value = importSelectedL3.value
+    // 当在导入弹窗选择行业时，如果目标公司没有行业，自动填充
+    if (!form.value.industry) {
+      form.value.industry = importSelectedL3.value
+    }
+  } else {
+    importIndustry.value = ''
+  }
+}
 
 const addComparable = () => {
   comparables.value.push({
@@ -604,10 +523,19 @@ const clearComparables = () => {
   comparables.value = []
 }
 
-const onIndustryChange = () => {
-  // 当选择行业时，如果目标公司没有行业，自动填充
-  if (!form.value.industry && importIndustry.value) {
-    form.value.industry = importIndustry.value
+// 打开导入弹窗时，同步主表单的行业选择
+const openImportModal = () => {
+  showImportModal.value = true
+  // 如果主表单已经选择了行业，同步到导入弹窗
+  if (selectedL1.value) {
+    importSelectedL1.value = selectedL1.value
+    if (selectedL2.value) {
+      importSelectedL2.value = selectedL2.value
+      if (selectedL3.value) {
+        importSelectedL3.value = selectedL3.value
+        importIndustry.value = selectedL3.value
+      }
+    }
   }
 }
 
@@ -1333,5 +1261,41 @@ const resetForm = () => {
   font-size: 0.9em;
   color: #666;
   flex: 1;
+}
+
+/* 申万三级分类级联选择器 */
+.industry-cascade {
+  display: flex;
+  gap: 10px;
+}
+
+.industry-select {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  background: white;
+  cursor: pointer;
+  transition: border-color 0.3s;
+}
+
+.industry-select:hover:not(:disabled) {
+  border-color: #667eea;
+}
+
+.industry-select:disabled {
+  background: #f5f5f5;
+  color: #999;
+  cursor: not-allowed;
+}
+
+.industry-selected {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #f0f7ff;
+  border-radius: 4px;
+  color: #667eea;
+  font-size: 0.9em;
 }
 </style>
