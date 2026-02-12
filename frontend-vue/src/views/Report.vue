@@ -34,6 +34,7 @@
       <div class="card">
         <div class="card-title">估值方法</div>
         <div class="methods-list">
+          <!-- DCF估值 -->
           <div class="method-item">
             <div class="method-header">
               <span class="method-name">DCF现金流折现</span>
@@ -43,6 +44,42 @@
               WACC: {{ formatPercent(results.dcf?.result?.details?.wacc) }} |
               终值占比: {{ getTerminalValuePercent() }}%
             </div>
+          </div>
+
+          <!-- 相对估值 -->
+          <div v-if="results.relative" class="method-item">
+            <div class="method-header">
+              <span class="method-name">相对估值（市场倍数法）</span>
+              <span class="method-value">{{ formatMoney(results.relative.result?.value) }}</span>
+            </div>
+            <div class="method-details">
+              <div v-if="results.relative?.result?.pe_ratio">
+                P/E倍数: <strong>{{ results.relative.result.pe_ratio.toFixed(2) }}</strong> |
+                估值: {{ formatMoney(results.relative.result.pe_valuation) }}
+              </div>
+              <div v-if="results.relative?.result?.ps_ratio">
+                P/S倍数: <strong>{{ results.relative.result.ps_ratio.toFixed(2) }}</strong> |
+                估值: {{ formatMoney(results.relative.result.ps_valuation) }}
+              </div>
+              <div v-if="results.relative?.result?.pb_ratio">
+                P/B倍数: <strong>{{ results.relative.result.pb_ratio.toFixed(2) }}</strong> |
+                估值: {{ formatMoney(results.relative.result.pb_valuation) }}
+              </div>
+              <div v-if="results.relative?.result?.ev_ebitda">
+                EV/EBITDA倍数: <strong>{{ results.relative.result.ev_ebitda.toFixed(2) }}</strong> |
+                估值: {{ formatMoney(results.relative.result.ev_valuation) }}
+              </div>
+              <div class="method-details">
+                <p v-if="!results.relative?.comparables" class="no-comparables">
+                  未使用可比公司
+                </p>
+                <p v-else class="comparables-info">
+                  基于 <strong>{{ results.relative.comparables?.length || 0 }}</strong> 家可比公司
+                  <span v-for="(comp, idx) in results.relative.comparables" :key="idx" class="comparable-company">
+                    {{ comp.name }}
+                  </span>
+                </p>
+              </div>
           </div>
         </div>
       </div>
@@ -183,7 +220,52 @@ const getRecommendationText = () => {
   return '中性持有'
 }
 
-const getSafetyMargin = () => '20%'
+// 获取相对估值结果
+const getRelativeValuation = () => {
+  const rel = results.value?.relative?.result
+
+  if (!rel || !rel.value) {
+    return {
+      pe_valuation: null,
+      ps_valuation: null,
+      pb_valuation: null,
+      ev_valuation: null,
+      pe_ratio: null,
+      ps_ratio: null,
+      pb_ratio: null,
+      ev_ebitda: null,
+      comparables: [],
+      hasData: false
+    }
+  }
+
+  // 计算各项估值
+  const hasComparables = rel.comparables && rel.comparables.length > 0
+
+  return {
+    pe_valuation: rel.pe_ratio ? (form.value?.revenue || 0) / rel.pe_ratio : null,
+    ps_valuation: rel.ps_ratio ? (form.value?.revenue || 0) / rel.ps_ratio : null,
+    pb_valuation: rel.pb_ratio ? (form.value?.net_assets || 0) / rel.pb_ratio : null,
+    ev_valuation: rel.ev_ebitda ? (form.value?.ebitda || 0 + form.value?.net_income || 0) * (1 - 0.25) : null,
+    pe_ratio: rel.pe_ratio,
+    ps_ratio: rel.ps_ratio,
+    pb_ratio: rel.pb_ratio,
+    ev_ebitda: rel.ev_ebitda,
+    comparables: rel.comparables || [],
+    hasData: hasComparables
+  }
+}
+
+// 获取推荐估值（综合DCF和相对估值）
+const getRecommendedValue = () => {
+  const dcfValue = results.value?.dcf?.result?.value || 0
+  const relativeValue = getRelativeValuation().pe_valuation || 0
+
+  // 简单平均
+  const avgValue = (dcfValue + relativeValue) / 2
+
+  return avgValue.toFixed(2)
+}
 
 const formatMoney = (value: number) => (value / 10000).toFixed(2) + ' 亿元'
 const formatPercent = (value: number) => (value * 100).toFixed(2) + '%'
