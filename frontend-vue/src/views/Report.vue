@@ -87,17 +87,18 @@
                 EV/EBITDA倍数: <strong>{{ results.relative.result.ev_ebitda.toFixed(2) }}</strong> |
                 估值: {{ formatMoney(results.relative.result.ev_valuation) }}
               </div>
-              <div class="method-details">
-                <p v-if="!results.relative?.comparables" class="no-comparables">
-                  未使用可比公司
-                </p>
-                <p v-else class="comparables-info">
-                  基于 <strong>{{ results.relative.comparables?.length || 0 }}</strong> 家可比公司
-                  <span v-for="(comp, idx) in results.relative.comparables" :key="idx" class="comparable-company">
-                    {{ comp.name }}
-                  </span>
-                </p>
-              </div>
+            </div>
+            <div class="method-details">
+              <p v-if="!results.relative?.comparables" class="no-comparables">
+                未使用可比公司
+              </p>
+              <p v-else class="comparables-info">
+                基于 <strong>{{ results.relative.comparables?.length || 0 }}</strong> 家可比公司
+                <span v-for="(comp, idx) in results.relative.comparables" :key="idx" class="comparable-company">
+                  {{ comp.name }}
+                </span>
+              </p>
+            </div>
           </div>
         </div>
       </div>
