@@ -12,6 +12,8 @@
 - [使用指南](#使用指南)
 - [API文档](#api文档)
 - [开发指南](#开发指南)
+- [项目路线图](#项目路线图)
+- [贡献指南](#贡献指南)
 
 ---
 
@@ -458,9 +460,81 @@ pytest tests/
 
 ---
 
+## 项目路线图
+
+### 📊 当前版本：v1.0.0
+
+**已完成功能**：
+- ✅ DCF绝对估值
+- ✅ 相对估值（PE/PS/PB/EV-EBITDA）
+- ✅ 情景分析
+- ✅ 压力测试
+- ✅ 敏感性分析
+- ✅ Vue.js前端界面
+- ✅ Tushare数据集成
+- ✅ 报告生成与导出
+
+### 🚀 开发计划
+
+详细的迭代规划请查看：[项目路线图](./PROJECT_ROADMAP.md)
+
+- **v1.1** (进行中): 性能优化与用户体验提升
+- **v1.2** (计划): 数据可视化增强
+- **v1.3** (计划): 高级分析功能
+- **v1.4** (计划): 系统集成与扩展
+- **v1.5** (计划): 移动端适配
+- **v2.0** (计划): 智能化升级（AI/ML）
+
+### 📋 当前迭代
+
+查看当前迭代（v1.1）的详细任务：[迭代任务分解](./SPRINT_1.1_TASKS.md)
+
+---
+
 ## 贡献指南
 
-欢迎提交Issue和Pull Request！
+我们欢迎所有形式的贡献！
+
+### 🤝 如何贡献
+
+1. 查看 [贡献指南](./CONTRIBUTING.md)
+2. Fork本项目
+3. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
+4. 提交更改 (`git commit -m 'feat: add some AmazingFeature'`)
+5. 推送到分支 (`git push origin feature/AmazingFeature`)
+6. 提交Pull Request
+
+### 📝 报告问题
+
+- Bug报告：使用 [Bug报告模板](.github/ISSUE_TEMPLATE/bug_report.md)
+- 功能建议：使用 [功能建议模板](.github/ISSUE_TEMPLATE/feature_request.md)
+- 性能问题：使用 [性能问题模板](.github/ISSUE_TEMPLATE/performance.md)
+
+### 🎯 代码规范
+
+- **Python**: 遵循PEP 8
+- **TypeScript/Vue**: 遵循Vue风格指南
+- **提交信息**: 遵循[Conventional Commits](https://www.conventionalcommits.org/)
+
+### ✅ 测试要求
+
+- 单元测试覆盖率 ≥ 80%
+- 所有测试通过才能合并
+- 关键业务逻辑必须有测试
+
+---
+
+## CI/CD
+
+本项目使用GitHub Actions进行持续集成和持续部署：
+
+- ✅ 自动化测试
+- ✅ 代码质量检查
+- ✅ 安全扫描
+- ✅ 性能测试
+- ✅ 自动部署
+
+查看详细配置：[CI/CD配置](.github/workflows/ci.yml)
 
 ---
 
@@ -473,3 +547,22 @@ MIT License
 ## 联系方式
 
 - GitHub: https://github.com/daiyipu/investment_valuation
+- Issues: https://github.com/daiyipu/investment_valuation/issues
+- Discussions: https://github.com/daiyipu/investment_valuation/discussions
+
+---
+
+## 致谢
+
+感谢所有为本项目做出贡献的开发者！
+
+特别感谢：
+- Tushare提供数据支持
+- FastAPI团队提供优秀的框架
+- Vue.js团队提供强大的前端框架
+
+---
+
+## ⭐ 如果这个项目对你有帮助，请给个Star！
+
+
