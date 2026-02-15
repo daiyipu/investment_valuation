@@ -12,6 +12,7 @@
 - [使用指南](#使用指南)
 - [API文档](#api文档)
 - [开发指南](#开发指南)
+- [📚 文档中心](./docs/README.md) - 完整的项目文档
 - [项目路线图](#项目路线图)
 - [贡献指南](#贡献指南)
 
@@ -476,7 +477,7 @@ pytest tests/
 
 ### 🚀 开发计划
 
-详细的迭代规划请查看：[项目路线图](./PROJECT_ROADMAP.md)
+详细的迭代规划请查看：[项目路线图](./docs/project-management/PROJECT_ROADMAP.md)
 
 - **v1.1** (进行中): 性能优化与用户体验提升
 - **v1.2** (计划): 数据可视化增强
@@ -487,7 +488,7 @@ pytest tests/
 
 ### 📋 当前迭代
 
-查看当前迭代（v1.1）的详细任务：[迭代任务分解](./SPRINT_1.1_TASKS.md)
+查看当前迭代（v1.1）的详细任务：[迭代任务分解](./docs/project-management/SPRINT_1.1_TASKS.md)
 
 ---
 
@@ -497,12 +498,13 @@ pytest tests/
 
 ### 🤝 如何贡献
 
-1. 查看 [贡献指南](./CONTRIBUTING.md)
-2. Fork本项目
-3. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-4. 提交更改 (`git commit -m 'feat: add some AmazingFeature'`)
-5. 推送到分支 (`git push origin feature/AmazingFeature`)
-6. 提交Pull Request
+1. 查看 [文档中心](./docs/README.md) 了解项目文档结构
+2. 查看 [贡献指南](./docs/project-management/CONTRIBUTING.md) 了解贡献流程
+3. Fork本项目
+4. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
+5. 提交更改 (`git commit -m 'feat: add some AmazingFeature'`)
+6. 推送到分支 (`git push origin feature/AmazingFeature`)
+7. 提交Pull Request
 
 ### 📝 报告问题
 
