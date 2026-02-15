@@ -13,7 +13,7 @@
           <input v-model="form.name" type="text" placeholder="输入公司名称" />
         </div>
         <div class="form-group">
-          <label>所属行业（申万三级分类）</label>
+          <label>所属行业(申万三级分类)</label>
           <div class="industry-cascade">
             <select v-model="selectedL1" @change="onL1Change" class="industry-select">
               <option value="">请选择一级行业...</option>
@@ -46,7 +46,47 @@
     </div>
 
     <div class="form-card">
-      <div class="section-title">财务数据（单位：万元）</div>
+      <div class="section-title">财务数据(单位: 万元)</div>
+
+      <!-- 上市公司Tushare导入区域 -->
+      <div v-if="form.stage === '上市公司'" class="tushare-import-section">
+        <div class="tushare-input-group">
+          <label class="tushare-label">股票代码</label>
+          <input
+            v-model="stockCode"
+            type="text"
+            placeholder="例如: 000001.SZ (平安银行)"
+            class="tushare-input"
+            @keyup.enter="importStockFinancialData"
+          />
+          <button
+            @click="importStockFinancialData"
+            class="btn-tushare-import"
+            type="button"
+            :disabled="!stockCode || stockImporting">
+            {{ stockImporting ? "导入中..." : "📥 从Tushare导入" }}
+          </button>
+        </div>
+        <div class="tushare-hint">
+          💡 提示:请输入6位数字股票代码+交易所后缀(如 .SZ 或 .SH)
+        </div>
+        <div v-if="stockImportError" class="stock-import-error">
+          {{ stockImportError }}
+          <div class="error-suggestions" v-if="stockImportError.includes('未找到')">
+            <p>可能的原因:</p>
+            <ul>
+              <li>股票代码不存在或已退市</li>
+              <li>该股票在Tushare数据库中暂无数据</li>
+              <li>股票代码格式不正确(应为6位数字+.SZ/.SH)</li>
+            </ul>
+            <p>建议:尝试使用知名的蓝筹股,如 000001.SZ(平安银行)、000002.SZ(万科A)等</p>
+          </div>
+        </div>
+        <div v-if="stockImportSuccess" class="stock-import-success">
+          ✓ 财务数据已成功导入
+        </div>
+      </div>
+
       <div class="form-grid">
         <div class="form-group">
           <label>营业收入</label>
@@ -108,7 +148,7 @@
     <!-- 可比公司数据输入 -->
     <div class="form-card">
       <div class="section-title">
-        可比公司数据（可选，用于相对估值）
+        可比公司数据(可选,用于相对估值)
       </div>
 
       <!-- 导入选项 -->
@@ -131,7 +171,7 @@
       </div>
 
       <div v-if="comparables.length === 0" class="no-comparables">
-        <p>暂无可比公司数据，将仅使用DCF估值</p>
+        <p>暂无可比公司数据,将仅使用DCF估值</p>
         <p class="hint">建议从Tushare导入目标公司所在行业的上市公司作为可比公司</p>
       </div>
 
@@ -173,7 +213,7 @@
         </div>
         <div class="modal-body">
           <div class="form-group">
-            <label>选择行业（申万三级分类）</label>
+            <label>选择行业(申万三级分类)</label>
             <div class="industry-cascade">
               <select v-model="importSelectedL1" @change="onImportL1Change" class="industry-select">
                 <option value="">请选择一级行业...</option>
@@ -198,11 +238,11 @@
             <label>筛选条件</label>
             <div class="filter-grid">
               <div>
-                <label>最小市值（亿元）</label>
+                <label>最小市值(亿元)</label>
                 <input v-model.number="importMinMarketCap" type="number" placeholder="不限制">
               </div>
               <div>
-                <label>最大市值（亿元）</label>
+                <label>最大市值(亿元)</label>
                 <input v-model.number="importMaxMarketCap" type="number" placeholder="不限制">
               </div>
               <div>
@@ -268,7 +308,7 @@
     </div>
 
     <div class="actions">
-      <button class="btn btn-primary" @click="startValuation" :disabled="loading">
+      <button class="btn btn-primary" @click="startValuation" :disabled="loading" onclick="console.log('原生点击事件触发!')">
         {{ loading ? '计算中...' : '🚀 开始估值' }}
       </button>
       <button class="btn btn-secondary" @click="resetForm">🔄 重置</button>
@@ -279,7 +319,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { valuationAPI, scenarioAPI, stressTestAPI, sensitivityAPI, dataAPI } from '../services/api'
 import axios from 'axios'
@@ -287,7 +327,7 @@ import axios from 'axios'
 const router = useRouter()
 
 const form = ref({
-  name: '云数科技有限公司',
+  name: "云数科技有限公司",
   industry: '软件服务',
   stage: '成长期',
   revenue: 50000,
@@ -302,11 +342,17 @@ const form = ref({
   risk_free_rate: 0.03,
   market_risk_premium: 0.07,
   terminal_growth_rate: 0.025
-})
+} as any)
 
 const comparables = ref<any[]>([])
 const loading = ref(false)
 const error = ref('')
+
+// 上市公司Tushare导入相关
+const stockCode = ref('')
+const stockImporting = ref(false)
+const stockImportError = ref('')
+const stockImportSuccess = ref(false)
 
 // 申万三级分类级联选择
 const shenwanIndustries = ref<any[]>([])
@@ -319,7 +365,7 @@ fetch('/shenwan_industries.json')
   .then(res => res.json())
   .then(data => {
     shenwanIndustries.value = data
-    // 设置默认选择（计算机 -> IT服务 -> 垂直应用软件）
+    // 设置默认选择(计算机 -> IT服务 -> 垂直应用软件)
     const l1 = data.find((i: any) => i.name === '计算机')
     if (l1) {
       selectedL1.value = l1.code
@@ -378,7 +424,7 @@ const onL2Change = () => {
 const onL3Change = () => {
   if (selectedL3.value) {
     form.value.industry = selectedL3.value
-    // 如果导入弹窗中的行业为空，自动填充
+    // 如果导入弹窗中的行业为空,自动填充
     if (!importIndustry.value) {
       importIndustry.value = selectedL3.value
     }
@@ -445,7 +491,7 @@ const onImportL2Change = () => {
 const onImportL3Change = () => {
   if (importSelectedL3.value) {
     importIndustry.value = importSelectedL3.value
-    // 当在导入弹窗选择行业时，如果目标公司没有行业，自动填充
+    // 当在导入弹窗选择行业时,如果目标公司没有行业,自动填充
     if (!form.value.industry) {
       form.value.industry = importSelectedL3.value
     }
@@ -523,10 +569,62 @@ const clearComparables = () => {
   comparables.value = []
 }
 
-// 打开导入弹窗时，同步主表单的行业选择
+// 从Tushare导入上市公司财务数据
+const importStockFinancialData = async () => {
+  if (!stockCode.value) {
+    stockImportError.value = '请输入股票代码'
+    return
+  }
+
+  // 清除之前的错误和成功状态
+  stockImportError.value = ''
+  stockImportSuccess.value = false
+  stockImporting.value = true
+
+  try {
+    const response = await dataAPI.getStockData(stockCode.value)
+
+    if (response.data && response.data.success) {
+      const data = response.data.data
+
+      // 填充财务数据到表单(注意:后端返回的单位是"元",需要转换为"万元",即除以10000)
+      if (data.revenue !== undefined) form.value.revenue = Math.round(data.revenue / 10000)
+      if (data.net_income !== undefined) form.value.net_income = Math.round(data.net_income / 10000)
+      if (data.net_assets !== undefined) form.value.net_assets = Math.round(data.net_assets / 10000)
+      if (data.ebitda !== undefined) form.value.ebitda = Math.round(data.ebitda / 10000)
+      if (data.total_debt !== undefined) form.value.total_debt = Math.round(data.total_debt / 10000)
+      if (data.cash_and_equivalents !== undefined) form.value.cash_and_equivalents = Math.round(data.cash_and_equivalents / 10000)
+
+      // 如果API返回了公司名称,更新表单
+      if (data.name) form.value.name = data.name
+
+      stockImportSuccess.value = true
+
+      // 3秒后清除成功提示
+      setTimeout(() => {
+        stockImportSuccess.value = false
+      }, 3000)
+    } else {
+      stockImportError.value = "未找到该股票的财务数据,请检查股票代码是否正确"
+    }
+  } catch (err: any) {
+    console.error('导入财务数据失败:', err)
+    if (err.response?.status === 404) {
+      stockImportError.value = `未找到股票代码 "${stockCode.value}" 的数据。请确认股票代码是否正确,或尝试其他股票代码。`
+    } else if (err.response?.data?.detail) {
+      stockImportError.value = err.response.data.detail
+    } else {
+      stockImportError.value = `导入失败:${err.message || '未知错误'}。请检查网络连接。`
+    }
+  } finally {
+    stockImporting.value = false
+  }
+}
+
+// 打开导入弹窗时,同步主表单的行业选择
 const openImportModal = () => {
   showImportModal.value = true
-  // 如果主表单已经选择了行业，同步到导入弹窗
+  // 如果主表单已经选择了行业,同步到导入弹窗
   if (selectedL1.value) {
     importSelectedL1.value = selectedL1.value
     if (selectedL2.value) {
@@ -541,7 +639,7 @@ const openImportModal = () => {
 
 const importFromTushare = async () => {
   if (!importIndustry.value) {
-    importError.value = '请先选择行业'
+    importError.value = "请先选择行业"
     return
   }
 
@@ -568,12 +666,12 @@ const importFromTushare = async () => {
       selectedCompanyCodes.value.clear()
 
       if (availableCompanies.value.length === 0) {
-        importError.value = '未找到符合条件的公司，请尝试调整筛选条件或选择其他行业'
+        importError.value = '未找到符合条件的公司,请尝试调整筛选条件或选择其他行业'
       }
     }
   } catch (err: any) {
-    console.error('导入失败:', err)
-    importError.value = '导入失败: ' + (err.response?.data?.detail || err.message)
+    console.error("导入失败:", err)
+    importError.value = "导入失败: " + (err.response?.data?.detail || err.message)
   } finally {
     importing.value = false
   }
@@ -628,7 +726,7 @@ const addSelectedCompanies = () => {
 }
 
 const getErrorMessage = (err: any): string => {
-  console.error('详细错误:', err)
+  console.error("详细错误:", err)
 
   if (err.response?.data) {
     const data = err.response.data
@@ -652,8 +750,13 @@ const getErrorMessage = (err: any): string => {
 }
 
 const startValuation = async () => {
+  console.log('=== 开始估值按钮被点击 ===')
+  console.log('当前表单数据:', JSON.parse(JSON.stringify(form.value)))
+
   error.value = ''
   loading.value = true
+
+  console.log('loading.value已设为true,按钮应该显示"计算中..."')
 
   try {
     const company = {
@@ -673,13 +776,15 @@ const startValuation = async () => {
       sensitivityAPI.comprehensive(company)
     ]
 
-    // 如果有可比公司，添加相对估值
+    // 如果有可比公司,添加相对估值
     if (comparables.value.length > 0) {
       console.log('可比公司数据:', comparables.value)
       requests.unshift(valuationAPI.relative(company, comparables.value))
     }
 
+    console.log('开始并行请求API，共', requests.length, '个请求')
     const results = await Promise.all(requests)
+    console.log('所有API请求已完成')
 
     let dcfResult, scenarioResult, stressResult, sensitivityResult, relativeResult
 
@@ -689,28 +794,84 @@ const startValuation = async () => {
       [dcfResult, scenarioResult, stressResult, sensitivityResult] = results
     }
 
-    console.log('估值结果:', {
-      relative: relativeResult?.data,
-      dcf: dcfResult.data,
-      scenario: scenarioResult.data
+    console.log('API响应结果:', {
+      relative: relativeResult,
+      dcf: dcfResult,
+      dcfData: dcfResult?.data,
+      dcfResult: dcfResult?.data?.result,
+      scenario: scenarioResult
     })
 
+    // 检查API响应状态
+    if (!dcfResult?.data?.success) {
+      throw new Error('DCF估值失败')
+    }
+
     // 存储结果到sessionStorage用于结果页展示
-    sessionStorage.setItem('valuationResults', JSON.stringify({
+    const resultsToStore = {
       relative: relativeResult?.data,
-      dcf: dcfResult.data,
-      scenario: scenarioResult.data,
-      stress: stressResult.data,
-      sensitivity: sensitivityResult.data,
+      dcf: dcfResult?.data,  // dcfResult.data = {success: true, result: {...}}
+      scenario: scenarioResult?.data,
+      stress: stressResult?.data,
+      sensitivity: sensitivityResult?.data,
       company: form.value,
       comparables: comparables.value
-    }))
+    }
+    console.log('准备存储到sessionStorage的数据:', resultsToStore)
+    console.log('DCF数据详情:', resultsToStore.dcf)
 
-    router.push('/valuation/result')
+    // 确保sessionStorage保存完成后再跳转
+    try {
+      console.log('开始序列化数据...')
+      const jsonStr = JSON.stringify(resultsToStore)
+      console.log('序列化后的JSON字符串长度:', jsonStr.length)
+      console.log('JSON字符串预览(前200字符):', jsonStr.substring(0, 200))
+
+      console.log('开始保存到sessionStorage...')
+      sessionStorage.setItem('valuationResults', jsonStr)
+      console.log('✅ sessionStorage.setItem调用成功')
+
+      // 立即验证
+      const stored = sessionStorage.getItem('valuationResults')
+      console.log('验证存储 - 立即读取结果:', stored ? '成功' : 'NULL!')
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored)
+          console.log('验证存储 - 解析成功, 数据键:', Object.keys(parsed))
+          console.log('验证存储 - DCF结果:', parsed.dcf)
+          console.log('验证存储 - 相对估值结果:', parsed.relative)
+        } catch (parseErr) {
+          console.error('验证存储 - JSON解析失败:', parseErr)
+        }
+      } else {
+        console.error('验证存储 - 读取失败,数据未保存!')
+        throw new Error('sessionStorage数据保存失败，无法读取已保存的数据')
+      }
+
+      // 小延迟确保存储完成
+      await nextTick()
+      console.log('即将跳转到结果页...')
+      router.push('/valuation/result')
+      console.log('✅ router.push调用完成')
+    } catch (err: unknown) {
+      console.error('sessionStorage操作失败:', err)
+      if (err instanceof Error) {
+        console.error('错误堆栈:', err.stack)
+        error.value = '数据保存失败:' + err.message
+      } else {
+        error.value = '数据保存失败:未知错误'
+      }
+      loading.value = false
+      return
+    }
   } catch (err: any) {
+    console.error('startValuation发生错误:', err)
     error.value = '估值计算失败: ' + getErrorMessage(err)
-  } finally {
     loading.value = false
+  } finally {
+    if (loading.value) {
+      loading.value = false
+    }
   }
 }
 
@@ -822,6 +983,129 @@ const resetForm = () => {
   outline: none;
   border-color: #667eea;
 }
+
+/* 上市公司Tushare导入区域样式 */
+.tushare-import-section {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border: 1px solid #667eea;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.tushare-input-group {
+  display: flex;
+  gap: 15px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.tushare-input-wrapper {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 250px;
+}
+
+.tushare-label {
+  margin-bottom: 8px;
+  font-weight: 600;
+  color: #333;
+  font-size: 0.95em;
+}
+
+.tushare-input {
+  padding: 12px 16px;
+  border: 2px solid #667eea;
+  border-radius: 6px;
+  font-size: 0.95em;
+  background: white;
+  transition: all 0.2s;
+}
+
+.tushare-input:focus {
+  outline: none;
+  border-color: #5568d3;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.btn-tushare-import {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.95em;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+
+.btn-tushare-import:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.btn-tushare-import:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.stock-import-error {
+  margin-top: 15px;
+  padding: 12px;
+  background: #fee;
+  border: 1px solid #f5c6cb;
+  border-radius: 6px;
+  color: #c62828;
+  font-size: 0.9em;
+}
+
+.stock-import-success {
+  margin-top: 15px;
+  padding: 12px;
+  background: #d4edda;
+  border: 1px solid #c3e6cb;
+  border-radius: 6px;
+  color: #0f5132;
+  font-size: 0.9em;
+  font-weight: 500;
+}
+
+.tushare-hint {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: #fffbeb;
+  border-left: 3px solid #ffa500;
+  border-radius: 4px;
+  color: #666;
+  font-size: 0.85em;
+  line-height: 1.5;
+}
+
+.error-suggestions {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed #f5c6cb;
+}
+
+.error-suggestions p {
+  margin: 8px 0;
+  color: #555;
+}
+
+.error-suggestions ul {
+  margin: 8px 0;
+  padding-left: 20px;
+  color: #666;
+}
+
+.error-suggestions li {
+  margin: 4px 0;
+}
+
 
 .no-comparables {
   text-align: center;

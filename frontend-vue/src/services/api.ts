@@ -97,6 +97,10 @@ export const dataAPI = {
       params: { market_cap_min: marketCapMin, market_cap_max: marketCapMax, limit }
     }),
 
+  // 获取单个股票财务数据（上市公司从Tushare导入）
+  getStockData: (tsCode: string) =>
+    apiClient.get(`/api/data/stock/${tsCode}`),
+
   // 获取行业估值倍数
   getIndustryMultiples: (industry: string, method: string = 'median') =>
     apiClient.get(`/api/data/industry-multiples/${industry}`, {

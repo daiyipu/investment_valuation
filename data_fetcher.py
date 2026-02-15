@@ -159,6 +159,8 @@ class TushareDataFetcher:
             包含财务指标和估值倍数的字典
         """
         try:
+            print(f"\n开始查询股票{ts_code}的财务数据...")
+
             # 获取最新财务指标
             df_fina = self.pro.fina_indicator(
                 ts_code=ts_code,
@@ -166,15 +168,25 @@ class TushareDataFetcher:
                 fields='ts_code,ann_date,end_date,roe,roe_waa,roe_dt,'
                        'roe_yearly,npta,npta_yearly,roe_avg,roe_yearly_avg'
             )
+            print(f"  fina_indicator查询结果: {len(df_fina)}条记录" if not df_fina.empty else "  无数据")
 
-            # 获取最新业绩数据
+            # 获取最新业绩数据（利润表）
             df_performance = self.pro.income(
                 ts_code=ts_code,
                 limit=1,
-                fields='ts_code,ann_date,revenue,operate_profit,total_profit,n_income'
+                fields='ts_code,ann_date,revenue,operate_profit,total_profit,n_income,ebitda,income_tax,int_exp,fin_exp'
+            )
+            print(f"  income查询结果: {len(df_performance)}条记录" if not df_performance.empty else "  无数据")
+
+
+            # 获取资产负债表数据
+            df_balance = self.pro.balancesheet(
+                ts_code=ts_code,
+                limit=1,
+                fields='ts_code,ann_date,total_assets,total_hldr_eqy_exc_min_int,'
+                       'total_liab,total_ncl,total_hldr_eqy_min_int,total_cur_assets'
             )
 
-            # 获取估值指标（日频）
             trade_date = self._get_latest_trade_date()
             df_basic = self.pro.daily_basic(
                 ts_code=ts_code,
@@ -189,6 +201,37 @@ class TushareDataFetcher:
                 perf = df_performance.iloc[0]
                 result['revenue'] = perf['revenue'] if pd.notna(perf['revenue']) else 0
                 result['net_income'] = perf['n_income'] if pd.notna(perf['n_income']) else 0
+                # EBITDA处理：如果Tushare直接提供了ebitda，使用它；否则尝试计算
+                if pd.notna(perf.get('ebitda')):
+                    result['ebitda'] = perf['ebitda']
+                else:
+                    # 尝试计算EBITDA = 净利润 + 所得税 + 利息支出 + 财务费用
+                    n_income = perf.get('n_income', 0) if pd.notna(perf.get('n_income')) else 0
+                    income_tax = perf.get('income_tax', 0) if pd.notna(perf.get('income_tax')) else 0
+                    int_exp = perf.get('int_exp', 0) if pd.notna(perf.get('int_exp')) else 0
+                    fin_exp = perf.get('fin_exp', 0) if pd.notna(perf.get('fin_exp')) else 0
+
+                    # 计算EBITDA
+                    calculated_ebitda = n_income + income_tax + int_exp + fin_exp
+                    if calculated_ebitda > 0:
+                        result['ebitda'] = calculated_ebitda
+                        print(f"  EBITDA已计算: {calculated_ebitda} (净利润{n_income} + 所得税{income_tax} + 利息{int_exp} + 财务费用{fin_exp})")
+                    else:
+                        result['ebitda'] = None
+                        print(f"  无法计算EBITDA：净利润{n_income}, 所得税{income_tax}, 利息{int_exp}, 财务费用{fin_exp}")
+                print(f"  最终EBITDA值: {result.get('ebitda', 'None')}")
+
+            if not df_balance.empty:
+                bal = df_balance.iloc[0]
+                # 净资产 = 股东权益合计 - 少数股东权益
+                result['net_assets'] = (
+                    bal['total_hldr_eqy_exc_min_int'] if pd.notna(bal['total_hldr_eqy_exc_min_int']) else
+                    (bal['total_hldr_eqy_min_int'] if pd.notna(bal['total_hldr_eqy_min_int']) else 0)
+                )
+                # 总债务 = 总负债
+                result['total_debt'] = bal['total_liab'] if pd.notna(bal['total_liab']) else 0
+                # 货币资金（暂时从流动资产估算，或设为0）
+                result['cash_and_equivalents'] = bal.get('total_cur_assets', 0) if pd.notna(bal.get('total_cur_assets')) else 0
 
             if not df_basic.empty:
                 basic = df_basic.iloc[0]
@@ -197,7 +240,30 @@ class TushareDataFetcher:
                 result['pb_ratio'] = basic['pb'] if pd.notna(basic['pb']) else None
                 result['market_cap'] = basic['total_mv'] if pd.notna(basic['total_mv']) else None
 
-            return result if result else None
+            # 获取公司基本信息（名称、行业）
+            df_stock_basic = self.pro.stock_basic(
+                ts_code=ts_code,
+                fields='ts_code,symbol,name,industry,list_status'
+            )
+
+            if not df_stock_basic.empty:
+                stock_info = df_stock_basic.iloc[0]
+                result['name'] = stock_info['name']
+                result['industry'] = stock_info.get('industry', '')
+
+                # 检查股票上市状态
+                list_status = stock_info.get('list_status', '')
+                if list_status == 'D' or list_status == 'L':  # 退市或暂停上市
+                    print(f"股票{ts_code}({stock_info['name']})上市状态: {list_status}，可能无数据")
+                elif not result and not df_performance.empty:
+                    print(f"股票{ts_code}({stock_info['name']})存在但财务数据为空，可能数据未更新")
+
+            # 如果没有任何财务数据，返回None
+            if not result:
+                print(f"股票{ts_code}的财务数据查询结果为空")
+                return None
+
+            return result
 
         except Exception as e:
             print(f"获取{ts_code}财务指标失败: {e}")
@@ -316,19 +382,42 @@ class TushareDataFetcher:
     def _get_latest_trade_date(self) -> str:
         """
         获取最近的交易日（用于获取行情数据）
-        直接使用昨天，简化逻辑
+        使用Tushare交易日历API查询真实的最近交易日
         """
         try:
             # 如果已有缓存，直接返回
             if self._cached_trade_date:
                 return self._cached_trade_date
 
-            # 直接使用昨天的日期
+            # 尝试使用Tushare交易日历API
+            # 先获取最近10天的交易日历
             from datetime import timedelta
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=10)
+            start_date_str = start_date.strftime('%Y%m%d')
+            end_date_str = end_date.strftime('%Y%m%d')
+
+            df_cal = self.pro.trade_cal(
+                exchange='SSE',
+                start_date=start_date_str,
+                end_date=end_date_str,
+                fields='cal_date,is_open'
+            )
+
+            if not df_cal.empty:
+                # 筛选出交易日，取最近的一个
+                trade_days = df_cal[df_cal['is_open'] == 1]['cal_date'].tolist()
+                if trade_days:
+                    latest_trade_day = trade_days[-1]
+                    print(f"获取到最近交易日: {latest_trade_day}")
+                    # 缓存结果
+                    self._cached_trade_date = latest_trade_day
+                    return latest_trade_day
+
+            # 如果API调用失败，回退到简单逻辑
+            print("警告: 交易日历API查询失败，使用简单逻辑")
             yesterday = datetime.now() - timedelta(days=1)
             yesterday_str = yesterday.strftime('%Y%m%d')
-
-            # 缓存结果
             self._cached_trade_date = yesterday_str
             return yesterday_str
 

@@ -706,6 +706,39 @@ async def get_industry_multiples(
         raise HTTPException(status_code=500, detail=f"获取数据失败: {str(e)}")
 
 
+@app.get("/api/data/stock/{ts_code}")
+async def get_stock_financial_data(ts_code: str):
+    """
+    获取单个上市公司的财务数据
+
+    从Tushare获取指定股票代码的完整财务数据，用于估值输入
+    """
+    try:
+        from data_fetcher import TushareDataFetcher
+
+        if not TUSHARE_TOKEN:
+            raise HTTPException(
+                status_code=400,
+                detail="未配置Tushare Token。请先通过 /api/data/tushare/configure 配置"
+            )
+
+        fetcher = TushareDataFetcher(TUSHARE_TOKEN)
+        data = fetcher.get_financial_metrics(ts_code)
+
+        if not data:
+            raise HTTPException(status_code=404, detail=f"未找到股票代码{ts_code}的数据")
+
+        return {
+            "success": True,
+            "ts_code": ts_code,
+            "data": data,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取数据失败: {str(e)}")
+
+
 @app.post("/api/data/search")
 async def search_companies(
     keywords: List[str],

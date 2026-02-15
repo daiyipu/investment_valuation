@@ -7,7 +7,13 @@
     </div>
 
     <div v-if="!results" class="no-data">
-      <p>暂无估值数据</p>
+      <p>⚠️ 暂无估值数据</p>
+      <p class="hint">可能的原因：</p>
+      <ul class="error-list">
+        <li>页面直接访问（请先填写公司数据并开始估值）</li>
+        <li>浏览器缓存或sessionStorage被清空</li>
+        <li>数据保存失败</li>
+      </ul>
       <button @click="$router.push('/valuation')" class="btn-primary">开始估值</button>
     </div>
 
@@ -87,22 +93,54 @@
       <div class="card">
         <div class="card-title">📊 参数敏感性分析</div>
         <div ref="tornadoChart" class="chart"></div>
+
+        <!-- 敏感性参数表格 -->
+        <div class="sensitivity-table-container">
+          <table class="sensitivity-table">
+            <thead>
+              <tr>
+                <th>参数名称</th>
+                <th>估值波动范围</th>
+                <th>影响程度</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(param, name) in sortedSensitivityParams" :key="name" class="sensitivity-row">
+                <td class="sensitivity-parameter">{{ getParameterName(name) }}</td>
+                <td class="sensitivity-value">±{{ formatMoney(param.valuation_range / 2) }}</td>
+                <td class="sensitivity-impact" :class="{ 'high-impact': name === mostSensitiveParam }">
+                  {{ name === mostSensitiveParam ? '⭐ 最大影响' : '一般' }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <!-- 压力测试 -->
       <div class="card">
         <div class="card-title">⚠️ 压力测试结果</div>
-        <div class="stress-results">
-          <div v-for="(test, idx) in results.stress?.report?.tests?.revenue_shock" :key="idx"
-               class="stress-item">
-            <span class="stress-label">{{ test.scenario_description }}</span>
-            <span class="stress-value">
-              {{ formatMoney(test.stressed_value) }}
-              <span :class="test.change_pct < 0 ? 'negative' : 'positive'">
-                ({{ test.change_pct > 0 ? '+' : '' }}{{ formatPercent(test.change_pct) }})
-              </span>
-            </span>
-          </div>
+        <div class="stress-table-container">
+          <table class="stress-table">
+            <thead>
+              <tr>
+                <th>压力情景</th>
+                <th>压力下估值</th>
+                <th>变化幅度</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(test, idx) in sortedStressTests" :key="idx"
+                  class="stress-row"
+                  :class="{ 'extreme-row': test.test_name === '极端市场崩溃测试' }">
+                <td class="stress-scenario">{{ test.scenario_description }}</td>
+                <td class="stress-value">{{ formatMoney(test.stressed_value) }}</td>
+                <td class="stress-change" :class="test.change_pct < 0 ? 'negative' : 'positive'">
+                  {{ test.change_pct > 0 ? '+' : '' }}{{ formatPercent(test.change_pct) }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -183,6 +221,68 @@ const monteCarloData = computed(() => {
 const history = ref<any[]>([])
 const loadingHistory = ref(false)
 
+const sortedSensitivityParams = computed(() => {
+  const params = results.value?.sensitivity?.results?.parameters
+  if (!params) return {}
+
+  // 按照valuation_range排序（从大到小）
+  const entries = Object.entries(params).sort((a: any, b: any) =>
+    (b[1] as any).valuation_range - (a[1] as any).valuation_range
+  )
+
+  // 转换回对象
+  const sorted: Record<string, any> = {}
+  for (const [name, data] of entries) {
+    sorted[name] = data
+  }
+  return sorted
+})
+
+const mostSensitiveParam = computed(() => {
+  const params = results.value?.sensitivity?.results?.parameters
+  if (params) {
+    const entries = Object.entries(params).sort((a: any, b: any) =>
+      b[1].valuation_range - a[1].valuation_range)
+    return entries[0]?.[0] || '--'
+  }
+  return '--'
+})
+
+const sortedStressTests = computed(() => {
+  const revenueTests = results.value?.stress?.report?.tests?.revenue_shock
+  const extremeTest = results.value?.stress?.report?.tests?.extreme_crash
+
+  if ((!revenueTests || revenueTests.length === 0) && !extremeTest) return []
+
+  const allTests: any[] = []
+
+  // 添加收入冲击测试
+  if (revenueTests && revenueTests.length > 0) {
+    allTests.push(...revenueTests)
+  }
+
+  // 添加极端情景（如果存在）
+  if (extremeTest) {
+    allTests.push(extremeTest)
+  }
+
+  // 按照严重程度排序（极端情景放最后）
+  return allTests.sort((a: any, b: any) => {
+    // 极端情景始终排在最后
+    if (a.test_name === '极端市场崩溃测试') return 1
+    if (b.test_name === '极端市场崩溃测试') return -1
+
+    // 其他情况按照冲击幅度排序
+    const getShockPct = (desc: string) => {
+      const match = desc.match(/(\d+(\.\d+)?)/)
+      return match ? parseFloat(match[1] || '0') : 0
+    }
+    const pctA = getShockPct(a.scenario_description)
+    const pctB = getShockPct(b.scenario_description)
+    return pctB - pctA  // 降序排列
+  })
+})
+
 const hasMultipleValuations = computed(() => {
   const hasRelative = results.value?.relative && Object.keys(results.value.relative.results || {}).length > 0
   const hasDCF = results.value?.dcf?.result?.value
@@ -190,15 +290,38 @@ const hasMultipleValuations = computed(() => {
 })
 
 onMounted(async () => {
-  const data = sessionStorage.getItem('valuationResults')
-  if (data) {
-    const parsed = JSON.parse(data)
-    results.value = parsed
-    company.value = parsed.company
+  console.log('=== ValuationResult onMounted 开始 ===')
 
-    await nextTick()
-    initCharts()
+  // 先检查sessionStorage中所有的keys
+  console.log('sessionStorage所有键值:', Object.keys(sessionStorage))
+
+  const data = sessionStorage.getItem('valuationResults')
+  console.log('ValuationResult onMounted - sessionStorage数据:', data)
+  console.log('ValuationResult onMounted - 数据长度:', data?.length)
+  console.log('ValuationResult onMounted - 数据前200字符:', data?.substring(0, 200))
+
+  if (data) {
+    try {
+      const parsed = JSON.parse(data)
+      console.log('ValuationResult onMounted - 解析后的数据:', parsed)
+      console.log('ValuationResult onMounted - DCF数据:', parsed.dcf)
+      console.log('ValuationResult onMounted - 相对估值数据:', parsed.relative)
+      console.log('ValuationResult onMounted - 所有数据键:', Object.keys(parsed))
+
+      results.value = parsed
+      company.value = parsed.company
+
+      await nextTick()
+      initCharts()
+    } catch (parseErr) {
+      console.error('ValuationResult onMounted - JSON解析失败:', parseErr)
+    }
+  } else {
+    console.error('ValuationResult onMounted - sessionStorage中没有valuationResults数据')
+    console.error('ValuationResult onMounted - 请检查是否通过估值页面跳转而来')
   }
+
+  console.log('=== ValuationResult onMounted 结束 ===')
 
   // 加载历史记录
   loadHistory()
@@ -317,7 +440,7 @@ const initCharts = () => {
       for (const [paramName, paramData] of Object.entries(sensitivityData.parameters)) {
         const data = paramData as any
         if (data.valuation_range) {
-          params.push(paramName)
+          params.push(getParameterName(paramName))
           impacts.push((data.valuation_range / 2 / 10000).toFixed(2) as any)
         }
       }
@@ -393,6 +516,17 @@ const getMethodName = (method: string) => {
     '综合': '综合估值'
   }
   return names[method] || method
+}
+
+const getParameterName = (param: string) => {
+  const names: Record<string, string> = {
+    'revenue_growth': '收入增长率',
+    'operating_margin': '营业利润率',
+    'wacc': '加权平均资本成本 (WACC)',
+    'terminal_growth': '终值增长率',
+    'perpetual_growth': '永续增长率'
+  }
+  return names[param] || param
 }
 
 const getRecommendedValue = () => {
@@ -539,6 +673,25 @@ const formatDate = (dateStr: string) => {
   border-radius: 12px;
 }
 
+.no-data .hint {
+  color: #666;
+  font-size: 0.9em;
+  margin: 15px 0;
+}
+
+.no-data .error-list {
+  text-align: left;
+  max-width: 400px;
+  margin: 0 auto;
+  color: #555;
+  font-size: 0.85em;
+}
+
+.no-data .error-list li {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
 .card {
   background: white;
   padding: 25px;
@@ -669,33 +822,156 @@ const formatDate = (dateStr: string) => {
   font-size: 1em;
 }
 
-.stress-results {
-  display: grid;
-  gap: 10px;
+.stress-table-container {
+  overflow-x: auto;
+  margin-top: 10px;
 }
 
-.stress-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 15px;
-  background: #f8f9fa;
+.stress-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
   border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-.stress-label {
-  color: #555;
+.stress-table thead {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.stress-table th {
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 600;
   font-size: 0.95em;
 }
 
+.stress-table tbody tr {
+  border-bottom: 1px solid #f0f0f0;
+  transition: background 0.2s;
+}
+
+.stress-table tbody tr:hover {
+  background: #f8f9fa;
+}
+
+.stress-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.stress-table td {
+  padding: 12px 16px;
+  color: #333;
+}
+
+.stress-scenario {
+  font-weight: 500;
+  color: #555;
+}
+
 .stress-value {
-  font-size: 1.1em;
+  font-weight: 600;
   color: #667eea;
+}
+
+.stress-change {
+  font-weight: 600;
+  font-size: 0.95em;
+}
+
+.stress-change.positive {
+  color: #ee6666;
+}
+
+.stress-change.negative {
+  color: #91cc75;
+}
+
+.sensitivity-table-container {
+  overflow-x: auto;
+  margin-top: 20px;
+}
+
+.sensitivity-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.sensitivity-table thead {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.sensitivity-table th {
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.95em;
+}
+
+.sensitivity-table tbody tr {
+  border-bottom: 1px solid #f0f0f0;
+  transition: background 0.2s;
+}
+
+.sensitivity-table tbody tr:hover {
+  background: #f8f9fa;
+}
+
+.sensitivity-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.sensitivity-table td {
+  padding: 12px 16px;
+  color: #333;
+}
+
+.sensitivity-parameter {
+  font-weight: 500;
+  color: #555;
+}
+
+.sensitivity-value {
+  font-weight: 600;
+  color: #667eea;
+}
+
+.sensitivity-impact {
+  font-weight: 600;
+  font-size: 0.9em;
+  color: #999;
+}
+
+.sensitivity-impact.high-impact {
+  color: #ee6666;
+  font-weight: 700;
+}
+
+.stress-row.extreme-row {
+  background: linear-gradient(135deg, #fff5f5 0%, #ffe0e0 100%);
   font-weight: 500;
 }
 
-.stress-value .positive { color: #91cc75; }
-.stress-value .negative { color: #ee6666; }
+.stress-row.extreme-row:hover {
+  background: linear-gradient(135deg, #ffe8e8 0%, #ffd6d6 100%);
+}
+
+.stress-row.extreme-row .stress-scenario {
+  color: #cc0000;
+  font-weight: 600;
+}
+
+.stress-row.extreme-row .stress-change {
+  font-weight: 700;
+  font-size: 1.05em;
+}
 
 .monte-carlo-stats {
   display: grid;

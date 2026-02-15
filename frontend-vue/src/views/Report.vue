@@ -1,7 +1,7 @@
 <template>
   <div class="report">
     <div class="header">
-      <h1>📄 综合估值报告</h1>
+      <h1>📊 综合估值报告</h1>
       <p>{{ company?.name }} - {{ company?.industry }}</p>
     </div>
 
@@ -22,6 +22,11 @@
           <div class="summary-item">
             <span class="summary-label">推荐估值</span>
             <span class="summary-value primary">{{ formatMoney(getRecommendedValue()) }}</span>
+            <span class="summary-method">（中位数）</span>
+          </div>
+          <div class="summary-item" v-if="getUsedMethods().length > 0">
+            <span class="summary-label">参考方法</span>
+            <span class="summary-methods">{{ getUsedMethods().join(' + ') }}</span>
           </div>
           <div class="summary-item">
             <span class="summary-label">估值区间</span>
@@ -34,6 +39,19 @@
       <div class="card">
         <div class="card-title">估值方法</div>
         <div class="methods-list">
+          <!-- 相对估值方法 -->
+          <template v-if="results.relative?.results && Object.keys(results.relative.results).length > 0">
+            <div v-for="(result, method) in results.relative.results" :key="method" class="method-item">
+              <div class="method-header">
+                <span class="method-name">{{ getRelativeMethodName(method) }}</span>
+                <span class="method-value">{{ formatMoney(result.value) }}</span>
+              </div>
+              <div v-if="result.value_low && result.value_high" class="method-details">
+                区间: {{ formatMoney(result.value_low) }} - {{ formatMoney(result.value_high) }}
+              </div>
+            </div>
+          </template>
+
           <!-- DCF估值 -->
           <div class="method-item">
             <div class="method-header">
@@ -42,7 +60,7 @@
             </div>
             <div class="method-details">
               WACC: {{ formatPercent(results.dcf?.result?.details?.wacc) }} |
-              终值占比: {{ getTerminalValuePercent() }}%
+              终值占比: {{ getTerminalPercent() }}%
             </div>
           </div>
 
@@ -99,17 +117,52 @@
 
         <div class="risk-section">
           <h3>压力测试</h3>
-          <p class="risk-text">
-            在收入下降30%的极端情景下，估值下降约
-            <strong>{{ getStressImpact() }}</strong>
-          </p>
+          <div class="stress-table-container">
+            <table class="stress-table">
+              <thead>
+                <tr>
+                  <th>压力情景</th>
+                  <th>压力下估值</th>
+                  <th>变化幅度</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(test, idx) in getStressTests()" :key="idx"
+                    class="stress-row"
+                    :class="{ 'extreme-row': test.test_name === '极端市场崩溃测试' }">
+                  <td class="stress-scenario">{{ test.scenario_description }}</td>
+                  <td class="stress-value">{{ formatMoney(test.stressed_value) }}</td>
+                  <td class="stress-change" :class="test.change_pct < 0 ? 'negative' : 'positive'">
+                    {{ test.change_pct > 0 ? '+' : '' }}{{ formatPercent(test.change_pct) }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div class="risk-section">
           <h3>敏感性分析</h3>
-          <p class="risk-text">
-            <strong>{{ getMostSensitive() }}</strong>是对估值影响最大的参数
-          </p>
+          <div class="sensitivity-table-container">
+            <table class="sensitivity-table">
+              <thead>
+                <tr>
+                  <th>参数名称</th>
+                  <th>估值波动范围</th>
+                  <th>影响程度</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(param, name) in sortedSensitivityParams" :key="name" class="sensitivity-row">
+                  <td class="sensitivity-parameter">{{ getParameterName(name) }}</td>
+                  <td class="sensitivity-value">±{{ formatMoney(param.valuation_range / 2) }}</td>
+                  <td class="sensitivity-impact" :class="{ 'high-impact': name === mostSensitiveParam }">
+                    {{ name === mostSensitiveParam ? '⭐ 最大影响' : '一般' }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -134,7 +187,7 @@
 
       <!-- 导出按钮 -->
       <div class="actions">
-        <button @click="exportReport" class="btn-primary">📥 导出报告</button>
+        <button @click="printReport" class="btn-primary">🖨️ 打印/导出PDF</button>
         <button @click="$router.push('/valuation')" class="btn-secondary">重新估值</button>
       </div>
     </template>
@@ -157,7 +210,43 @@ onBeforeMount(() => {
 })
 
 const getRecommendedValue = () => {
-  return results.value?.dcf?.result?.value || 0
+  const values: number[] = []
+
+  // 收集所有估值方法的结果
+  if (results.value?.dcf?.result?.value) {
+    values.push(results.value.dcf.result.value)
+  }
+
+  if (results.value?.relative?.results) {
+    for (const result of Object.values(results.value.relative.results)) {
+      if ((result as any).value) {
+        values.push((result as any).value)
+      }
+    }
+  }
+
+  if (values.length === 0) return 0
+
+  // 返回中位数
+  values.sort((a, b) => a - b)
+  const mid = Math.floor(values.length / 2)
+  return values.length % 2 !== 0 ? values[mid] : (values[mid - 1] + values[mid]) / 2
+}
+
+const getUsedMethods = () => {
+  const methods: string[] = []
+
+  if (results.value?.dcf?.result?.value) {
+    methods.push('DCF')
+  }
+
+  if (results.value?.relative?.results) {
+    for (const method of Object.keys(results.value.relative.results)) {
+      methods.push(getRelativeMethodName(method))
+    }
+  }
+
+  return methods
 }
 
 const getValueRange = () => {
@@ -167,7 +256,7 @@ const getValueRange = () => {
   return `${low} - ${high} 亿元`
 }
 
-const getTerminalValuePercent = () => {
+const getTerminalPercent = () => {
   const pvTerminal = results.value?.dcf?.result?.details?.pv_terminal || 0
   const total = results.value?.dcf?.result?.value || 1
   return ((pvTerminal / total) * 100).toFixed(1)
@@ -184,25 +273,78 @@ const getScenarios = () => {
   return filtered
 }
 
+const getStressTests = () => {
+  const revenueTests = results.value?.stress?.report?.tests?.revenue_shock
+  const extremeTest = results.value?.stress?.report?.tests?.extreme_crash
+
+  if ((!revenueTests || revenueTests.length === 0) && !extremeTest) return []
+
+  const allTests: any[] = []
+
+  // 添加收入冲击测试
+  if (revenueTests && revenueTests.length > 0) {
+    allTests.push(...revenueTests)
+  }
+
+  // 添加极端情景（如果存在）
+  if (extremeTest) {
+    allTests.push(extremeTest)
+  }
+
+  // 按照严重程度排序（极端情景放最后）
+  return allTests.sort((a: any, b: any) => {
+    // 极端情景始终排在最后
+    if (a.test_name === '极端市场崩溃测试') return 1
+    if (b.test_name === '极端市场崩溃测试') return -1
+
+    // 其他情况按照冲击幅度排序
+    const getShockPct = (desc: string) => {
+      const match = desc.match(/(\d+(\.\d+)?)/)
+      return match ? parseFloat(match[0]) : 0
+    }
+    const pctA = getShockPct(a.scenario_description)
+    const pctB = getShockPct(b.scenario_description)
+    return pctB - pctA // 降序排列
+  })
+}
+
 const getStressImpact = () => {
-  const shocks = results.value?.stress?.report?.tests?.revenue_shock
-  if (shocks && shocks.length > 0) {
-    const impact = shocks[0].change_pct
+  const tests = getStressTests()
+  if (tests.length > 0) {
+    const impact = tests[0].change_pct
     return (impact * 100).toFixed(1) + '%'
   }
   return '--'
 }
 
 const getMaxDownside = () => {
-  const shocks = results.value?.stress?.report?.tests?.revenue_shock
-  if (shocks && shocks.length > 0) {
-    const minChange = Math.min(...shocks.map((t: any) => t.change_pct))
+  // 使用所有压力测试（包括极端情景）
+  const tests = getStressTests()
+  if (tests && tests.length > 0) {
+    const minChange = Math.min(...tests.map((t: any) => t.change_pct))
     return (minChange * 100).toFixed(1) + '%'
   }
   return '--'
 }
 
-const getMostSensitive = () => {
+const sortedSensitivityParams = computed(() => {
+  const params = results.value?.sensitivity?.results?.parameters
+  if (!params) return {}
+
+  // 按照valuation_range排序（从大到小）
+  const entries = Object.entries(params).sort((a: any, b: any) =>
+    (b[1] as any).valuation_range - (a[1] as any).valuation_range
+  )
+
+  // 转换回对象
+  const sorted: Record<string, any> = {}
+  for (const [name, data] of entries) {
+    sorted[name] = data
+  }
+  return sorted
+})
+
+const mostSensitiveParam = computed(() => {
   const params = results.value?.sensitivity?.results?.parameters
   if (params) {
     const entries = Object.entries(params).sort((a: any, b: any) =>
@@ -210,7 +352,7 @@ const getMostSensitive = () => {
     return entries[0]?.[0] || '--'
   }
   return '--'
-}
+})
 
 const getRecommendationLevel = () => {
   return 'hold'
@@ -220,58 +362,83 @@ const getRecommendationText = () => {
   return '中性持有'
 }
 
-// 获取相对估值结果
-const getRelativeValuation = () => {
-  const rel = results.value?.relative?.result
+const getSafetyMargin = () => {
+  return '20%'
+}
 
-  if (!rel || !rel.value) {
-    return {
-      pe_valuation: null,
-      ps_valuation: null,
-      pb_valuation: null,
-      ev_valuation: null,
-      pe_ratio: null,
-      ps_ratio: null,
-      pb_ratio: null,
-      ev_ebitda: null,
-      comparables: [],
-      hasData: false
+const getRelativeMethodName = (method: string) => {
+  const names: Record<string, string> = {
+    'PE': '市盈率法 (P/E)',
+    'PS': '市销率法 (P/S)',
+    'PB': '市净率法 (P/B)',
+    'EV_EBITDA': 'EV/EBITDA法'
+  }
+  return names[method] || method
+}
+
+const getParameterName = (param: string) => {
+  const names: Record<string, string> = {
+    'revenue_growth': '收入增长率',
+    'operating_margin': '营业利润率',
+    'wacc': '加权平均资本成本 (WACC)',
+    'terminal_growth': '终值增长率',
+    'perpetual_growth': '永续增长率'
+  }
+  return names[param] || param
+}
+
+const formatMoney = (value: number | string | undefined) => {
+  if (value === undefined || value === null) return '--'
+  const numValue = typeof value === 'string' ? parseFloat(value) : value
+  if (isNaN(numValue)) return '--'
+  return (numValue / 10000).toFixed(2) + ' 亿元'
+}
+const formatPercent = (value: number | undefined) => {
+  if (value === undefined || value === null || isNaN(value)) return '--'
+  return (value * 100).toFixed(2) + '%'
+}
+
+// 浏览器打印/导出PDF
+const printReport = () => {
+  if (!results.value) {
+    alert('暂无数据可打印')
+    return
+  }
+
+  // 触发浏览器打印
+  window.print()
+}
+
+// 添加打印样式
+const printStyles = `
+  @media print {
+    body * {
+      visibility: hidden;
+    }
+    .report, .report * {
+      visibility: visible;
+    }
+    .report {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      background: white;
+    }
+    .actions, .no-data {
+      display: none;
+    }
+    @page {
+      margin: 1cm;
     }
   }
+`
 
-  // 计算各项估值
-  const hasComparables = rel.comparables && rel.comparables.length > 0
-
-  return {
-    pe_valuation: rel.pe_ratio ? (form.value?.revenue || 0) / rel.pe_ratio : null,
-    ps_valuation: rel.ps_ratio ? (form.value?.revenue || 0) / rel.ps_ratio : null,
-    pb_valuation: rel.pb_ratio ? (form.value?.net_assets || 0) / rel.pb_ratio : null,
-    ev_valuation: rel.ev_ebitda ? (form.value?.ebitda || 0 + form.value?.net_income || 0) * (1 - 0.25) : null,
-    pe_ratio: rel.pe_ratio,
-    ps_ratio: rel.ps_ratio,
-    pb_ratio: rel.pb_ratio,
-    ev_ebitda: rel.ev_ebitda,
-    comparables: rel.comparables || [],
-    hasData: hasComparables
-  }
-}
-
-// 获取推荐估值（综合DCF和相对估值）
-const getRecommendedValue = () => {
-  const dcfValue = results.value?.dcf?.result?.value || 0
-  const relativeValue = getRelativeValuation().pe_valuation || 0
-
-  // 简单平均
-  const avgValue = (dcfValue + relativeValue) / 2
-
-  return avgValue.toFixed(2)
-}
-
-const formatMoney = (value: number) => (value / 10000).toFixed(2) + ' 亿元'
-const formatPercent = (value: number) => (value * 100).toFixed(2) + '%'
-
-const exportReport = () => {
-  alert('报告导出功能开发中...\n\n可复制页面内容或使用浏览器打印功能保存为PDF')
+// 动态添加打印样式
+if (typeof document !== 'undefined') {
+  const style = document.createElement('style')
+  style.textContent = printStyles
+  document.head.appendChild(style)
 }
 </script>
 
@@ -298,7 +465,7 @@ const exportReport = () => {
 
 .no-data {
   text-align: center;
-  padding: 60px;
+  padding: 60px 20px;
   background: white;
   border-radius: 12px;
 }
@@ -353,6 +520,13 @@ const exportReport = () => {
   color: #667eea;
 }
 
+.summary-method {
+  display: block;
+  font-size: 0.85em;
+  color: #666;
+  margin-top: 4px;
+}
+
 .methods-list {
   display: flex;
   flex-direction: column;
@@ -368,7 +542,6 @@ const exportReport = () => {
 .method-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
   margin-bottom: 10px;
 }
 
@@ -395,6 +568,8 @@ const exportReport = () => {
 .risk-section h3 {
   color: #333;
   margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #667eea;
 }
 
 .scenario-table {
@@ -411,9 +586,155 @@ const exportReport = () => {
   border-radius: 4px;
 }
 
-.risk-text {
+.stress-table-container {
+  overflow-x: auto;
+  margin-top: 10px;
+}
+
+.stress-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.stress-table thead {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.stress-table th {
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.95em;
+}
+
+.stress-table tbody tr {
+  border-bottom: 1px solid #f0f0f0;
+  transition: background 0.2s;
+}
+
+.stress-table tbody tr:hover {
+  background: #f8f9fa;
+}
+
+.stress-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.stress-table td {
+  padding: 12px 16px;
+  color: #333;
+}
+
+.stress-scenario {
+  font-weight: 500;
   color: #555;
-  line-height: 1.6;
+}
+
+.stress-value {
+  font-weight: 600;
+  color: #667eea;
+}
+
+.stress-change {
+  font-weight: 600;
+  font-size: 0.95em;
+}
+
+.stress-change.positive {
+  color: #ee6666;
+}
+
+.stress-change.negative {
+  color: #91cc75;
+}
+
+.stress-row.extreme-row {
+  background: linear-gradient(135deg, #fff5f5 0%, #ffe0e0 100%);
+  font-weight: 500;
+}
+
+.stress-row.extreme-row:hover {
+  background: linear-gradient(135deg, #ffe8e8 0%, #ffd6d6 100%);
+}
+
+.stress-row.extreme-row .stress-scenario {
+  color: #cc0000;
+  font-weight: 600;
+}
+
+.stress-row.extreme-row .stress-change {
+  font-weight: 700;
+  font-size: 1.05em;
+}
+
+.sensitivity-table-container {
+  overflow-x: auto;
+  margin-top: 10px;
+}
+
+.sensitivity-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.sensitivity-table thead {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.sensitivity-table th {
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.95em;
+}
+
+.sensitivity-table tbody tr {
+  border-bottom: 1px solid #f0f0f0;
+  transition: background 0.2s;
+}
+
+.sensitivity-table tbody tr:hover {
+  background: #f8f9fa;
+}
+
+.sensitivity-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.sensitivity-table td {
+  padding: 12px 16px;
+  color: #333;
+}
+
+.sensitivity-parameter {
+  font-weight: 500;
+  color: #555;
+}
+
+.sensitivity-value {
+  font-weight: 600;
+  color: #667eea;
+}
+
+.sensitivity-impact {
+  font-weight: 600;
+  font-size: 0.9em;
+  color: #999;
+}
+
+.sensitivity-impact.high-impact {
+  color: #ee6666;
+  font-weight: 700;
 }
 
 .recommendation {
@@ -455,6 +776,11 @@ const exportReport = () => {
   line-height: 1.8;
 }
 
+.recommendation-reasons li {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
 .actions {
   display: flex;
   justify-content: center;
@@ -470,6 +796,7 @@ const exportReport = () => {
   font-size: 16px;
   cursor: pointer;
   transition: all 0.3s;
+  font-weight: 500;
 }
 
 .btn-primary {
