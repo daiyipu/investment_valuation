@@ -349,6 +349,132 @@ class MonteCarloResult:
         }
 
 
+@dataclass
+class ProductSegment:
+    """产品/业务线数据模型"""
+    # 基本信息
+    name: str                                # 产品/业务线名称
+
+    # 财务数据（当前年度）
+    current_revenue: float                   # 当前收入（万元）
+    revenue_weight: float                    # 收入占比（0-1）
+
+    # 增长参数
+    growth_rate_years: List[float] = field(default_factory=lambda: [0.15] * 5)  # 未来5年每年的增长率
+    terminal_growth_rate: float = 0.025      # 永续增长率
+
+    # 盈利能力参数
+    gross_margin: float = 0.5                # 毛利率（0-1）
+    operating_margin: float = 0.2            # 营业利润率（0-1）
+
+    # 资本效率参数
+    capex_ratio: float = 0.05                # 资本支出/收入
+    wc_change_ratio: float = 0.02            # 营运资金变化/收入
+    depreciation_ratio: float = 0.03         # 折旧摊销/收入
+
+    # 其他
+    description: Optional[str] = None        # 产品描述
+    beta: Optional[float] = None             # 贝塔系数（如为空则使用公司整体β）
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            'name': self.name,
+            'description': self.description,
+            'current_revenue': self.current_revenue,
+            'revenue_weight': self.revenue_weight,
+            'growth_rate_years': self.growth_rate_years,
+            'terminal_growth_rate': self.terminal_growth_rate,
+            'gross_margin': self.gross_margin,
+            'operating_margin': self.operating_margin,
+            'capex_ratio': self.capex_ratio,
+            'wc_change_ratio': self.wc_change_ratio,
+            'depreciation_ratio': self.depreciation_ratio,
+            'beta': self.beta,
+        }
+
+
+@dataclass
+class ProductValuationResult:
+    """单个产品的估值结果"""
+    product_name: str
+    revenue_weight: float
+
+    # 现值明细
+    pv_forecasts: float  # 预测期现值
+    pv_terminal: float   # 终值现值
+    enterprise_value: float  # 企业价值
+
+    # 加权后的价值贡献
+    weighted_value: float  # 企业价值 × 权重
+
+    # 现金流预测
+    fcf_forecasts: List[Dict[str, float]]
+
+    # 关键指标
+    current_revenue: float
+    terminal_revenue: float
+    revenue_cagr: float  # 复合增长率
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            'product_name': self.product_name,
+            'revenue_weight': self.revenue_weight,
+            'pv_forecasts': self.pv_forecasts,
+            'pv_terminal': self.pv_terminal,
+            'enterprise_value': self.enterprise_value,
+            'weighted_value': self.weighted_value,
+            'fcf_forecasts': self.fcf_forecasts,
+            'current_revenue': self.current_revenue,
+            'terminal_revenue': self.terminal_revenue,
+            'revenue_cagr': self.revenue_cagr,
+        }
+
+
+@dataclass
+class MultiProductValuationResult:
+    """多产品估值总结果"""
+    # 整体估值
+    total_enterprise_value: float
+    total_equity_value: float
+    wacc: float
+
+    # 分产品明细
+    product_results: List[ProductValuationResult]
+
+    # 价值分解
+    value_breakdown: Dict[str, float]  # 产品名 -> 价值贡献
+
+    # 汇总数据
+    total_revenue: float
+    revenue_by_product: Dict[str, float]
+
+    # 分析指标
+    product_contribution: List[Dict]  # 各产品价值贡献占比
+
+    # 现金流汇总
+    consolidated_fcf_forecasts: List[Dict]  # 叠加后的公司现金流
+
+    # 元数据
+    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            'total_enterprise_value': self.total_enterprise_value,
+            'total_equity_value': self.total_equity_value,
+            'wacc': self.wacc,
+            'product_results': [r.to_dict() for r in self.product_results],
+            'value_breakdown': self.value_breakdown,
+            'total_revenue': self.total_revenue,
+            'revenue_by_product': self.revenue_by_product,
+            'product_contribution': self.product_contribution,
+            'consolidated_fcf_forecasts': self.consolidated_fcf_forecasts,
+            'timestamp': self.timestamp,
+        }
+
+
 if __name__ == "__main__":
     # 测试数据模型
     company = Company(

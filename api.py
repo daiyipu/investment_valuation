@@ -8,13 +8,14 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 import os
 
-from models import Company, Comparable, CompanyStage, ValuationResult, ScenarioConfig
+from models import Company, Comparable, CompanyStage, ValuationResult, ScenarioConfig, ProductSegment
 from relative_valuation import RelativeValuation
 from absolute_valuation import AbsoluteValuation
 from other_methods import OtherValuationMethods
 from scenario_analysis import ScenarioAnalyzer
 from stress_test import StressTester
 from sensitivity_analysis import SensitivityAnalyzer
+from multi_product_valuation import MultiProductValuation, validate_products
 from database import DatabaseManager
 
 # 初始化数据库
@@ -183,6 +184,82 @@ class RelativeValuationRequest(BaseModel):
     company: CompanyInput
     comparables: List[ComparableInput]
     methods: Optional[List[str]] = None
+
+
+class ProductSegmentInput(BaseModel):
+    """产品/业务线输入模型"""
+    name: str = Field(..., description="产品/业务线名称")
+    description: Optional[str] = Field(None, description="产品描述")
+
+    # 财务数据（当前年度）
+    current_revenue: float = Field(..., description="当前收入（万元）", gt=0)
+    revenue_weight: float = Field(..., description="收入占比（0-1）", ge=0, le=1)
+
+    # 增长参数
+    growth_rate_years: List[float] = Field(
+        default=[0.15, 0.15, 0.15, 0.15, 0.15],
+        description="未来5年每年的增长率"
+    )
+    terminal_growth_rate: float = Field(0.025, description="永续增长率")
+
+    # 盈利能力参数
+    gross_margin: float = Field(0.5, description="毛利率（0-1）", ge=0, le=1)
+    operating_margin: float = Field(0.2, description="营业利润率（0-1）", ge=0, le=1)
+
+    # 资本效率参数
+    capex_ratio: float = Field(0.05, description="资本支出/收入", ge=0)
+    wc_change_ratio: float = Field(0.02, description="营运资金变化/收入", ge=0)
+    depreciation_ratio: float = Field(0.03, description="折旧摊销/收入", ge=0)
+
+    # 风险参数
+    beta: Optional[float] = Field(None, description="贝塔系数（如为空则使用公司整体β）", ge=0)
+
+    def to_product_segment(self) -> ProductSegment:
+        """转换为ProductSegment对象"""
+        return ProductSegment(
+            name=self.name,
+            description=self.description,
+            current_revenue=self.current_revenue,
+            revenue_weight=self.revenue_weight,
+            growth_rate_years=self.growth_rate_years,
+            terminal_growth_rate=self.terminal_growth_rate,
+            gross_margin=self.gross_margin,
+            operating_margin=self.operating_margin,
+            capex_ratio=self.capex_ratio,
+            wc_change_ratio=self.wc_change_ratio,
+            depreciation_ratio=self.depreciation_ratio,
+            beta=self.beta,
+        )
+
+
+class MultiProductValuationRequest(BaseModel):
+    """多产品估值请求模型"""
+    company_name: str = Field(..., description="公司名称")
+    industry: str = Field(..., description="所属行业")
+    products: List[ProductSegmentInput] = Field(
+        ...,
+        description="产品/业务线列表",
+        min_items=1,
+        max_items=10
+    )
+
+    # 公司整体参数
+    tax_rate: float = Field(0.25, description="所得税率", ge=0, le=1)
+    risk_free_rate: float = Field(0.03, description="无风险利率")
+    market_risk_premium: float = Field(0.07, description="市场风险溢价")
+    cost_of_debt: float = Field(0.05, description="债务成本")
+
+    # 资本结构
+    target_debt_ratio: float = Field(0.3, description="目标资产负债率", ge=0, le=1)
+    total_debt: float = Field(0, description="总债务（万元）", ge=0)
+    cash_and_equivalents: float = Field(0, description="货币资金（万元）", ge=0)
+
+    # DCF参数
+    projection_years: int = Field(5, description="预测年数", ge=3, le=10)
+    terminal_method: str = Field("perpetuity", description="终值计算方法")
+
+    # 公司整体β（当产品无β时使用）
+    company_beta: float = Field(1.0, description="公司整体贝塔系数")
 
 
 # ===== API端点 =====
@@ -414,6 +491,71 @@ async def compare_valuation(
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# ===== 多产品估值API =====
+
+@app.post("/api/valuation/multi-product-dcf")
+async def multi_product_dcf(request: MultiProductValuationRequest):
+    """
+    多产品DCF估值
+
+    支持对公司多个产品/业务线分别估值，然后叠加得到公司整体估值
+
+    **使用场景**：
+    - 公司有多个产品线，各产品增长率、利润率不同
+    - 需要精细化估值，反映不同业务的差异
+    - 需要分析各业务对整体价值的贡献
+
+    **输入参数**：
+    - company_name: 公司名称
+    - industry: 所属行业
+    - products: 产品列表（1-10个）
+      - 每个产品包含：收入、占比、增长率、利润率等参数
+    - 公司整体参数：税率、WACC参数、资本结构等
+
+    **输出结果**：
+    - 整体估值：企业价值、股权价值
+    - 分产品估值明细：各产品的企业价值、加权价值
+    - 价值贡献分析：各产品对整体价值的贡献占比
+    - 分产品现金流预测
+    - 合并后的公司现金流
+    """
+    try:
+        # 转换产品列表
+        products = [p.to_product_segment() for p in request.products]
+
+        # 验证产品列表
+        is_valid, error_msg = validate_products(products)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+
+        # 执行多产品估值
+        result = MultiProductValuation.multi_product_dcf_valuation(
+            products=products,
+            company_beta=request.company_beta,
+            tax_rate=request.tax_rate,
+            risk_free_rate=request.risk_free_rate,
+            market_risk_premium=request.market_risk_premium,
+            cost_of_debt=request.cost_of_debt,
+            target_debt_ratio=request.target_debt_ratio,
+            total_debt=request.total_debt,
+            cash_and_equivalents=request.cash_and_equivalents,
+            projection_years=request.projection_years,
+            terminal_method=request.terminal_method,
+        )
+
+        return {
+            "success": True,
+            "company": request.company_name,
+            "industry": request.industry,
+            "method": "多产品DCF法",
+            "result": result.to_dict(),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"估值失败: {str(e)}")
 
 
 # ===== 情景分析API =====
