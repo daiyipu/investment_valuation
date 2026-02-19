@@ -922,7 +922,7 @@ const startValuation = async () => {
           description: p.description || undefined,
           current_revenue: p.current_revenue,
           revenue_weight: p.revenue_weight,
-          growth_rate_years: p.growth_rate_years,
+          growth_rate_years: p.growth_rate_years.map(g => g / 100),
           terminal_growth_rate: p.terminal_growth_rate / 100,
           gross_margin: p.gross_margin / 100,
           operating_margin: p.operating_margin / 100,
