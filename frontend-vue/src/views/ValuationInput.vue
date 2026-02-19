@@ -45,7 +45,129 @@
       </div>
     </div>
 
+    <!-- 估值模式切换 -->
     <div class="form-card">
+      <div class="section-title">估值模式</div>
+      <div class="mode-switch">
+        <button
+          :class="['mode-btn', valuationMode === 'single' ? 'active' : '']"
+          @click="valuationMode = 'single'"
+          type="button">
+          单产品估值
+        </button>
+        <button
+          :class="['mode-btn', valuationMode === 'multi' ? 'active' : '']"
+          @click="valuationMode = 'multi'"
+          type="button">
+          多产品估值
+        </button>
+      </div>
+      <div class="mode-description">
+        <template v-if="valuationMode === 'single'">
+          单产品模式：使用统一的增长率、利润率等参数对公司整体估值
+        </template>
+        <template v-else>
+          多产品模式：支持对多个产品/业务线分别估值，反映不同业务的差异
+        </template>
+      </div>
+    </div>
+
+    <!-- 多产品输入界面 -->
+    <div v-if="valuationMode === 'multi'" class="form-card">
+      <div class="section-title">
+        产品/业务线配置
+        <span class="weight-indicator" :class="{ 'error': Math.abs(totalWeight - 1) > 0.01 }">
+          权重总和: {{ (totalWeight * 100).toFixed(1) }}%
+        </span>
+      </div>
+
+      <div class="products-header">
+        <button @click="addProduct" class="btn-add" type="button">
+          ➕ 添加产品
+        </button>
+        <span class="products-count">共 {{ products.length }} 个产品</span>
+      </div>
+
+      <div class="products-list">
+        <div v-for="(product, index) in products" :key="index" class="product-card">
+          <div class="product-header">
+            <div class="product-title">产品 {{ index + 1 }}</div>
+            <button
+              v-if="products.length > 1"
+              @click="removeProduct(index)"
+              class="btn-remove-product"
+              type="button">
+              ✕ 删除
+            </button>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label>产品名称 *</label>
+              <input v-model="product.name" type="text" placeholder="例如：云服务" />
+            </div>
+            <div class="form-group">
+              <label>产品描述</label>
+              <input v-model="product.description" type="text" placeholder="可选" />
+            </div>
+            <div class="form-group">
+              <label>当前收入(万元) *</label>
+              <input v-model.number="product.current_revenue" type="number" placeholder="50000" min="0" />
+            </div>
+            <div class="form-group">
+              <label>收入占比(%) *</label>
+              <input v-model.number="product.revenue_weight" type="number" placeholder="60" min="0" max="100" step="1" />
+            </div>
+          </div>
+
+          <div class="product-section">
+            <div class="product-section-title">增长率（未来5年）</div>
+            <div class="growth-years-input">
+              <div v-for="(year, idx) in 5" :key="idx" class="year-input">
+                <label>第{{ year }}年</label>
+                <input
+                  v-model.number="product.growth_rate_years[idx]"
+                  type="number"
+                  placeholder="15"
+                  min="-50"
+                  max="100"
+                  step="1" />
+                <span>%</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label>永续增长率(%)</label>
+              <input v-model.number="product.terminal_growth_rate" type="number" step="0.5" placeholder="2.5" />
+            </div>
+            <div class="form-group">
+              <label>毛利率(%)</label>
+              <input v-model.number="product.gross_margin" type="number" placeholder="65" min="0" max="100" />
+            </div>
+            <div class="form-group">
+              <label>营业利润率(%)</label>
+              <input v-model.number="product.operating_margin" type="number" placeholder="25" min="0" max="100" />
+            </div>
+            <div class="form-group">
+              <label>β系数（可选）</label>
+              <input v-model.number="product.beta" type="number" step="0.1" placeholder="留空使用公司整体β" />
+            </div>
+            <div class="form-group">
+              <label>资本支出/收入(%)</label>
+              <input v-model.number="product.capex_ratio" type="number" placeholder="5" min="0" max="100" />
+            </div>
+            <div class="form-group">
+              <label>营运资金变化/收入(%)</label>
+              <input v-model.number="product.wc_change_ratio" type="number" placeholder="2" min="0" max="100" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="valuationMode === 'single'" class="form-card">
       <div class="section-title">财务数据(单位: 万元)</div>
 
       <!-- 上市公司Tushare导入区域 -->
@@ -347,6 +469,27 @@ const form = ref({
 const comparables = ref<any[]>([])
 const loading = ref(false)
 const error = ref('')
+
+// 多产品估值模式
+const valuationMode = ref<'single' | 'multi'>('single') // 单产品/多产品模式
+
+// 多产品数据
+const products = ref<any[]>([
+  {
+    name: '产品A',
+    description: '',
+    current_revenue: 50000,
+    revenue_weight: 0.6,
+    growth_rate_years: [25, 20, 15, 10, 8],
+    terminal_growth_rate: 3,
+    gross_margin: 65,
+    operating_margin: 25,
+    capex_ratio: 5,
+    wc_change_ratio: 2,
+    depreciation_ratio: 3,
+    beta: null
+  }
+])
 
 // 上市公司Tushare导入相关
 const stockCode = ref('')
@@ -751,6 +894,7 @@ const getErrorMessage = (err: any): string => {
 
 const startValuation = async () => {
   console.log('=== 开始估值按钮被点击 ===')
+  console.log('当前模式:', valuationMode.value)
   console.log('当前表单数据:', JSON.parse(JSON.stringify(form.value)))
 
   error.value = ''
@@ -759,6 +903,78 @@ const startValuation = async () => {
   console.log('loading.value已设为true,按钮应该显示"计算中..."')
 
   try {
+    // 多产品估值模式
+    if (valuationMode.value === 'multi') {
+      console.log('使用多产品估值模式')
+
+      // 验证产品数据
+      if (!validateProducts()) {
+        loading.value = false
+        return
+      }
+
+      // 准备多产品估值请求数据
+      const multiProductRequest = {
+        company_name: form.value.name,
+        industry: form.value.industry,
+        products: products.value.map(p => ({
+          name: p.name,
+          description: p.description || undefined,
+          current_revenue: p.current_revenue,
+          revenue_weight: p.revenue_weight,
+          growth_rate_years: p.growth_rate_years,
+          terminal_growth_rate: p.terminal_growth_rate / 100,
+          gross_margin: p.gross_margin / 100,
+          operating_margin: p.operating_margin / 100,
+          capex_ratio: p.capex_ratio / 100,
+          wc_change_ratio: p.wc_change_ratio / 100,
+          depreciation_ratio: p.depreciation_ratio / 100,
+          beta: p.beta
+        })),
+        tax_rate: 0.25, // 可以从表单添加
+        risk_free_rate: form.value.risk_free_rate,
+        market_risk_premium: form.value.market_risk_premium,
+        cost_of_debt: 0.05,
+        target_debt_ratio: 0.3,
+        total_debt: form.value.total_debt,
+        cash_and_equivalents: form.value.cash_and_equivalents,
+        projection_years: 5,
+        terminal_method: 'perpetuity',
+        company_beta: form.value.beta
+      }
+
+      console.log('多产品估值请求:', multiProductRequest)
+
+      // 调用多产品估值API
+      const multiProductResult = await valuationAPI.multiProductDCF(multiProductRequest)
+
+      console.log('多产品估值结果:', multiProductResult.data)
+
+      if (!multiProductResult.data?.success) {
+        throw new Error('多产品估值失败')
+      }
+
+      // 存储结果到sessionStorage
+      const resultsToStore = {
+        multiProduct: multiProductResult.data.result,
+        valuationMode: 'multi',
+        company: form.value,
+        products: products.value
+      }
+
+      console.log('准备存储到sessionStorage的数据:', resultsToStore)
+
+      const jsonStr = JSON.stringify(resultsToStore)
+      sessionStorage.setItem('valuationResults', jsonStr)
+
+      await nextTick()
+      router.push('/valuation/result')
+      console.log('✅ 多产品估值完成，跳转到结果页')
+
+      return
+    }
+
+    // 单产品估值模式（原有逻辑）
     const company = {
       ...form.value,
       growth_rate: form.value.growth_rate / 100,
@@ -815,7 +1031,8 @@ const startValuation = async () => {
       stress: stressResult?.data,
       sensitivity: sensitivityResult?.data,
       company: form.value,
-      comparables: comparables.value
+      comparables: comparables.value,
+      valuationMode: 'single'
     }
     console.log('准备存储到sessionStorage的数据:', resultsToStore)
     console.log('DCF数据详情:', resultsToStore.dcf)
@@ -895,6 +1112,87 @@ const resetForm = () => {
   }
   comparables.value = []
 }
+
+// ===== 多产品管理函数 =====
+
+// 添加产品
+const addProduct = () => {
+  if (products.value.length >= 10) {
+    error.value = '最多只能添加10个产品'
+    return
+  }
+
+  const newProduct = {
+    name: `产品${String.fromCharCode(65 + products.value.length)}`,
+    description: '',
+    current_revenue: 0,
+    revenue_weight: 0,
+    growth_rate_years: [15, 15, 15, 15, 15],
+    terminal_growth_rate: 2.5,
+    gross_margin: 50,
+    operating_margin: 20,
+    capex_ratio: 5,
+    wc_change_ratio: 2,
+    depreciation_ratio: 3,
+    beta: null
+  }
+
+  products.value.push(newProduct)
+  updateProductWeights()
+}
+
+// 删除产品
+const removeProduct = (index: number) => {
+  if (products.value.length <= 1) {
+    error.value = '至少需要保留1个产品'
+    return
+  }
+  products.value.splice(index, 1)
+  updateProductWeights()
+}
+
+// 更新产品权重（自动均分）
+const updateProductWeights = () => {
+  const count = products.value.length
+  const weight = 1 / count
+  products.value.forEach(p => {
+    p.revenue_weight = Math.round(weight * 100) / 100
+  })
+}
+
+// 验证产品数据
+const validateProducts = () => {
+  // 检查权重总和
+  const totalWeight = products.value.reduce((sum, p) => sum + (p.revenue_weight || 0), 0)
+  if (Math.abs(totalWeight - 1) > 0.01) {
+    error.value = `产品权重总和应为100%，当前为${(totalWeight * 100).toFixed(1)}%`
+    return false
+  }
+
+  // 检查每个产品的必填字段
+  for (let i = 0; i < products.value.length; i++) {
+    const p = products.value[i]
+    if (!p.name || p.name.trim() === '') {
+      error.value = `产品${i + 1}的名称不能为空`
+      return false
+    }
+    if (!p.current_revenue || p.current_revenue <= 0) {
+      error.value = `产品${p.name}的当前收入必须大于0`
+      return false
+    }
+    if (!p.revenue_weight || p.revenue_weight <= 0 || p.revenue_weight > 1) {
+      error.value = `产品${p.name}的权重必须在0-100%之间`
+      return false
+    }
+  }
+
+  return true
+}
+
+// 计算总权重
+const totalWeight = computed(() => {
+  return products.value.reduce((sum, p) => sum + (p.revenue_weight || 0), 0)
+})
 </script>
 
 <style scoped>
@@ -1583,5 +1881,182 @@ const resetForm = () => {
   border-radius: 4px;
   color: #667eea;
   font-size: 0.9em;
+}
+
+/* 估值模式切换 */
+.mode-switch {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.mode-btn {
+  flex: 1;
+  padding: 12px 24px;
+  border: 2px solid #ddd;
+  background: white;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 500;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.mode-btn:hover {
+  border-color: #667eea;
+  color: #667eea;
+}
+
+.mode-btn.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-color: #667eea;
+  color: white;
+}
+
+.mode-description {
+  padding: 12px 16px;
+  background: #f8f9fa;
+  border-radius: 6px;
+  color: #666;
+  font-size: 0.95em;
+  line-height: 1.6;
+}
+
+/* 多产品配置 */
+.weight-indicator {
+  margin-left: auto;
+  padding: 6px 12px;
+  background: #e8f4ff;
+  border-radius: 4px;
+  color: #667eea;
+  font-weight: 600;
+}
+
+.weight-indicator.error {
+  background: #ffe8e8;
+  color: #dc3545;
+}
+
+.products-header {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #eee;
+}
+
+.products-count {
+  color: #666;
+  font-size: 0.95em;
+}
+
+.products-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.product-card {
+  background: #fafafa;
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  padding: 20px;
+  transition: box-shadow 0.3s;
+}
+
+.product-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.product-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #ddd;
+}
+
+.product-title {
+  font-size: 1.1em;
+  font-weight: 600;
+  color: #333;
+}
+
+.btn-remove-product {
+  padding: 6px 12px;
+  background: #fff;
+  border: 1px solid #dc3545;
+  color: #dc3545;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.btn-remove-product:hover {
+  background: #dc3545;
+  color: white;
+}
+
+.product-section {
+  margin: 20px 0;
+  padding: 15px;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+}
+
+.product-section-title {
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 15px;
+}
+
+.growth-years-input {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 15px;
+}
+
+.year-input {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.year-input label {
+  font-size: 0.85em;
+  color: #666;
+}
+
+.year-input input {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.year-input span {
+  text-align: center;
+  font-size: 0.85em;
+  color: #999;
+}
+
+.btn-remove-product {
+  padding: 6px 12px;
+  background: #fff;
+  border: 1px solid #dc3545;
+  color: #dc3545;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.btn-remove-product:hover {
+  background: #dc3545;
+  color: white;
 }
 </style>

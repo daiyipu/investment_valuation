@@ -23,6 +23,9 @@ export const valuationAPI = {
       methods
     }),
 
+  // 多产品DCF估值
+  multiProductDCF: (request: any) => apiClient.post('/api/valuation/multi-product-dcf', request),
+
   // 多方法交叉验证
   compare: (company: any, comparables?: any[]) =>
     apiClient.post('/api/valuation/compare', {
