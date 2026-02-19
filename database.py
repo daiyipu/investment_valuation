@@ -3,13 +3,13 @@
 """
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, DateTime, Float, Text, create_engine
-from sqlalchemy.orm import DeclarativeBase, Session
+from sqlalchemy.orm import declarative_base, Session
 from pydantic import BaseModel
 from typing import Optional, List
 
 
 # SQLAlchemy 声明式基类
-Base = DeclarativeBase()
+Base = declarative_base()
 
 
 # 估值历史记录表
@@ -130,7 +130,8 @@ class DatabaseManager:
 
     def create_tables(self):
         """创建所有表"""
-        Base.metadata.create_all(self.engine)
+        engine = self.get_engine()
+        Base.metadata.create_all(engine)
 
     def init_history(self, company_data: dict, results: dict) -> int:
         """初始化估值历史记录"""
