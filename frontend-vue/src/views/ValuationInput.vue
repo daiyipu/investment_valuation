@@ -1438,8 +1438,14 @@ const totalWeight = computed(() => {
 
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: repeat(2, 1fr);  /* 固定2列 */
   gap: 15px;
+}
+
+@media (max-width: 768px) {
+  .form-grid {
+    grid-template-columns: 1fr;  /* 小屏幕单列 */
+  }
 }
 
 .form-group {
@@ -1958,9 +1964,15 @@ const totalWeight = computed(() => {
 
 .filter-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(2, 1fr);  /* 固定2列 */
   gap: 10px;
   margin-top: 10px;
+}
+
+@media (max-width: 768px) {
+  .filter-grid {
+    grid-template-columns: 1fr;  /* 小屏幕单列 */
+  }
 }
 
 .filter-grid > div {
@@ -2343,8 +2355,14 @@ const totalWeight = computed(() => {
 
 .growth-years-input {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  grid-template-columns: repeat(2, 1fr);  /* 固定2列 */
   gap: 15px;
+}
+
+@media (max-width: 768px) {
+  .growth-years-input {
+    grid-template-columns: 1fr;  /* 小屏幕单列 */
+  }
 }
 
 .year-input {
