@@ -7,12 +7,21 @@
 
     <div class="form-card">
       <div class="section-title">公司基本信息</div>
-      <div class="form-grid">
+      <div class="form-grid company-info-grid">
         <div class="form-group">
           <label>公司名称</label>
           <input v-model="form.name" type="text" placeholder="输入公司名称" />
         </div>
         <div class="form-group">
+          <label>发展阶段</label>
+          <select v-model="form.stage">
+            <option value="早期">早期</option>
+            <option value="成长期">成长期</option>
+            <option value="成熟期">成熟期</option>
+            <option value="上市公司">上市公司</option>
+          </select>
+        </div>
+        <div class="form-group form-group-full-width">
           <label>所属行业(申万三级分类)</label>
           <div class="industry-cascade">
             <select v-model="selectedL1" @change="onL1Change" class="industry-select">
@@ -27,20 +36,11 @@
               <option value="">请选择三级行业...</option>
               <option v-for="l3 in l3Industries" :key="l3.code" :value="l3.code">{{ l3.name }}</option>
             </select>
+            <input v-model="form.industry" type="hidden" />
           </div>
-          <input v-model="form.industry" type="hidden" />
           <div class="industry-selected" v-if="form.industry">
             已选择: {{ selectedIndustryPath }}
           </div>
-        </div>
-        <div class="form-group">
-          <label>发展阶段</label>
-          <select v-model="form.stage">
-            <option value="早期">早期</option>
-            <option value="成长期">成长期</option>
-            <option value="成熟期">成熟期</option>
-            <option value="上市公司">上市公司</option>
-          </select>
         </div>
       </div>
     </div>
@@ -429,6 +429,72 @@
       </div>
     </div>
 
+    <!-- 高级配置（情景分析、敏感性分析、压力测试参数） -->
+    <div class="form-card">
+      <div class="section-title">
+        ⚙️ 高级配置
+        <button
+          @click="showAdvancedConfig = !showAdvancedConfig"
+          class="btn-toggle"
+          type="button">
+          {{ showAdvancedConfig ? '收起 ▲' : '展开 ▼' }}
+        </button>
+      </div>
+
+      <div v-if="showAdvancedConfig" class="advanced-config-content">
+        <!-- 情景分析参数 -->
+        <div class="config-section">
+          <h4 class="config-title">📈 情景分析参数</h4>
+          <div class="scenario-grid">
+            <div class="scenario-item">
+              <div class="scenario-label">乐观情景</div>
+              <div class="scenario-inputs">
+                <div class="input-group">
+                  <label>收入增长调整</label>
+                  <input type="number" v-model.number="scenarioParams.bull.revenue_growth_adj" step="5" placeholder="%" />
+                  <span class="input-unit">%</span>
+                </div>
+                <div class="input-group">
+                  <label>利润率调整</label>
+                  <input type="number" v-model.number="scenarioParams.bull.margin_adj" step="1" placeholder="%" />
+                  <span class="input-unit">%</span>
+                </div>
+                <div class="input-group">
+                  <label>WACC调整</label>
+                  <input type="number" v-model.number="scenarioParams.bull.wacc_adj" step="0.5" placeholder="%" />
+                  <span class="input-unit">%</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="scenario-item">
+              <div class="scenario-label">悲观情景</div>
+              <div class="scenario-inputs">
+                <div class="input-group">
+                  <label>收入增长调整</label>
+                  <input type="number" v-model.number="scenarioParams.bear.revenue_growth_adj" step="5" placeholder="%" />
+                  <span class="input-unit">%</span>
+                </div>
+                <div class="input-group">
+                  <label>利润率调整</label>
+                  <input type="number" v-model.number="scenarioParams.bear.margin_adj" step="1" placeholder="%" />
+                  <span class="input-unit">%</span>
+                </div>
+                <div class="input-group">
+                  <label>WACC调整</label>
+                  <input type="number" v-model.number="scenarioParams.bear.wacc_adj" step="0.5" placeholder="%" />
+                  <span class="input-unit">%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="config-hint">
+            💡 参数调整说明：正数表示增加，负数表示减少。例如：收入增长调整 +20% 表示在基准增长率基础上增加20个百分点
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="actions">
       <button class="btn btn-primary" @click="startValuation" :disabled="loading" onclick="console.log('原生点击事件触发!')">
         {{ loading ? '计算中...' : '🚀 开始估值' }}
@@ -469,6 +535,21 @@ const form = ref({
 const comparables = ref<any[]>([])
 const loading = ref(false)
 const error = ref('')
+
+// 高级配置
+const showAdvancedConfig = ref(false)
+const scenarioParams = ref({
+  bull: {
+    revenue_growth_adj: 20,    // 乐观情景：收入增长+20%
+    margin_adj: 5,              // 利润率+5%
+    wacc_adj: -1                // WACC-1%
+  },
+  bear: {
+    revenue_growth_adj: -20,   // 悲观情景：收入增长-20%
+    margin_adj: -5,             // 利润率-5%
+    wacc_adj: 2                 // WACC+2%
+  }
+})
 
 // 多产品估值模式
 const valuationMode = ref<'single' | 'multi'>('single') // 单产品/多产品模式
@@ -928,7 +1009,7 @@ const startValuation = async () => {
           description: p.description || undefined,
           current_revenue: p.current_revenue,
           revenue_weight: p.revenue_weight,
-          growth_rate_years: p.growth_rate_years.map(g => g / 100),
+          growth_rate_years: p.growth_rate_years.map((g: number) => g / 100),
           terminal_growth_rate: p.terminal_growth_rate / 100,
           gross_margin: p.gross_margin / 100,
           operating_margin: p.operating_margin / 100,
@@ -961,7 +1042,7 @@ const startValuation = async () => {
       }
 
       // 存储结果到sessionStorage（包含相对估值）
-      const resultsToStore = {
+      const resultsToStore: any = {
         multiProduct: multiProductResult.data.result,
         valuationMode: 'multi',
         company: form.value,
@@ -1074,9 +1155,25 @@ const startValuation = async () => {
     console.log('可比公司数量:', comparables.value.length)
 
     // 并行执行多个估值请求
+    // 准备情景分析参数
+    const scenarios = [
+      {
+        name: '乐观情景',
+        revenue_growth_adj: scenarioParams.value.bull.revenue_growth_adj / 100,
+        margin_adj: scenarioParams.value.bull.margin_adj / 100,
+        wacc_adj: scenarioParams.value.bull.wacc_adj / 100
+      },
+      {
+        name: '悲观情景',
+        revenue_growth_adj: scenarioParams.value.bear.revenue_growth_adj / 100,
+        margin_adj: scenarioParams.value.bear.margin_adj / 100,
+        wacc_adj: scenarioParams.value.bear.wacc_adj / 100
+      }
+    ]
+
     const requests = [
       valuationAPI.dcf(company),
-      scenarioAPI.analyze(company),
+      scenarioAPI.analyze(company, scenarios),
       stressTestAPI.full(company),
       sensitivityAPI.comprehensive(company)
     ]
@@ -1357,6 +1454,52 @@ const totalWeight = computed(() => {
   font-size: 0.9em;
 }
 
+/* 公司基本信息对齐优化 */
+.company-info-grid {
+  grid-template-columns: 1fr 1fr;  /* 2列布局 */
+}
+
+.company-info-grid .form-group {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  flex-wrap: wrap;  /* 允许换行 */
+}
+
+.company-info-grid .form-group label {
+  min-width: 100px;
+  max-width: 100px;
+  margin-bottom: 0;
+  margin-right: 10px;
+  padding-top: 10px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.company-info-grid .form-group input,
+.company-info-grid .form-group select {
+  flex: 1;
+}
+
+/* 所属行业占据整行 */
+.company-info-grid .form-group-full-width {
+  grid-column: 1 / -1;  /* 跨越所有列 */
+}
+
+/* 行业选择特殊处理 */
+.company-info-grid .form-group .industry-cascade {
+  flex: 1;
+  display: flex;
+  flex-wrap: nowrap;  /* 不换行，确保3个select在一行 */
+  gap: 10px;
+}
+
+.company-info-grid .form-group .industry-selected {
+  width: 100%;
+  margin-left: 0;  /* 左对齐，从最左边开始 */
+  margin-top: 8px;
+}
+
 .form-group input,
 .form-group select {
   padding: 10px;
@@ -1594,6 +1737,105 @@ const totalWeight = computed(() => {
   border-radius: 8px;
   margin-top: 20px;
   text-align: center;
+}
+
+/* 高级配置样式 */
+.btn-toggle {
+  background: transparent;
+  color: #667eea;
+  border: 1px solid #667eea;
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85em;
+  margin-left: auto;
+  transition: all 0.3s;
+}
+
+.btn-toggle:hover {
+  background: #667eea;
+  color: white;
+}
+
+.advanced-config-content {
+  margin-top: 20px;
+}
+
+.config-section {
+  margin-bottom: 25px;
+}
+
+.config-section:last-child {
+  margin-bottom: 0;
+}
+
+.config-title {
+  margin: 0 0 15px 0;
+  font-size: 1em;
+  color: #333;
+  font-weight: 600;
+}
+
+.scenario-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.scenario-item {
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 6px;
+  border-left: 4px solid #667eea;
+}
+
+.scenario-label {
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 12px;
+  font-size: 0.95em;
+}
+
+.scenario-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.input-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.input-group label {
+  flex: 0 0 80px;
+  font-size: 0.85em;
+  color: #555;
+}
+
+.input-group input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.input-unit {
+  flex: 0 0 20px;
+  font-size: 0.85em;
+  color: #666;
+}
+
+.config-hint {
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: #fff3cd;
+  border-left: 3px solid #ffc107;
+  border-radius: 4px;
+  font-size: 0.85em;
+  color: #856404;
 }
 
 /* 导入选项 */
@@ -1947,10 +2189,6 @@ const totalWeight = computed(() => {
   padding: 8px 12px;
   border: 1px solid #ddd;
   border-radius: 4px;
-  font-size: 14px;
-  background: white;
-  cursor: pointer;
-  transition: border-color 0.3s;
 }
 
 .industry-select:hover:not(:disabled) {
