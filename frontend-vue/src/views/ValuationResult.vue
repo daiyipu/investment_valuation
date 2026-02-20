@@ -201,15 +201,23 @@
       <template v-if="!isMultiProduct">
       <!-- DCF估值结果 -->
       <div class="card">
-        <div class="card-title">💰 DCF绝对估值</div>
+        <div class="card-title">💰 DCF绝对估值 - 企业价值分解</div>
         <div class="result-highlight">
           <span class="label">股权价值</span>
           <span class="value">{{ formatMoney(results.dcf?.result?.value) }}</span>
         </div>
         <div class="result-grid">
           <div class="result-item">
+            <span class="result-label">企业价值</span>
+            <span class="result-value">{{ formatMoney((results.dcf?.result?.value || 0) + (results.company?.total_debt || 0) - (results.company?.cash_and_equivalents || 0)) }}</span>
+          </div>
+          <div class="result-item">
             <span class="result-label">WACC</span>
             <span class="result-value">{{ formatPercent(results.dcf?.result?.details?.wacc) }}</span>
+          </div>
+          <div class="result-item">
+            <span class="result-label">当前收入</span>
+            <span class="result-value">{{ formatMoney(results.company?.revenue) }}</span>
           </div>
           <div class="result-item">
             <span class="result-label">预测期现值</span>
@@ -222,6 +230,27 @@
           <div class="result-item">
             <span class="result-label">终值占比</span>
             <span class="result-value">{{ getTerminalPercent() }}%</span>
+          </div>
+        </div>
+        <div class="info-note">
+          💡 <strong>企业价值构成</strong>：预测期现值（5年现金流折现）+ 终值现值（永续增长价值折现）
+        </div>
+      </div>
+
+      <!-- 价值构成分析（单产品模式） -->
+      <div v-if="!isMultiProduct && results.dcf?.result?.details" class="card">
+        <div class="card-title">📊 企业价值构成分析</div>
+        <div ref="valueCompositionChart" class="chart"></div>
+        <div class="value-composition-details">
+          <div class="composition-item">
+            <span class="composition-label">预测期现值（5年）</span>
+            <span class="composition-value">{{ formatMoney(results.dcf.result.details.pv_forecasts) }}</span>
+            <span class="composition-percent">{{ ((results.dcf.result.details.pv_forecasts / (results.dcf.result.details.pv_forecasts + results.dcf.result.details.pv_terminal)) * 100).toFixed(1) }}%</span>
+          </div>
+          <div class="composition-item">
+            <span class="composition-label">终值现值（永续增长）</span>
+            <span class="composition-value">{{ formatMoney(results.dcf.result.details.pv_terminal) }}</span>
+            <span class="composition-percent">{{ ((results.dcf.result.details.pv_terminal / (results.dcf.result.details.pv_forecasts + results.dcf.result.details.pv_terminal)) * 100).toFixed(1) }}%</span>
           </div>
         </div>
       </div>
@@ -364,6 +393,7 @@ const results = ref<any>(null)
 const company = ref<any>(null)
 const relativeChart = ref<HTMLElement>()
 const comparisonChart = ref<HTMLElement>()
+const valueCompositionChart = ref<HTMLElement>()
 const scenarioChart = ref<HTMLElement>()
 const tornadoChart = ref<HTMLElement>()
 const monteCarloChart = ref<HTMLElement>()
@@ -584,6 +614,57 @@ const initCharts = () => {
 
   // 初始化相对估值图表
   initRelativeChart()
+
+  // 初始化价值构成图表（单产品模式）
+  if (valueCompositionChart.value && results.value.dcf?.result?.details) {
+    const chart = echarts.init(valueCompositionChart.value)
+    const details = results.value.dcf.result.details
+    const pvForecasts = details.pv_forecasts || 0
+    const pvTerminal = details.pv_terminal || 0
+
+    chart.setOption({
+      title: { text: '企业价值构成', left: 'center' },
+      tooltip: {
+        trigger: 'item',
+        formatter: '{a} <br/>{b}: {c} 万元 ({d}%)'
+      },
+      legend: {
+        orient: 'vertical',
+        left: 'left'
+      },
+      series: [
+        {
+          name: '企业价值',
+          type: 'pie',
+          radius: ['40%', '70%'],
+          avoidLabelOverlap: false,
+          label: {
+            show: true,
+            formatter: '{b}: {d}%'
+          },
+          emphasis: {
+            label: {
+              show: true,
+              fontSize: '16',
+              fontWeight: 'bold'
+            }
+          },
+          data: [
+            {
+              value: pvForecasts,
+              name: '预测期现值（5年）',
+              itemStyle: { color: '#667eea' }
+            },
+            {
+              value: pvTerminal,
+              name: '终值现值（永续增长）',
+              itemStyle: { color: '#764ba2' }
+            }
+          ]
+        }
+      ]
+    })
+  }
 
   // 初始化综合估值对比图表
   if (comparisonChart.value && hasMultipleValuations.value) {
@@ -1667,6 +1748,46 @@ const formatDate = (dateStr: string) => {
   border-radius: 6px;
   font-size: 0.9em;
   color: #555;
+}
+
+.value-composition-details {
+  margin-top: 20px;
+  padding: 16px;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.composition-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.composition-item:last-child {
+  border-bottom: none;
+}
+
+.composition-label {
+  flex: 1;
+  font-weight: 500;
+  color: #333;
+}
+
+.composition-value {
+  flex: 1;
+  text-align: right;
+  font-weight: 600;
+  color: #667eea;
+}
+
+.composition-percent {
+  flex: 0 0 80px;
+  text-align: right;
+  font-weight: 700;
+  font-size: 1.1em;
+  color: #764ba2;
 }
 
 .product-cashflow-section {
