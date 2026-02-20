@@ -1133,7 +1133,7 @@ const formatDate = (dateStr: string) => {
 <style scoped>
 .valuation-result {
   padding: 20px;
-  max-width: 900px;  /* 统一缩小，更紧凑 */
+  max-width: 1200px;  /* 与情景分析、压力测试页面保持一致 */
   margin: 0 auto;
 }
 
