@@ -167,8 +167,8 @@ class MultiProductValuation:
         else:
             revenue_cagr = 0
 
-        # 加权价值（按收入占比）
-        weighted_value = enterprise_value * product.revenue_weight
+        # 不再使用加权价值，直接使用企业价值
+        # weighted_value 保留用于显示收入贡献占比，但不用于总价值计算
 
         return ProductValuationResult(
             product_name=product.name,
@@ -176,7 +176,7 @@ class MultiProductValuation:
             pv_forecasts=pv_forecasts,
             pv_terminal=pv_terminal,
             enterprise_value=enterprise_value,
-            weighted_value=weighted_value,
+            weighted_value=enterprise_value,  # 改为直接使用企业价值
             fcf_forecasts=fcf_forecasts,
             current_revenue=product.current_revenue,
             terminal_revenue=terminal_revenue,
@@ -209,19 +209,18 @@ class MultiProductValuation:
             year_wc_change = 0
             year_fcf = 0
 
-            # 叠加所有产品的现金流
+            # 叠加所有产品的现金流（不再使用权重，因为current_revenue已经是绝对值）
             for result in product_results:
                 if year <= len(result.fcf_forecasts):
                     forecast = result.fcf_forecasts[year - 1]
-                    # 使用加权后的现金流
-                    weight = result.revenue_weight
-                    year_revenue += forecast['revenue'] * weight
-                    year_operating_profit += forecast['operating_profit'] * weight
-                    year_nopat += forecast['nopat'] * weight
-                    year_depreciation += forecast['depreciation'] * weight
-                    year_capex += forecast['capex'] * weight
-                    year_wc_change += forecast['wc_change'] * weight
-                    year_fcf += forecast['fcf'] * weight
+                    # 直接累加，不使用权重
+                    year_revenue += forecast['revenue']
+                    year_operating_profit += forecast['operating_profit']
+                    year_nopat += forecast['nopat']
+                    year_depreciation += forecast['depreciation']
+                    year_capex += forecast['capex']
+                    year_wc_change += forecast['wc_change']
+                    year_fcf += forecast['fcf']
 
             consolidated.append({
                 'year': year,
@@ -305,20 +304,20 @@ class MultiProductValuation:
             total_revenue += product.current_revenue
             revenue_by_product[product.name] = product.current_revenue
 
-        # 叠加所有产品的价值
-        total_enterprise_value = sum(r.weighted_value for r in product_results)
+        # 叠加所有产品的价值（直接使用企业价值，不使用加权价值）
+        total_enterprise_value = sum(r.enterprise_value for r in product_results)
 
         # 计算股权价值
         net_debt = total_debt - cash_and_equivalents
         total_equity_value = total_enterprise_value - net_debt
 
-        # 价值分解
-        value_breakdown = {r.product_name: r.weighted_value for r in product_results}
+        # 价值分解（使用企业价值）
+        value_breakdown = {r.product_name: r.enterprise_value for r in product_results}
 
-        # 产品价值贡献分析
+        # 产品价值贡献分析（基于实际企业价值）
         product_contribution = []
         for result in product_results:
-            contribution = result.weighted_value / total_enterprise_value if total_enterprise_value > 0 else 0
+            contribution = result.enterprise_value / total_enterprise_value if total_enterprise_value > 0 else 0
             product_contribution.append({
                 'product': result.product_name,
                 'contribution': contribution,

@@ -902,10 +902,16 @@ const startValuation = async () => {
 
   console.log('loading.value已设为true,按钮应该显示"计算中..."')
 
+  // 重要：检查可比公司数据
+  console.log('========== 开始估值检查 ==========')
+  console.log('估值模式:', valuationMode.value)
+  console.log('可比公司数量:', comparables.value.length)
+  console.log('可比公司数据:', comparables.value)
+
   try {
     // 多产品估值模式
     if (valuationMode.value === 'multi') {
-      console.log('使用多产品估值模式')
+      console.log('========== 使用多产品估值模式 ==========')
 
       // 验证产品数据
       if (!validateProducts()) {
@@ -954,12 +960,95 @@ const startValuation = async () => {
         throw new Error('多产品估值失败')
       }
 
-      // 存储结果到sessionStorage
+      // 存储结果到sessionStorage（包含相对估值）
       const resultsToStore = {
         multiProduct: multiProductResult.data.result,
         valuationMode: 'multi',
         company: form.value,
-        products: products.value
+        products: products.value,
+        // 如果有可比公司，也获取相对估值结果
+        ...(comparables.value.length > 0 ? {
+          comparables: comparables.value,
+          hasComparables: true
+        } : {})
+      }
+
+      // 如果有可比公司，并行获取相对估值
+      // 捕获当前comparables的快照，避免reactive引用问题
+      const comparablesSnapshot = [...comparables.value]
+      console.log('========== 多产品相对估值检查 ==========')
+      console.log('comparables.value长度:', comparables.value.length)
+      console.log('comparablesSnapshot长度:', comparablesSnapshot.length)
+      console.log('comparables.value内容:', comparables.value)
+      console.log('comparablesSnapshot内容:', comparablesSnapshot)
+
+      if (comparablesSnapshot.length > 0) {
+        console.log('✅ 检测到可比公司，数量:', comparablesSnapshot.length)
+        console.log('开始获取相对估值结果...')
+        try {
+          // 准备公司数据用于相对估值
+          // 准备公司数据用于相对估值
+          // 计算多产品的汇总财务数据
+          const totalRevenue = products.value.reduce((sum, p) => sum + p.current_revenue, 0)
+          const totalNetIncome = products.value.reduce((sum, p) =>
+            sum + p.current_revenue * p.operating_margin / 100, 0) * (1 - 0.25) // 估算净利润（税率25%）
+          const totalEBITDA = products.value.reduce((sum, p) =>
+            sum + p.current_revenue * p.operating_margin / 100 * 1.2, 0) // 粗略估算EBITDA
+
+          // 构造完整的公司对象，符合后端CompanyInput模型要求
+          const companyForRelative = {
+            ...form.value,  // 包含所有必需字段（name, industry, stage, beta等）
+            revenue: totalRevenue,
+            net_income: totalNetIncome,
+            ebitda: totalEBITDA,
+            net_assets: form.value.net_assets,
+            total_debt: form.value.total_debt,
+            cash_and_equivalents: form.value.cash_and_equivalents,
+            growth_rate: totalRevenue / form.value.revenue - 1, // 基于总收入增长计算
+            operating_margin: totalNetIncome / totalRevenue, // 综合营业利润率
+          }
+
+          console.log('多产品模式相对估值请求参数:', companyForRelative)
+          console.log('可比公司数据:', comparablesSnapshot)
+          console.log('即将调用valuationAPI.relative，参数:', {
+            company: companyForRelative,
+            comparables: comparablesSnapshot,
+            methods: undefined
+          })
+
+          const relativeResult = await valuationAPI.relative(companyForRelative, comparablesSnapshot)
+          console.log('相对估值API完整响应:', relativeResult)
+          console.log('相对估值API响应.data:', relativeResult.data)
+          console.log('相对估值API响应.data.success:', relativeResult.data?.success)
+          console.log('相对估值API响应.status:', relativeResult.status)
+          console.log('相对估值API响应.statusText:', relativeResult.statusText)
+
+          if (relativeResult.data?.success) {
+            resultsToStore.relative = relativeResult.data  // 存储整个data对象，与单产品模式保持一致
+            console.log('✅ 相对估值数据已添加到结果中, resultsToStore.relative:', resultsToStore.relative)
+          } else {
+            console.warn('⚠️ 相对估值API返回success=false或无success字段')
+            console.warn('响应数据:', relativeResult.data)
+            // 存储错误信息用于调试
+            resultsToStore.relativeError = {
+              message: 'API返回success=false',
+              response: relativeResult.data
+            }
+          }
+        } catch (relErr) {
+          console.error('❌ 相对估值获取异常:', relErr)
+          console.error('错误详情:', (relErr as any).message)
+          console.error('错误堆栈:', (relErr as any).stack)
+          // 存储异常信息用于调试
+          resultsToStore.relativeError = {
+            message: (relErr as any).message,
+            stack: (relErr as any).stack
+          }
+          // 不抛出错误，允许多产品估值继续进行
+        }
+      } else {
+        console.log('ℹ️ 未添加可比公司，跳过相对估值')
+        resultsToStore.noComparablesReason = 'comparablesSnapshot.length为0'
       }
 
       console.log('准备存储到sessionStorage的数据:', resultsToStore)

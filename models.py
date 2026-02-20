@@ -405,8 +405,8 @@ class ProductValuationResult:
     pv_terminal: float   # 终值现值
     enterprise_value: float  # 企业价值
 
-    # 加权后的价值贡献
-    weighted_value: float  # 企业价值 × 权重
+    # 价值贡献（等于企业价值，用于向后兼容）
+    weighted_value: float  # 现在等于 enterprise_value（不再使用revenue_weight加权）
 
     # 现金流预测
     fcf_forecasts: List[Dict[str, float]]
