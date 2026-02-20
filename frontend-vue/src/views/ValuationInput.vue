@@ -1384,7 +1384,7 @@ const totalWeight = computed(() => {
 <style scoped>
 .valuation-input {
   padding: 20px;
-  max-width: 1200px;
+  max-width: 1000px;  /* 与结果页面保持一致 */
   margin: 0 auto;
 }
 
