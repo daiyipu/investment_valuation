@@ -274,135 +274,92 @@ async def root():
         "history_api": "/api/history",  # 新增：历史记录API
     }
 
-    @app.get("/api/history", tags=["历史记录"])
-    async def get_history(
-        limit: int = 50,
-        offset: int = 0
-    ):
-        """
-        获取估值历史记录
 
-        Args:
-            limit: 返回数量限制
-            offset: 偏移量（分页）
+@app.get("/api/history", tags=["历史记录"])
+async def get_history(
+    limit: int = 50,
+    offset: int = 0
+):
+    """
+    获取估值历史记录
 
-        Returns:
-            历史记录列表
-        """
-        history_list = db.get_history(limit=limit)
+    Args:
+        limit: 返回数量限制
+        offset: 偏移量（分页）
+
+    Returns:
+        历史记录列表
+    """
+    history_list = db.get_history(limit=limit)
+
+    return {
+        "success": True,
+        "total": len(history_list),
+        "history": [h.dict() for h in history_list]
+    }
+
+
+@app.get("/api/history/{history_id}", tags=["历史记录"])
+async def get_history_item(history_id: int):
+    """
+    获取单个历史记录详情
+
+    Args:
+        history_id: 历史记录ID
+
+    Returns:
+        历史记录详情（包含完整的结果数据）
+    """
+    import json
+    from database import Session, ValuationHistory
+
+    session = Session(db.get_engine())
+
+    try:
+        # 直接查询数据库模型以获取 notes 字段
+        h = session.query(ValuationHistory).filter(ValuationHistory.id == history_id).first()
+
+        if not h:
+            raise HTTPException(status_code=404, detail="历史记录不存在")
+
+        history_dict = {
+            'id': h.id,
+            'company_name': h.company_name,
+            'industry': h.industry,
+            'stage': h.stage,
+            'revenue': h.revenue,
+            'dcf_value': h.dcf_value,
+            'dcf_wacc': h.dcf_wacc,
+            'pe_value': h.pe_value,
+            'ps_value': h.ps_value,
+            'pb_value': h.pb_value,
+            'ev_value': h.ev_value,
+            'comparables_count': h.comparables_count,
+            'created_at': h.created_at.isoformat() if h.created_at else None,
+        }
+
+        # 尝试从 notes 字段解析完整的 results 数据
+        if h.notes:
+            try:
+                notes_data = json.loads(h.notes)
+                if isinstance(notes_data, dict) and 'results' in notes_data:
+                    history_dict['results'] = notes_data['results']
+            except (json.JSONDecodeError, ValueError):
+                # 兼容旧格式: "分析类型: {...json...}"
+                try:
+                    if ':' in h.notes:
+                        _, json_str = h.notes.split(':', 1)
+                        results_data = json.loads(json_str.strip())
+                        history_dict['results'] = results_data
+                except (json.JSONDecodeError, ValueError):
+                    pass
 
         return {
             "success": True,
-            "total": len(history_list),
-            "history": [h.dict() for h in history_list]
+            "history": history_dict
         }
-
-    @app.get("/api/history/{history_id}", tags=["历史记录"])
-    async def get_history_item(history_id: int):
-        """
-        获取单个历史记录详情
-
-        Args:
-            history_id: 历史记录ID
-
-        Returns:
-            历史记录详情
-        """
-        history_list = db.get_history(limit=1000)
-
-        for h in history_list:
-            if h.id == history_id:
-                return {
-                    "success": True,
-                    "history": h.dict()
-                }
-
-        raise HTTPException(status_code=404, detail="历史记录不存在")
-
-    @app.get("/api/valuation/compare")
-    async def compare_valuation(company: CompanyInput, comparables: List[ComparableInput]):
-        """
-        交叉验证估值（相对估值和绝对估值）
-        """
-        history_id = db.init_history(company, comparables)
-        results = db.auto_comparable_analysis(comparables)
-
-        return {
-            "success": True,
-            "history_id": history_id,
-            "results": results.to_dict()
-        }
-
-    @app.get("/api/valuation/relative")
-    async def relative_valuation(request: RelativeValuationRequest):
-        """
-        相对估值法
-        """
-        history_id = db.init_history(request.company, request.comparables)
-        results = db.auto_relative_valuation(history_id, request.methods)
-
-        return {
-            "success": True,
-            "history_id": history_id,
-            "results": results.to_dict()
-        }
-
-    @app.get("/health")
-    async def health_check():
-        """健康检查"""
-        return {"status": "healthy"}
-
-    @app.post("/api/valuation/absolute")
-    async def absolute_valuation(company: CompanyInput):
-        """
-        DCF绝对估值法
-        """
-        history_id = db.init_history(company, [])
-
-        results = db.dcf_valuation(history_id, company)
-
-        return {
-            "success": True,
-            "history_id": history_id,
-            "results": results.to_dict()
-        }
-
-    @app.get("/api/valuation/scenario")
-    async def scenario_analysis(request: ScenarioConfig):
-        """
-        情景分析
-        """
-        history_id = db.init_history(request.company, [])
-
-        # 解析情景配置
-        bull_config = {
-            "name": request.revenue_growth_adj or 0.2,
-            "margin_adj": request.margin_adj or 0.0,
-            "wacc_adj": request.wacc_adj or 0.0,
-            "terminal_growth_adj": request.terminal_growth_adj or 0.0
-        }
-
-        bear_config = {
-            "name": request.revenue_growth_adj or -0.2,
-            "margin_adj": request.margin_adj or -0.0,
-            "wacc_adj": request.wacc_adj or 0.0,
-            "terminal_growth_adj": request.terminal_growth_adj or -0.0,
-        }
-
-        base_config = {
-            "name": request.revenue_growth_adj or 0.0,
-            "margin_adj": request.margin_adj or 0.0,
-            "wacc_adj": request.wacc_adj or 0.0,
-            "terminal_growth_adj": request.terminal_growth_adj or 0.0,
-        }
-
-        results = db.scenario_analysis(history_id, [base_config, bull_config, bear_config])
-
-        return {
-            "success": True,
-            "history_id": history_id,
-            "results": results.to_dict()
-        }
+    finally:
+        session.close()
 
 
 @app.get("/health")
@@ -426,6 +383,10 @@ async def relative_valuation(request: RelativeValuationRequest):
 
         results = RelativeValuation.auto_comparable_analysis(comp, comp_list, request.methods)
 
+        # 保存历史记录
+        results_dict = {"results": {k: v.to_dict() for k, v in results.items()}}
+        db.save_analysis_history('relative', request.company.dict(), results_dict)
+
         return {
             "success": True,
             "company": comp.name,
@@ -448,6 +409,10 @@ async def absolute_valuation(
     try:
         comp = company.to_company()
         result = AbsoluteValuation.dcf_valuation(comp, projection_years=projection_years)
+
+        # 保存历史记录
+        result_dict = {"result": result.to_dict()}
+        db.save_analysis_history('absolute', company.dict(), result_dict)
 
         return {
             "success": True,
@@ -560,25 +525,32 @@ async def multi_product_dcf(request: MultiProductValuationRequest):
 
 # ===== 情景分析API =====
 
+class ScenarioAnalysisRequest(BaseModel):
+    """情景分析请求模型"""
+    company: CompanyInput
+    scenarios: Optional[List[ScenarioInput]] = None
+
+
 @app.post("/api/scenario/analyze")
-async def scenario_analysis(
-    company: CompanyInput,
-    scenarios: Optional[List[ScenarioInput]] = None,
-):
+async def scenario_analysis(request: ScenarioAnalysisRequest):
     """
     情景分析
 
     支持基准、乐观、悲观等多情景分析
     """
     try:
-        comp = company.to_company()
+        print(f"DEBUG: Received scenario request")
+        print(f"  company: {request.company.name}, growth_rate={request.company.growth_rate}")
+        print(f"  scenarios: {request.scenarios}")
+
+        comp = request.company.to_company()
         analyzer = ScenarioAnalyzer(comp)
 
-        if scenarios is None:
+        if request.scenarios is None:
             # 使用默认三情景
             results = analyzer.compare_scenarios()
         else:
-            scenario_configs = [s.to_scenario_config() for s in scenarios]
+            scenario_configs = [s.to_scenario_config() for s in request.scenarios]
             results = analyzer.compare_scenarios(scenarios=scenario_configs)
 
         # 转换结果格式
@@ -592,6 +564,9 @@ async def scenario_analysis(
                     'valuation': data['valuation'].to_dict(),
                     'value': data['value'],
                 }
+
+        # 保存历史记录
+        db.save_analysis_history('scenario', request.company.dict(), formatted_results)
 
         return {
             "success": True,

@@ -204,16 +204,16 @@
         <div class="card-title">💰 DCF绝对估值 - 企业价值分解</div>
         <div class="result-highlight">
           <span class="label">股权价值</span>
-          <span class="value">{{ formatMoney(results.dcf?.result?.value) }}</span>
+          <span class="value">{{ formatMoney(getDCFResult()?.value) }}</span>
         </div>
         <div class="result-grid">
           <div class="result-item">
             <span class="result-label">企业价值</span>
-            <span class="result-value">{{ formatMoney((results.dcf?.result?.value || 0) + (results.company?.total_debt || 0) - (results.company?.cash_and_equivalents || 0)) }}</span>
+            <span class="result-value">{{ formatMoney((getDCFResult()?.value || 0) + (results.company?.total_debt || 0) - (results.company?.cash_and_equivalents || 0)) }}</span>
           </div>
           <div class="result-item">
             <span class="result-label">WACC</span>
-            <span class="result-value">{{ formatPercent(results.dcf?.result?.details?.wacc) }}</span>
+            <span class="result-value">{{ formatPercent(getDCFResult()?.details?.wacc) }}</span>
           </div>
           <div class="result-item">
             <span class="result-label">当前收入</span>
@@ -221,11 +221,11 @@
           </div>
           <div class="result-item">
             <span class="result-label">预测期现值</span>
-            <span class="result-value">{{ formatMoney(results.dcf?.result?.details?.pv_forecasts) }}</span>
+            <span class="result-value">{{ formatMoney(getDCFResult()?.details?.pv_forecasts) }}</span>
           </div>
           <div class="result-item">
             <span class="result-label">终值现值</span>
-            <span class="result-value">{{ formatMoney(results.dcf?.result?.details?.pv_terminal) }}</span>
+            <span class="result-value">{{ formatMoney(getDCFResult()?.details?.pv_terminal) }}</span>
           </div>
           <div class="result-item">
             <span class="result-label">终值占比</span>
@@ -238,19 +238,19 @@
       </div>
 
       <!-- 价值构成分析（单产品模式） -->
-      <div v-if="!isMultiProduct && results.dcf?.result?.details" class="card">
+      <div v-if="!isMultiProduct && getDCFResult()?.details" class="card">
         <div class="card-title">📊 企业价值构成分析</div>
         <div ref="valueCompositionChart" class="chart"></div>
         <div class="value-composition-details">
           <div class="composition-item">
             <span class="composition-label">预测期现值（5年）</span>
-            <span class="composition-value">{{ formatMoney(results.dcf.result.details.pv_forecasts) }}</span>
-            <span class="composition-percent">{{ ((results.dcf.result.details.pv_forecasts / (results.dcf.result.details.pv_forecasts + results.dcf.result.details.pv_terminal)) * 100).toFixed(1) }}%</span>
+            <span class="composition-value">{{ formatMoney(getDCFResult()?.details?.pv_forecasts) }}</span>
+            <span class="composition-percent">{{ ((getDCFResult()?.details?.pv_forecasts / (getDCFResult()?.details?.pv_forecasts + getDCFResult()?.details?.pv_terminal)) * 100).toFixed(1) }}%</span>
           </div>
           <div class="composition-item">
             <span class="composition-label">终值现值（永续增长）</span>
-            <span class="composition-value">{{ formatMoney(results.dcf.result.details.pv_terminal) }}</span>
-            <span class="composition-percent">{{ ((results.dcf.result.details.pv_terminal / (results.dcf.result.details.pv_forecasts + results.dcf.result.details.pv_terminal)) * 100).toFixed(1) }}%</span>
+            <span class="composition-value">{{ formatMoney(getDCFResult()?.details?.pv_terminal) }}</span>
+            <span class="composition-percent">{{ ((getDCFResult()?.details?.pv_terminal / (getDCFResult()?.details?.pv_forecasts + getDCFResult()?.details?.pv_terminal)) * 100).toFixed(1) }}%</span>
           </div>
         </div>
       </div>
@@ -270,61 +270,126 @@
       <div v-if="!isMultiProduct" class="card">
         <div class="card-title">📈 情景分析</div>
         <div ref="scenarioChart" class="chart"></div>
+
+        <!-- 情景参数表格 -->
+        <div class="scenario-table-container">
+          <table class="scenario-result-table">
+            <thead>
+              <tr>
+                <th>情景</th>
+                <th>估值结果</th>
+                <th>收入增长调整</th>
+                <th>利润率调整</th>
+                <th>WACC调整</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(scenario, name) in (getScenarios())" :key="name"
+                  v-show="name !== 'statistics'" :class="getScenarioResultClass(name)">
+                <td class="scenario-name-cell">
+                  <span class="scenario-badge" :class="getScenarioResultClass(name)">{{ name }}</span>
+                </td>
+                <td class="scenario-value-cell">{{ formatMoney(scenario.value) }}</td>
+                <td class="scenario-param-cell">
+                  <span v-if="scenario.scenario && scenario.scenario.revenue_growth_adj !== undefined"
+                        :class="getParamClass(scenario.scenario.revenue_growth_adj)">
+                    {{ formatPercent(scenario.scenario.revenue_growth_adj) }}
+                  </span>
+                  <span v-else>--</span>
+                </td>
+                <td class="scenario-param-cell">
+                  <span v-if="scenario.scenario && scenario.scenario.margin_adj !== undefined"
+                        :class="getParamClass(scenario.scenario.margin_adj)">
+                    {{ formatPercent(scenario.scenario.margin_adj) }}
+                  </span>
+                  <span v-else>--</span>
+                </td>
+                <td class="scenario-param-cell">
+                  <span v-if="scenario.scenario && scenario.scenario.wacc_adj !== undefined"
+                        :class="getParamClass(scenario.scenario.wacc_adj, true)">
+                    {{ formatPercent(scenario.scenario.wacc_adj) }}
+                  </span>
+                  <span v-else>--</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <!-- 敏感性分析（仅单产品模式） -->
       <div v-if="!isMultiProduct" class="card">
         <div class="card-title">📊 参数敏感性分析</div>
-        <div ref="tornadoChart" class="chart"></div>
 
-        <!-- 敏感性参数表格 -->
-        <div class="sensitivity-table-container">
-          <table class="sensitivity-table">
-            <thead>
-              <tr>
-                <th>参数名称</th>
-                <th>估值波动范围</th>
-                <th>影响程度</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(param, name) in sortedSensitivityParams" :key="name" class="sensitivity-row">
-                <td class="sensitivity-parameter">{{ getParameterName(name) }}</td>
-                <td class="sensitivity-value">±{{ formatMoney(param.valuation_range / 2) }}</td>
-                <td class="sensitivity-impact" :class="{ 'high-impact': name === mostSensitiveParam }">
-                  {{ name === mostSensitiveParam ? '⭐ 最大影响' : '一般' }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        <!-- 无数据提示 -->
+        <div v-if="Object.keys(sortedSensitivityParams).length === 0" class="no-data-hint">
+          <p>📊 暂无敏感性分析数据</p>
+          <p class="hint">敏感性分析数据未保存在历史记录中</p>
+          <p class="hint" style="color: #667eea; font-weight: 500;">💡 提示：请返回估值页面重新执行估值，查看完整的敏感性分析结果</p>
         </div>
+
+        <template v-else>
+          <div ref="tornadoChart" class="chart"></div>
+
+          <!-- 敏感性参数表格 -->
+          <div class="sensitivity-table-container">
+            <table class="sensitivity-table">
+              <thead>
+                <tr>
+                  <th>参数名称</th>
+                  <th>估值波动范围</th>
+                  <th>影响程度</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(param, name) in sortedSensitivityParams" :key="name" class="sensitivity-row">
+                  <td class="sensitivity-parameter">{{ getParameterName(name) }}</td>
+                  <td class="sensitivity-value">±{{ formatMoney(param.valuation_range / 2) }}</td>
+                  <td class="sensitivity-impact" :class="{ 'high-impact': name === mostSensitiveParam }">
+                    {{ name === mostSensitiveParam ? '⭐ 最大影响' : '一般' }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
       </div>
 
       <!-- 压力测试（仅单产品模式） -->
       <div v-if="!isMultiProduct" class="card">
         <div class="card-title">⚠️ 压力测试结果</div>
-        <div class="stress-table-container">
-          <table class="stress-table">
-            <thead>
-              <tr>
-                <th>压力情景</th>
-                <th>压力下估值</th>
-                <th>变化幅度</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(test, idx) in sortedStressTests" :key="idx"
-                  class="stress-row"
-                  :class="{ 'extreme-row': test.test_name === '极端市场崩溃测试' }">
-                <td class="stress-scenario">{{ test.scenario_description }}</td>
-                <td class="stress-value">{{ formatMoney(test.stressed_value) }}</td>
-                <td class="stress-change" :class="test.change_pct < 0 ? 'negative' : 'positive'">
-                  {{ test.change_pct > 0 ? '+' : '' }}{{ formatPercent(test.change_pct) }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+
+        <!-- 无数据提示 -->
+        <div v-if="sortedStressTests.length === 0" class="no-data-hint">
+          <p>⚠️ 暂无压力测试数据</p>
+          <p class="hint">压力测试数据未保存在历史记录中</p>
+          <p class="hint" style="color: #667eea; font-weight: 500;">💡 提示：请返回估值页面重新执行估值，查看完整的压力测试结果</p>
         </div>
+
+        <template v-else>
+          <div class="stress-table-container">
+            <table class="stress-table">
+              <thead>
+                <tr>
+                  <th>压力情景</th>
+                  <th>压力下估值</th>
+                  <th>变化幅度</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(test, idx) in sortedStressTests" :key="idx"
+                    class="stress-row"
+                    :class="{ 'extreme-row': test.test_name === '极端市场崩溃测试' }">
+                  <td class="stress-scenario">{{ test.scenario_description }}</td>
+                  <td class="stress-value">{{ formatMoney(test.stressed_value) }}</td>
+                  <td class="stress-change" :class="test.change_pct < 0 ? 'negative' : 'positive'">
+                    {{ test.change_pct > 0 ? '+' : '' }}{{ formatPercent(test.change_pct) }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
       </div>
 
       <!-- 蒙特卡洛模拟（仅单产品模式） -->
@@ -352,33 +417,6 @@
           </div>
         </div>
       </div>
-
-      <!-- 历史记录 -->
-      <div class="card">
-        <div class="card-title">
-          📋 历史记录
-          <button @click="loadHistory" class="btn-refresh" :disabled="loadingHistory" type="button">
-            {{ loadingHistory ? '加载中...' : '🔄 刷新' }}
-          </button>
-        </div>
-        <div v-if="history.length === 0 && !loadingHistory" class="no-history">
-          <p>暂无历史记录</p>
-        </div>
-        <div v-else-if="history.length > 0" class="history-list">
-          <div v-for="item in history" :key="item.id" class="history-item" @click="loadHistoryItem(item.id)">
-            <div class="history-header">
-              <span class="history-company">{{ item.company_name }}</span>
-              <span class="history-date">{{ formatDate(item.created_at) }}</span>
-              <span class="history-industry">{{ item.industry }}</span>
-            </div>
-            <div class="history-values">
-              <span v-if="item.dcf_value">DCF: {{ formatMoney(item.dcf_value * 10000) }}</span>
-              <span v-if="item.pe_value">P/E: {{ formatMoney(item.pe_value * 10000) }}</span>
-              <span v-if="item.ev_value">EV: {{ formatMoney(item.ev_value * 10000) }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
       </template>
     </template>
   </div>
@@ -387,7 +425,6 @@
 <script setup lang="ts">
 import { ref, onMounted, nextTick, computed } from 'vue'
 import * as echarts from 'echarts'
-import axios from 'axios'
 
 const results = ref<any>(null)
 const company = ref<any>(null)
@@ -428,10 +465,6 @@ const correctedTotalEquityValue = computed(() => {
   const netDebt = (company.total_debt || 0) - (company.cash_and_equivalents || 0)
   return correctedTotalEnterpriseValue.value - netDebt
 })
-
-// 历史记录
-const history = ref<any[]>([])
-const loadingHistory = ref(false)
 
 const sortedSensitivityParams = computed(() => {
   const params = results.value?.sensitivity?.results?.parameters
@@ -497,7 +530,8 @@ const sortedStressTests = computed(() => {
 
 const hasMultipleValuations = computed(() => {
   const hasRelative = results.value?.relative && Object.keys(results.value.relative.results || {}).length > 0
-  const hasDCF = results.value?.dcf?.result?.value
+  // 支持历史记录格式和完整估值结果格式
+  const hasDCF = results.value?.dcf?.result?.value || results.value?.dcf_value
   return hasRelative && hasDCF
 })
 
@@ -552,7 +586,18 @@ onMounted(async () => {
       }
 
       results.value = parsed
-      company.value = parsed.company
+      // 支持两种数据格式：完整估值结果格式和历史记录格式
+      if (parsed.company) {
+        company.value = parsed.company
+      } else if (parsed.company_name) {
+        // 历史记录格式，构建 company 对象
+        company.value = {
+          name: parsed.company_name,
+          industry: parsed.industry,
+          stage: parsed.stage,
+          revenue: parsed.revenue
+        }
+      }
 
       await nextTick()
       if (isMultiProduct.value) {
@@ -576,9 +621,6 @@ onMounted(async () => {
   }
 
   console.log('=== ValuationResult onMounted 结束 ===')
-
-  // 加载历史记录
-  loadHistory()
 })
 
 // 初始化相对估值图表（独立函数，供多产品和单产品模式共用）
@@ -616,9 +658,10 @@ const initCharts = () => {
   initRelativeChart()
 
   // 初始化价值构成图表（单产品模式）
-  if (valueCompositionChart.value && results.value.dcf?.result?.details) {
+  const dcfResult = getDCFResult()
+  if (valueCompositionChart.value && dcfResult?.details) {
     const chart = echarts.init(valueCompositionChart.value)
-    const details = results.value.dcf.result.details
+    const details = dcfResult.details
     const pvForecasts = details.pv_forecasts || 0
     const pvTerminal = details.pv_terminal || 0
 
@@ -681,9 +724,10 @@ const initCharts = () => {
     }
 
     // 添加DCF
-    if (results.value.dcf?.result?.value) {
+    const dcfResult = getDCFResult()
+    if (dcfResult?.value) {
       methods.push('DCF')
-      values.push(results.value.dcf.result.value / 10000)
+      values.push(dcfResult.value / 10000)
     }
 
     chart.setOption({
@@ -710,7 +754,9 @@ const initCharts = () => {
     const scenarios: string[] = []
     const values: number[] = []
 
-    for (const [name, result] of Object.entries(results.value.scenario?.results || {})) {
+    // 支持两种数据格式：历史记录格式和完整估值结果格式
+    const scenarioResults = results.value?.results || results.value?.scenario?.results || {}
+    for (const [name, result] of Object.entries(scenarioResults)) {
       if (name !== 'statistics') {
         const data = result as any
         scenarios.push(name)
@@ -1000,8 +1046,9 @@ const getRecommendedValue = () => {
     }
   }
 
-  if (results.value?.dcf?.result?.value) {
-    values.push(results.value.dcf.result.value)
+  const dcfResult = getDCFResult()
+  if (dcfResult?.value) {
+    values.push(dcfResult.value)
   }
 
   if (values.length === 0) return 0
@@ -1020,8 +1067,9 @@ const getValueRange = () => {
     }
   }
 
-  if (results.value?.dcf?.result?.value) {
-    values.push(results.value.dcf.result.value)
+  const dcfResult = getDCFResult()
+  if (dcfResult?.value) {
+    values.push(dcfResult.value)
   }
 
   if (values.length === 0) return '--'
@@ -1074,9 +1122,23 @@ const getValueRangeForMultiProduct = () => {
 }
 
 const getTerminalPercent = () => {
+  // 支持历史记录格式和完整估值结果格式
   const pvTerminal = results.value?.dcf?.result?.details?.pv_terminal || 0
-  const total = results.value?.dcf?.result?.value || 1
+  const total = results.value?.dcf?.result?.value || results.value?.dcf_value * 10000 || 1
   return ((pvTerminal / total) * 100).toFixed(1)
+}
+
+// 获取 DCF 估值结果（支持历史记录格式和完整估值结果格式）
+const getDCFResult = () => {
+  if (results.value?.dcf?.result) {
+    return results.value.dcf.result
+  }
+  // 历史记录格式，从情景数据中提取 DCF 详情
+  const baseCase = results.value?.results?.['基准情景'] || results.value?.scenario?.results?.['基准情景'] || results.value?.scenario?.results?.['base_case']
+  if (baseCase?.valuation) {
+    return baseCase.valuation
+  }
+  return undefined
 }
 
 const formatMoney = (value: number | undefined) => {
@@ -1084,49 +1146,38 @@ const formatMoney = (value: number | undefined) => {
   return (value / 10000).toFixed(2) + ' 亿元'
 }
 
-const formatPercent = (value: number | undefined) => {
-  if (!value) return '--'
-  return (value * 100).toFixed(2) + '%'
+const formatPercent = (value: number | string | undefined) => {
+  if (value === undefined || value === null) return '--'
+  const numValue = typeof value === 'number' ? value : parseFloat(value)
+  return (numValue * 100).toFixed(1) + '%'
 }
 
-// 加载历史记录
-const loadHistory = async () => {
-  loadingHistory.value = true
-  try {
-    const response = await axios.get('http://localhost:8000/api/history?limit=10')
-    if (response.data.success) {
-      history.value = response.data.history
+const getScenarioResultClass = (name: string) => {
+  if (name === '乐观') return 'bull'
+  if (name === '悲观') return 'bear'
+  return 'base'
+}
+
+const getScenarios = () => {
+  // 支持两种数据格式：历史记录格式和完整估值结果格式
+  const scenarios = results.value?.results || results.value?.scenario?.results || {}
+  const filtered: Record<string, any> = {}
+  for (const [name, data] of Object.entries(scenarios)) {
+    if (name !== 'statistics') {
+      filtered[name] = data
     }
-  } catch (err: any) {
-    console.error('加载历史记录失败:', err)
-  } finally {
-    loadingHistory.value = false
   }
+  return filtered
 }
 
-// 加载历史记录项
-const loadHistoryItem = async (id: number) => {
-  try {
-    const response = await axios.get(`http://localhost:8000/api/history/${id}`)
-    if (response.data.success) {
-      const item = response.data.history
-      // 存储到sessionStorage并跳转
-      sessionStorage.setItem('valuationResults', JSON.stringify(item))
-      results.value = item
-      company.value = { name: item.company_name, industry: item.industry }
-      await nextTick()
-      initCharts()
-    }
-  } catch (err: any) {
-    console.error('加载历史记录项失败:', err)
+const getParamClass = (value: number | string | undefined, isInvert: boolean = false) => {
+  if (value === undefined || value === null) return ''
+  const numValue = typeof value === 'number' ? value : parseFloat(value)
+  if (isInvert) {
+    return numValue < 0 ? 'param-positive' : 'param-negative'
+  } else {
+    return numValue > 0 ? 'param-positive' : 'param-negative'
   }
-}
-
-// 格式化日期
-const formatDate = (dateStr: string) => {
-  if (!dateStr) return '--'
-  const date = new Date(dateStr)
-  return date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
 }
 </script>
 
@@ -1181,6 +1232,23 @@ const formatDate = (dateStr: string) => {
   color: #666;
   font-size: 0.9em;
   margin: 15px 0;
+}
+
+.no-data-hint {
+  text-align: center;
+  padding: 40px 20px;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.no-data-hint p {
+  margin: 8px 0;
+}
+
+.no-data-hint .hint {
+  color: #666;
+  font-size: 0.9em;
+  margin: 4px 0;
 }
 
 .no-data .error-list {
@@ -1477,6 +1545,105 @@ const formatDate = (dateStr: string) => {
   font-size: 1.05em;
 }
 
+/* 情景分析结果表格样式 */
+.scenario-table-container {
+  margin-top: 25px;
+  overflow-x: auto;
+}
+
+.scenario-result-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+}
+
+.scenario-result-table thead {
+  background: #f8f9fa;
+}
+
+.scenario-result-table th {
+  padding: 12px 15px;
+  text-align: center;
+  font-weight: 600;
+  color: #555;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+.scenario-result-table td {
+  padding: 15px;
+  text-align: center;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.scenario-result-table tbody tr {
+  transition: background 0.2s;
+}
+
+.scenario-result-table tbody tr:hover {
+  background: #f8f9fa;
+}
+
+.scenario-result-table tbody tr.bull {
+  background: #e8ffe8;
+}
+
+.scenario-result-table tbody tr.bear {
+  background: #ffe8e8;
+}
+
+.scenario-result-table tbody tr.base {
+  background: #e8f0ff;
+}
+
+.scenario-name-cell {
+  font-weight: 600;
+}
+
+.scenario-badge {
+  display: inline-block;
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-weight: 600;
+}
+
+.scenario-badge.base {
+  background: #5470c6;
+  color: white;
+}
+
+.scenario-badge.bull {
+  background: #91cc75;
+  color: white;
+}
+
+.scenario-badge.bear {
+  background: #ee6666;
+  color: white;
+}
+
+.scenario-value-cell {
+  font-size: 1.15em;
+  font-weight: bold;
+  color: #667eea;
+}
+
+.scenario-param-cell span {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.param-positive {
+  color: #27ae60;
+  background: #e8f8e8;
+}
+
+.param-negative {
+  color: #e74c3c;
+  background: #fde8e8;
+}
+
 .monte-carlo-stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -1536,96 +1703,6 @@ const formatDate = (dateStr: string) => {
 .info-message .hint {
   color: #999;
   font-size: 0.9em;
-}
-
-/* 历史记录样式 */
-.btn-refresh {
-  background: #667eea;
-  color: white;
-  border: none;
-  padding: 6px 12px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.9em;
-  transition: all 0.3s;
-}
-
-.btn-refresh:hover:not(:disabled) {
-  background: #5568d3;
-}
-
-.btn-refresh:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.no-history {
-  text-align: center;
-  padding: 40px 20px;
-  background: #f8f9fa;
-  border-radius: 8px;
-  color: #666;
-}
-
-.history-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.history-item {
-  background: #f8f9fa;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  padding: 15px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.history-item:hover {
-  background: #e8f4ff;
-  border-color: #667eea;
-}
-
-.history-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-}
-
-.history-company {
-  font-weight: 600;
-  color: #333;
-  font-size: 1.05em;
-}
-
-.history-date {
-  font-size: 0.85em;
-  color: #666;
-}
-
-.history-industry {
-  font-size: 0.9em;
-  color: #888;
-  background: #f0f0f0;
-  padding: 3px 8px;
-  border-radius: 4px;
-}
-
-.history-values {
-  display: flex;
-  gap: 15px;
-  flex-wrap: wrap;
-}
-
-.history-values span {
-  font-size: 0.9em;
-  color: #555;
-  background: white;
-  padding: 4px 10px;
-  border-radius: 4px;
-  border: 1px solid #e0e0e0;
 }
 
 /* 多产品估值样式 */

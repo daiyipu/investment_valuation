@@ -115,7 +115,7 @@ class AbsoluteValuation:
         wc_change_ratio = custom_assumptions.get('wc_change_ratio', 0.02) if custom_assumptions else 0.02
         depreciation_ratio = custom_assumptions.get('depreciation_ratio', 0.03) if custom_assumptions else 0.03
 
-        # 初始收入
+        # 初始收入（使用局部变量，避免修改原对象）
         revenue = company.revenue
 
         for year in range(1, projection_years + 1):
@@ -125,7 +125,7 @@ class AbsoluteValuation:
             else:
                 year_growth = growth_rate
 
-            revenue *= (1 + year_growth)
+            revenue = revenue * (1 + year_growth)
 
             # 利润计算
             operating_profit = revenue * operating_margin if operating_margin else 0

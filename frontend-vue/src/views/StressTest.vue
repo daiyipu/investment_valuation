@@ -5,6 +5,71 @@
       <p>评估极端情景下的估值变化</p>
     </div>
 
+    <!-- 高级配置 -->
+    <div class="card">
+      <div class="section-title">
+        ⚙️ 参数配置
+        <button @click="showAdvancedConfig = !showAdvancedConfig" class="btn-toggle">
+          {{ showAdvancedConfig ? '收起 ▲' : '展开 ▼' }}
+        </button>
+      </div>
+      <div v-if="showAdvancedConfig" class="advanced-config-content">
+        <div class="config-section">
+          <h4 class="config-title">收入冲击测试设置</h4>
+          <div class="params-config-grid">
+            <div class="config-item">
+              <label>收入下降幅度1 (%)</label>
+              <div class="input-group">
+                <input v-model.number="revenueShockLevels[0]" type="number" step="5" min="5" max="50" />
+                <span class="input-unit">%</span>
+              </div>
+            </div>
+            <div class="config-item">
+              <label>收入下降幅度2 (%)</label>
+              <div class="input-group">
+                <input v-model.number="revenueShockLevels[1]" type="number" step="5" min="5" max="50" />
+                <span class="input-unit">%</span>
+              </div>
+            </div>
+            <div class="config-item">
+              <label>收入下降幅度3 (%)</label>
+              <div class="input-group">
+                <input v-model.number="revenueShockLevels[2]" type="number" step="5" min="5" max="50" />
+                <span class="input-unit">%</span>
+              </div>
+            </div>
+            <div class="config-item">
+              <label>收入下降幅度4 (%)</label>
+              <div class="input-group">
+                <input v-model.number="revenueShockLevels[3]" type="number" step="5" min="5" max="50" />
+                <span class="input-unit">%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="config-section">
+          <h4 class="config-title">蒙特卡洛模拟设置</h4>
+          <div class="config-item">
+            <label>模拟次数</label>
+            <div class="input-group">
+              <input v-model.number="monteCarloIterations" type="number" step="100" min="100" max="10000" />
+              <span class="input-unit">次</span>
+            </div>
+          </div>
+          <div class="config-hint">
+            💡 模拟次数越多，结果越精确，但计算时间也会增加
+          </div>
+        </div>
+
+        <div class="config-actions">
+          <button @click="runStressTest" class="btn-primary" :disabled="loading">
+            {{ loading ? '测试中...' : '重新运行测试' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-title">收入冲击测试</div>
       <div class="stress-grid">
@@ -83,10 +148,16 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, nextTick } from 'vue'
 import * as echarts from 'echarts'
+import { stressTestAPI } from '../services/api'
 
 const revenueShocks = ref<any[]>([])
 const monteCarloData = ref<any>(null)
 const monteCarloChart = ref<HTMLElement>()
+const showAdvancedConfig = ref(false)
+const loading = ref(false)
+
+const revenueShockLevels = ref([10, 20, 30, 50])  // 默认收入下降幅度
+const monteCarloIterations = ref(1000)  // 默认模拟次数
 
 const maxDownside = computed(() => {
   if (revenueShocks.value.length > 0) {
@@ -105,8 +176,9 @@ onMounted(async () => {
       revenueShocks.value = parsed.stress.report.tests.revenue_shock
     }
 
-    if (parsed.stress?.report?.tests?.monte_carlo) {
-      monteCarloData.value = parsed.stress.report.tests.monte_carlo
+    // 蒙特卡洛数据在 report 级别，不是 tests 级别
+    if (parsed.stress?.report?.monte_carlo) {
+      monteCarloData.value = parsed.stress.report.monte_carlo
       await nextTick()
       initMonteCarloChart()
     }
@@ -176,6 +248,57 @@ const getRevenueShockImpact = () => {
     }
   }
   return '30%'
+}
+
+const runStressTest = async () => {
+  loading.value = true
+  try {
+    const data = sessionStorage.getItem('valuationResults')
+    if (!data) {
+      alert('请先进行估值分析')
+      return
+    }
+
+    const parsed = JSON.parse(data)
+    const company = parsed.company
+
+    // 构建收入冲击数组（转为负数百分比）
+    const shocks = revenueShockLevels.value.map(level => -level / 100)
+
+    // 并行调用收入冲击和蒙特卡洛模拟API
+    const [revenueShockResponse, monteCarloResponse] = await Promise.all([
+      stressTestAPI.revenueShock(company, shocks),
+      stressTestAPI.monteCarlo(company, monteCarloIterations.value)
+    ])
+
+    // 更新数据
+    revenueShocks.value = revenueShockResponse.data.report?.tests?.revenue_shock || []
+    monteCarloData.value = monteCarloResponse.data.report?.tests?.monte_carlo || null
+
+    // 保存到 sessionStorage
+    sessionStorage.setItem('valuationResults', JSON.stringify({
+      ...parsed,
+      stress: {
+        report: {
+          tests: {
+            revenue_shock: revenueShocks.value,
+            monte_carlo: monteCarloData.value
+          }
+        }
+      }
+    }))
+
+    // 如果有蒙特卡洛数据，重新初始化图表
+    if (monteCarloData.value) {
+      await nextTick()
+      initMonteCarloChart()
+    }
+  } catch (error) {
+    console.error('压力测试失败:', error)
+    alert('压力测试失败，请检查参数设置')
+  } finally {
+    loading.value = false
+  }
 }
 
 const formatMoney = (value: number) => (value / 10000).toFixed(2) + ' 亿元'
@@ -308,5 +431,129 @@ const formatPercent = (value: number) => (value * 100).toFixed(1) + '%'
   color: #555;
   font-size: 0.95em;
   flex: 1;
+}
+
+/* 高级配置样式 */
+.section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 15px 0;
+  font-size: 1.1em;
+  color: #333;
+  font-weight: 600;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.btn-toggle {
+  background: transparent;
+  color: #667eea;
+  border: 1px solid #667eea;
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85em;
+  transition: all 0.3s;
+}
+
+.btn-toggle:hover {
+  background: #667eea;
+  color: white;
+}
+
+.advanced-config-content {
+  margin-top: 20px;
+}
+
+.config-section {
+  margin-bottom: 25px;
+}
+
+.config-section:last-child {
+  margin-bottom: 0;
+}
+
+.config-title {
+  margin: 0 0 15px 0;
+  font-size: 1em;
+  color: #333;
+  font-weight: 600;
+}
+
+.params-config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.config-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.config-item label {
+  font-size: 0.9em;
+  color: #555;
+  font-weight: 500;
+}
+
+.input-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.input-group input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.input-unit {
+  flex: 0 0 30px;
+  font-size: 0.85em;
+  color: #666;
+}
+
+.config-hint {
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: #fff3cd;
+  border-left: 3px solid #ffc107;
+  border-radius: 4px;
+  font-size: 0.85em;
+  color: #856404;
+}
+
+.config-actions {
+  margin-top: 15px;
+  text-align: center;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 10px 30px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s;
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 </style>

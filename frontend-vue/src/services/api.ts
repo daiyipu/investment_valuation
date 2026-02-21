@@ -54,10 +54,7 @@ export const stressTestAPI = {
 
   // 蒙特卡洛模拟
   monteCarlo: (company: any, iterations: number = 1000) =>
-    apiClient.post('/api/stress-test/monte-carlo', {
-      company,
-      iterations
-    }),
+    apiClient.post('/api/stress-test/monte-carlo', company, { params: { iterations } }),
 
   // 综合压力测试
   full: (company: any) =>

@@ -12,9 +12,10 @@ import { RouterLink, RouterView } from 'vue-router'
         <div class="nav-links">
           <RouterLink to="/" class="nav-link">首页</RouterLink>
           <RouterLink to="/valuation" class="nav-link">估值</RouterLink>
+          <RouterLink to="/history" class="nav-link">历史记录</RouterLink>
           <RouterLink to="/scenario" class="nav-link">情景分析</RouterLink>
-          <RouterLink to="/stress-test" class="nav-link">压力测试</RouterLink>
           <RouterLink to="/sensitivity" class="nav-link">敏感性</RouterLink>
+          <RouterLink to="/stress-test" class="nav-link">压力测试</RouterLink>
           <RouterLink to="/report" class="nav-link">报告</RouterLink>
         </div>
       </div>

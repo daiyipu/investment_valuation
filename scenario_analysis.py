@@ -76,11 +76,19 @@ class ScenarioAnalyzer:
             'operating_margin': (self.company.operating_margin or 0.2) + margin_boost,
         }
 
-        params = method_params or {}
+        # 创建参数字典的副本，避免多个情景共享同一个字典
+        params = {}
+        if method_params:
+            params = method_params.copy()
         params['custom_assumptions'] = custom_assumptions
-        params['wacc'] = params.get('wacc', 0) - wacc_reduction if 'wacc' in params else None
-        params['terminal_growth_rate'] = params.get('terminal_growth_rate',
-                                                      self.company.terminal_growth_rate) + terminal_growth_boost
+
+        # WACC 调整
+        if 'wacc' in params:
+            params['wacc'] = params.get('wacc', 0) - wadj_reduction
+
+        # 终值增长率调整
+        base_terminal_growth = params.get('terminal_growth_rate', self.company.terminal_growth_rate)
+        params['terminal_growth_rate'] = base_terminal_growth + terminal_growth_boost
 
         if valuation_method == "DCF":
             return AbsoluteValuation.dcf_valuation(self.company, **params)
@@ -121,11 +129,19 @@ class ScenarioAnalyzer:
             'operating_margin': new_margin,
         }
 
-        params = method_params or {}
+        # 创建参数字典的副本，避免多个情景共享同一个字典
+        params = {}
+        if method_params:
+            params = method_params.copy()
         params['custom_assumptions'] = custom_assumptions
-        params['wacc'] = params.get('wacc', 0) + wacc_increase if 'wacc' in params else None
-        params['terminal_growth_rate'] = max(0, params.get('terminal_growth_rate',
-                                                             self.company.terminal_growth_rate) - terminal_growth_reduction)
+
+        # WACC 调整
+        if 'wacc' in params:
+            params['wacc'] = params.get('wacc', 0) + wacc_increase
+
+        # 终值增长率调整
+        base_terminal_growth = params.get('terminal_growth_rate', self.company.terminal_growth_rate)
+        params['terminal_growth_rate'] = max(0, base_terminal_growth - terminal_growth_reduction)
 
         if valuation_method == "DCF":
             return AbsoluteValuation.dcf_valuation(self.company, **params)
@@ -149,16 +165,25 @@ class ScenarioAnalyzer:
         Returns:
             自定义情景估值结果
         """
+        # 创建自定义假设，避免修改原公司参数
         custom_assumptions = {
             'growth_rate': self.company.growth_rate + scenario.revenue_growth_adj,
             'operating_margin': (self.company.operating_margin or 0.2) + scenario.margin_adj,
         }
 
-        params = method_params or {}
+        # 创建参数字典的副本，避免多个情景共享同一个字典
+        params = {}
+        if method_params:
+            params = method_params.copy()
         params['custom_assumptions'] = custom_assumptions
-        params['wacc'] = params.get('wacc', 0) + scenario.wacc_adj if 'wacc' in params else None
-        params['terminal_growth_rate'] = params.get('terminal_growth_rate',
-                                                      self.company.terminal_growth_rate) + scenario.terminal_growth_adj
+
+        # WACC 调整
+        if 'wacc' in params:
+            params['wacc'] = params.get('wacc', 0) + scenario.wacc_adj
+
+        # 终值增长率调整
+        base_terminal_growth = params.get('terminal_growth_rate', self.company.terminal_growth_rate)
+        params['terminal_growth_rate'] = base_terminal_growth + scenario.terminal_growth_adj
 
         if valuation_method == "DCF":
             return AbsoluteValuation.dcf_valuation(self.company, **params)

@@ -17,7 +17,7 @@
         <div class="summary-grid">
           <div class="summary-item">
             <span class="summary-label">DCF估值</span>
-            <span class="summary-value">{{ formatMoney(results.dcf?.result?.value) }}</span>
+            <span class="summary-value">{{ formatMoney(getDCFValue()) }}</span>
           </div>
           <div class="summary-item">
             <span class="summary-label">推荐估值</span>
@@ -56,10 +56,10 @@
           <div class="method-item">
             <div class="method-header">
               <span class="method-name">DCF现金流折现</span>
-              <span class="method-value">{{ formatMoney(results.dcf?.result?.value) }}</span>
+              <span class="method-value">{{ formatMoney(getDCFValue()) }}</span>
             </div>
             <div class="method-details">
-              WACC: {{ formatPercent(results.dcf?.result?.details?.wacc) }} |
+              WACC: {{ formatPercent(getWACC()) }} |
               终值占比: {{ getTerminalPercent() }}%
             </div>
           </div>
@@ -108,11 +108,41 @@
         <div class="card-title">风险分析</div>
         <div class="risk-section">
           <h3>情景分析</h3>
-          <div class="scenario-table">
-            <div v-for="(scenario, name) in getScenarios()" :key="name" class="scenario-row">
-              <span>{{ name }}</span>
-              <span>{{ formatMoney(scenario.valuation?.value || scenario.value) }}</span>
-            </div>
+          <div class="scenario-table-container">
+            <table class="scenario-table">
+              <thead>
+                <tr>
+                  <th>情景</th>
+                  <th>估值结果</th>
+                  <th>收入增长调整</th>
+                  <th>利润率调整</th>
+                  <th>WACC调整</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(scenario, name) in getScenarios()" :key="name"
+                    class="scenario-row"
+                    :class="getScenarioResultClass(name)">
+                  <td class="scenario-name">{{ getScenarioDisplayName(name) }}</td>
+                  <td class="scenario-value">{{ formatMoney(scenario.valuation?.value || scenario.value) }}</td>
+                  <td class="scenario-param">
+                    <span :class="getParamClass(scenario.scenario?.revenue_growth_adj)">
+                      {{ formatParamAdjustment(scenario.scenario?.revenue_growth_adj) }}
+                    </span>
+                  </td>
+                  <td class="scenario-param">
+                    <span :class="getParamClass(scenario.scenario?.margin_adj)">
+                      {{ formatParamAdjustment(scenario.scenario?.margin_adj) }}
+                    </span>
+                  </td>
+                  <td class="scenario-param">
+                    <span :class="getParamClass(scenario.scenario?.wacc_adj)">
+                      {{ formatParamAdjustment(scenario.scenario?.wacc_adj) }}
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
 
@@ -177,7 +207,7 @@
           <div class="recommendation-reasons">
             <h4>理由：</h4>
             <ul>
-              <li>DCF估值显示公司内在价值为 {{ formatMoney(results.dcf?.result?.value) }}</li>
+              <li>DCF估值显示公司内在价值为 {{ formatMoney(getDCFValue()) }}</li>
               <li>情景分析表明估值存在一定不确定性</li>
               <li>压力测试显示最大下行风险为 {{ getMaxDownside() }}</li>
               <li>建议设置 {{ getSafetyMargin() }} 的安全边际</li>
@@ -206,7 +236,18 @@ onBeforeMount(() => {
   if (data) {
     const parsed = JSON.parse(data)
     results.value = parsed
-    company.value = parsed.company
+    // 支持两种数据格式：历史记录格式和完整估值结果格式
+    if (parsed.company) {
+      company.value = parsed.company
+    } else if (parsed.company_name) {
+      // 历史记录格式，构建 company 对象
+      company.value = {
+        name: parsed.company_name,
+        industry: parsed.industry,
+        stage: parsed.stage,
+        revenue: parsed.revenue
+      }
+    }
   }
 })
 
@@ -214,8 +255,12 @@ const getRecommendedValue = () => {
   const values: number[] = []
 
   // 收集所有估值方法的结果
+  // 支持历史记录格式和完整估值结果格式
   if (results.value?.dcf?.result?.value) {
     values.push(results.value.dcf.result.value)
+  } else if (results.value?.dcf_value) {
+    // 历史记录格式
+    values.push(results.value.dcf_value * 10000) // 转换为万元
   }
 
   if (results.value?.relative?.results) {
@@ -263,8 +308,29 @@ const getTerminalPercent = () => {
   return ((pvTerminal / total) * 100).toFixed(1)
 }
 
+const getDCFValue = () => {
+  // 支持历史记录格式和完整估值结果格式
+  if (results.value?.dcf?.result?.value) {
+    return results.value.dcf.result.value
+  } else if (results.value?.dcf_value) {
+    return results.value.dcf_value * 10000 // 转换为万元
+  }
+  return 0
+}
+
+const getWACC = () => {
+  // 支持历史记录格式和完整估值结果格式
+  if (results.value?.dcf?.result?.details?.wacc) {
+    return results.value.dcf.result.details.wacc
+  } else if (results.value?.dcf_wacc) {
+    return results.value.dcf_wacc
+  }
+  return undefined
+}
+
 const getScenarios = () => {
-  const scenarios = results.value?.scenario?.results || {}
+  // 支持两种数据格式：历史记录格式和完整估值结果格式
+  const scenarios = results.value?.results || results.value?.scenario?.results || {}
   const filtered: Record<string, any> = {}
   for (const [name, data] of Object.entries(scenarios)) {
     if (name !== 'statistics') {
@@ -397,6 +463,45 @@ const formatMoney = (value: number | string | undefined) => {
 const formatPercent = (value: number | undefined) => {
   if (value === undefined || value === null || isNaN(value)) return '--'
   return (value * 100).toFixed(2) + '%'
+}
+
+// 情景分析辅助函数
+const getScenarioDisplayName = (name: string) => {
+  const names: Record<string, string> = {
+    'base_case': '基准情景',
+    'bull_case': '乐观情景',
+    'bear_case': '悲观情景',
+    'custom_scenario': '自定义情景'
+  }
+  return names[name] || name
+}
+
+const getScenarioResultClass = (name: string) => {
+  const classes: Record<string, string> = {
+    'base_case': '',
+    'bull_case': 'bull-row',
+    'bear_case': 'bear-row',
+    'custom_scenario': 'custom-row',
+    // 支持中文情景名称
+    '基准情景': '',
+    '乐观情景': 'bull-row',
+    '悲观情景': 'bear-row',
+    '自定义情景': 'custom-row'
+  }
+  return classes[name] || ''
+}
+
+const getParamClass = (value: number | undefined) => {
+  if (value === undefined || value === null) return ''
+  if (value > 0) return 'param-positive'
+  if (value < 0) return 'param-negative'
+  return 'param-neutral'
+}
+
+const formatParamAdjustment = (value: number | undefined) => {
+  if (value === undefined || value === null) return '--'
+  const sign = value > 0 ? '+' : ''
+  return sign + (value * 100).toFixed(1) + '%'
 }
 
 // 浏览器打印/导出PDF
@@ -573,18 +678,100 @@ if (typeof document !== 'undefined') {
   border-bottom: 2px solid #667eea;
 }
 
-.scenario-table {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.scenario-table-container {
+  overflow-x: auto;
+  margin-top: 10px;
 }
 
-.scenario-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 10px 15px;
+.scenario-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.scenario-table thead {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.scenario-table th {
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.95em;
+}
+
+.scenario-table tbody tr {
+  border-bottom: 1px solid #f0f0f0;
+  transition: background 0.2s;
+}
+
+.scenario-table tbody tr:hover {
   background: #f8f9fa;
-  border-radius: 4px;
+}
+
+.scenario-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.scenario-table td {
+  padding: 12px 16px;
+  color: #333;
+}
+
+.scenario-name {
+  font-weight: 600;
+  color: #555;
+}
+
+.scenario-value {
+  font-weight: 600;
+  color: #667eea;
+}
+
+.scenario-param {
+  font-size: 0.9em;
+}
+
+.param-positive {
+  color: #91cc75;
+  font-weight: 600;
+}
+
+.param-negative {
+  color: #ee6666;
+  font-weight: 600;
+}
+
+.param-neutral {
+  color: #999;
+}
+
+.scenario-row.bull-row {
+  background: linear-gradient(135deg, #f0fff4 0%, #e8fff0 100%);
+}
+
+.scenario-row.bear-row {
+  background: linear-gradient(135deg, #fff5f5 0%, #ffe8e8 100%);
+}
+
+.scenario-row.custom-row {
+  background: linear-gradient(135deg, #f8f9ff 0%, #f0f7ff 100%);
+}
+
+.scenario-row.bull-row:hover {
+  background: linear-gradient(135deg, #e8fff0 0%, #d8ffe8 100%);
+}
+
+.scenario-row.bear-row:hover {
+  background: linear-gradient(135deg, #ffe8e8 0%, #ffd8d8 100%);
+}
+
+.scenario-row.custom-row:hover {
+  background: linear-gradient(135deg, #f0f7ff 0%, #e8f0ff 100%);
 }
 
 .stress-table-container {

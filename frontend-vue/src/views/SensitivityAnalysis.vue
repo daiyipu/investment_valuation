@@ -5,6 +5,59 @@
       <p>评估各参数对估值的影响程度</p>
     </div>
 
+    <!-- 高级配置 -->
+    <div class="card">
+      <div class="section-title">
+        ⚙️ 参数配置
+        <button @click="showAdvancedConfig = !showAdvancedConfig" class="btn-toggle">
+          {{ showAdvancedConfig ? '收起 ▲' : '展开 ▼' }}
+        </button>
+      </div>
+      <div v-if="showAdvancedConfig" class="advanced-config-content">
+        <div class="config-section">
+          <h4 class="config-title">参数变化幅度设置</h4>
+          <div class="params-config-grid">
+            <div class="config-item">
+              <label>收入增长率变化</label>
+              <div class="input-group">
+                <input v-model.number="paramChanges.growth_rate" type="number" step="1" min="1" max="50" />
+                <span class="input-unit">%</span>
+              </div>
+            </div>
+            <div class="config-item">
+              <label>营业利润率变化</label>
+              <div class="input-group">
+                <input v-model.number="paramChanges.operating_margin" type="number" step="1" min="1" max="30" />
+                <span class="input-unit">%</span>
+              </div>
+            </div>
+            <div class="config-item">
+              <label>WACC变化</label>
+              <div class="input-group">
+                <input v-model.number="paramChanges.wacc" type="number" step="0.5" min="0.5" max="5" />
+                <span class="input-unit">%</span>
+              </div>
+            </div>
+            <div class="config-item">
+              <label>终值增长率变化</label>
+              <div class="input-group">
+                <input v-model.number="paramChanges.terminal_growth" type="number" step="0.1" min="0.1" max="2" />
+                <span class="input-unit">%</span>
+              </div>
+            </div>
+          </div>
+          <div class="config-hint">
+            💡 设置各参数在敏感性分析中的变化幅度，值越大表示测试范围越广
+          </div>
+          <div class="config-actions">
+            <button @click="runSensitivityAnalysis" class="btn-primary" :disabled="loading">
+              {{ loading ? '分析中...' : '重新运行分析' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-title">参数敏感性排序（龙卷风图）</div>
       <div ref="tornadoChart" class="chart"></div>
@@ -51,9 +104,19 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import * as echarts from 'echarts'
+import { sensitivityAPI } from '../services/api'
 
 const sensitivityParams = ref<Record<string, any>>({})
 const tornadoChart = ref<HTMLElement>()
+const showAdvancedConfig = ref(false)
+const loading = ref(false)
+
+const paramChanges = ref({
+  growth_rate: 10,      // ±10%
+  operating_margin: 5,  // ±5%
+  wacc: 1,              // ±1%
+  terminal_growth: 0.5  // ±0.5%
+})
 
 const mostSensitiveParam = computed(() => {
   const entries = Object.entries(sensitivityParams.value)
@@ -72,6 +135,56 @@ onMounted(async () => {
     }
   }
 })
+
+const runSensitivityAnalysis = async () => {
+  loading.value = true
+  try {
+    const data = sessionStorage.getItem('valuationResults')
+    if (!data) {
+      alert('请先进行估值分析')
+      return
+    }
+
+    const parsed = JSON.parse(data)
+    const company = parsed.company
+
+    // 构建参数变化字典
+    const paramChangesDict: Record<string, number> = {
+      growth_rate: paramChanges.value.growth_rate / 100,
+      operating_margin: paramChanges.value.operating_margin / 100,
+      wacc: paramChanges.value.wacc / 100,
+      terminal_growth: paramChanges.value.terminal_growth / 100
+    }
+
+    // 调用龙卷风图API
+    const response = await sensitivityAPI.tornado(company, paramChangesDict)
+
+    // 后端返回的是数组，需要转换为对象格式
+    const resultArray = response.data.result || []
+    sensitivityParams.value = {}
+    resultArray.forEach((item: any) => {
+      sensitivityParams.value[item.parameter] = {
+        valuation_range: item.max_impact * 2,  // 估值波动范围
+        base_value: 0,  // 基准值（暂时设为0）
+        impact_percentage: item.impact_pct
+      }
+    })
+
+    // 保存到 sessionStorage
+    sessionStorage.setItem('valuationResults', JSON.stringify({
+      ...parsed,
+      sensitivity: response.data
+    }))
+
+    // 重新初始化图表
+    initTornadoChart()
+  } catch (error) {
+    console.error('敏感性分析失败:', error)
+    alert('敏感性分析失败，请检查参数设置')
+  } finally {
+    loading.value = false
+  }
+}
 
 const initTornadoChart = () => {
   if (!tornadoChart.value) return
@@ -217,5 +330,129 @@ const formatParamValue = (name: string, value: number) => {
 .insight-text {
   color: #666;
   font-size: 0.95em;
+}
+
+/* 高级配置样式 */
+.section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 15px 0;
+  font-size: 1.1em;
+  color: #333;
+  font-weight: 600;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.btn-toggle {
+  background: transparent;
+  color: #667eea;
+  border: 1px solid #667eea;
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85em;
+  transition: all 0.3s;
+}
+
+.btn-toggle:hover {
+  background: #667eea;
+  color: white;
+}
+
+.advanced-config-content {
+  margin-top: 20px;
+}
+
+.config-section {
+  margin-bottom: 25px;
+}
+
+.config-section:last-child {
+  margin-bottom: 0;
+}
+
+.config-title {
+  margin: 0 0 15px 0;
+  font-size: 1em;
+  color: #333;
+  font-weight: 600;
+}
+
+.params-config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.config-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.config-item label {
+  font-size: 0.9em;
+  color: #555;
+  font-weight: 500;
+}
+
+.input-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.input-group input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.input-unit {
+  flex: 0 0 30px;
+  font-size: 0.85em;
+  color: #666;
+}
+
+.config-hint {
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: #fff3cd;
+  border-left: 3px solid #ffc107;
+  border-radius: 4px;
+  font-size: 0.85em;
+  color: #856404;
+}
+
+.config-actions {
+  margin-top: 15px;
+  text-align: center;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 10px 30px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s;
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 </style>

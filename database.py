@@ -231,3 +231,73 @@ class DatabaseManager:
             ]
         finally:
             session.close()
+
+    def save_analysis_history(
+        self,
+        analysis_type: str,
+        company: dict,
+        results: dict
+    ) -> int:
+        """
+        保存分析历史记录（通用方法）
+
+        Args:
+            analysis_type: 分析类型 (scenario, sensitivity, stress_test, absolute, relative)
+            company: 公司信息字典
+            results: 分析结果字典
+
+        Returns:
+            历史记录ID
+        """
+        import json
+        session = Session(self.get_engine())
+
+        try:
+            # 提取基准情景估值（通常是第一个情景）
+            base_value = 0
+            if analysis_type == 'scenario':
+                # 情景分析：使用基准情景的估值
+                for name, data in results.items():
+                    if name == '基准情景' or name == '基准':
+                        base_value = data.get('value', 0) / 10000  # 转为万元
+                        break
+            elif analysis_type == 'absolute':
+                base_value = results.get('result', {}).get('value', 0) / 10000
+            elif analysis_type == 'relative':
+                # 相对估值使用平均值或第一个方法的结果
+                result = results.get('results', {})
+                if isinstance(result, dict):
+                    first_key = next(iter(result), None)
+                    if first_key:
+                        base_value = result[first_key].get('value', 0) / 10000
+
+            # 创建历史记录
+            history = ValuationHistory(
+                company_name=company.get('name', ''),
+                industry=company.get('industry', ''),
+                stage=company.get('stage', ''),
+                revenue=float(company.get('revenue', 0)) / 10000,
+                net_income=float(company.get('net_income', 0)) / 10000,
+                net_assets=float(company.get('net_assets', 0)) / 10000,
+                ebitda=float(company.get('ebitda', 0)) / 10000,
+                growth_rate=float(company.get('growth_rate', 0)),
+                operating_margin=float(company.get('operating_margin', 0)),
+                beta=float(company.get('beta', 0)),
+                risk_free_rate=float(company.get('risk_free_rate', 0)),
+                market_risk_premium=float(company.get('market_risk_premium', 0)),
+                terminal_growth_rate=float(company.get('terminal_growth_rate', 0)),
+                dcf_value=base_value,
+                notes=json.dumps({
+                    'analysis_type': analysis_type,
+                    'results': results
+                }, ensure_ascii=False, default=str)
+            )
+
+            session.add(history)
+            session.commit()
+            session.flush()
+            session.refresh(history)
+
+            return history.id
+        finally:
+            session.close()
