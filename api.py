@@ -362,6 +362,86 @@ async def get_history_item(history_id: int):
         session.close()
 
 
+@app.post("/api/history/save", tags=["历史记录"])
+async def save_history(request: dict):
+    """
+    保存完整的估值分析历史记录
+
+    供前端在完成所有估值分析后调用，保存完整的估值结果
+
+    Args:
+        request: 包含 company 和所有分析结果的数据
+            - company: 公司信息
+            - dcf: DCF估值结果
+            - relative: 相对估值结果（可选）
+            - scenario: 情景分析结果（可选）
+            - stress: 压力测试结果（可选）
+            - sensitivity: 敏感性分析结果（可选）
+            - multiProduct: 多产品估值结果（可选）
+            - valuationMode: 估值模式（single/multi）
+            - products: 产品列表（多产品模式）
+    """
+    try:
+        print(f"DEBUG: 开始保存历史记录")
+        company = request.get('company', {})
+        print(f"DEBUG: company keys: {company.keys() if company else 'None'}")
+
+        results = {}
+
+        # 提取各种分析结果
+        if request.get('dcf'):
+            results['dcf'] = request['dcf']
+            print(f"DEBUG: 包含 DCF 结果")
+        if request.get('relative'):
+            results['relative'] = request['relative']
+            print(f"DEBUG: 包含相对估值结果")
+        if request.get('scenario'):
+            results['scenario'] = request['scenario']
+            print(f"DEBUG: 包含情景分析结果")
+        if request.get('stress'):
+            results['stress'] = request['stress']
+            print(f"DEBUG: 包含压力测试结果")
+        if request.get('sensitivity'):
+            results['sensitivity'] = request['sensitivity']
+            print(f"DEBUG: 包含敏感性分析结果")
+        if request.get('multiProduct'):
+            results['multiProduct'] = request['multiProduct']
+            print(f"DEBUG: 包含多产品估值结果")
+
+        # 保存估值模式和其他元数据
+        results['valuationMode'] = request.get('valuationMode', 'single')
+        if request.get('products'):
+            results['products'] = request['products']
+
+        # 确定基准估值（用于显示）
+        base_value = 0
+        if results.get('dcf', {}).get('result', {}).get('value'):
+            base_value = results['dcf']['result']['value'] / 10000
+        elif results.get('multiProduct', {}).get('result', {}).get('total_equity_value'):
+            base_value = results['multiProduct']['result']['total_equity_value'] / 10000
+
+        print(f"DEBUG: 准备保存到数据库, base_value={base_value}")
+
+        # 保存到数据库
+        history_id = db.save_analysis_history(
+            'comprehensive',  # 综合分析类型
+            company,
+            results
+        )
+
+        print(f"DEBUG: 保存成功, history_id={history_id}")
+
+        return {
+            "success": True,
+            "history_id": history_id,
+            "message": "历史记录保存成功"
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=f"保存失败: {str(e)}")
+
+
 @app.get("/health")
 async def health_check():
     """健康检查"""
@@ -383,9 +463,9 @@ async def relative_valuation(request: RelativeValuationRequest):
 
         results = RelativeValuation.auto_comparable_analysis(comp, comp_list, request.methods)
 
-        # 保存历史记录
-        results_dict = {"results": {k: v.to_dict() for k, v in results.items()}}
-        db.save_analysis_history('relative', request.company.dict(), results_dict)
+        # 注释：历史记录由前端在完成所有分析后统一保存
+        # results_dict = {"results": {k: v.to_dict() for k, v in results.items()}}
+        # db.save_analysis_history('relative', request.company.dict(), results_dict)
 
         return {
             "success": True,
@@ -410,9 +490,9 @@ async def absolute_valuation(
         comp = company.to_company()
         result = AbsoluteValuation.dcf_valuation(comp, projection_years=projection_years)
 
-        # 保存历史记录
-        result_dict = {"result": result.to_dict()}
-        db.save_analysis_history('absolute', company.dict(), result_dict)
+        # 注释：历史记录由前端在完成所有分析后统一保存
+        # result_dict = {"result": result.to_dict()}
+        # db.save_analysis_history('absolute', company.dict(), result_dict)
 
         return {
             "success": True,
@@ -510,6 +590,18 @@ async def multi_product_dcf(request: MultiProductValuationRequest):
             terminal_method=request.terminal_method,
         )
 
+        # 注释：历史记录由前端在完成所有分析后统一保存
+        # company_data = {
+        #     'name': request.company_name,
+        #     'industry': request.industry,
+        #     'revenue': sum(p.current_revenue for p in products),
+        #     'net_income': sum(p.current_revenue * p.operating_margin for p in products) * (1 - request.tax_rate),
+        #     'net_assets': 0,  # 多产品模式可能不提供
+        #     'beta': request.company_beta,
+        # }
+        # result_dict = {"result": result.to_dict(), "products": [p.to_dict() for p in products]}
+        # db.save_analysis_history('multi_product', company_data, result_dict)
+
         return {
             "success": True,
             "company": request.company_name,
@@ -529,6 +621,12 @@ class ScenarioAnalysisRequest(BaseModel):
     """情景分析请求模型"""
     company: CompanyInput
     scenarios: Optional[List[ScenarioInput]] = None
+    # 多产品模式支持
+    products: Optional[List[ProductSegmentInput]] = None
+    company_beta: Optional[float] = Field(None, description="公司整体贝塔系数（多产品模式使用）")
+    tax_rate: Optional[float] = Field(0.25, description="税率（多产品模式使用）")
+    total_debt: Optional[float] = Field(None, description="总债务（多产品模式使用，万元）")
+    cash_and_equivalents: Optional[float] = Field(0, description="货币资金（多产品模式使用，万元）")
 
 
 @app.post("/api/scenario/analyze")
@@ -537,43 +635,144 @@ async def scenario_analysis(request: ScenarioAnalysisRequest):
     情景分析
 
     支持基准、乐观、悲观等多情景分析
+    支持单产品公司和多产品公司两种模式
     """
     try:
         print(f"DEBUG: Received scenario request")
-        print(f"  company: {request.company.name}, growth_rate={request.company.growth_rate}")
-        print(f"  scenarios: {request.scenarios}")
+        print(f"  company: {request.company.name}")
+        print(f"  has products: {request.products is not None}")
+        if request.products:
+            print(f"  products count: {len(request.products)}")
 
-        comp = request.company.to_company()
-        analyzer = ScenarioAnalyzer(comp)
+        # 多产品模式
+        if request.products and len(request.products) > 0:
+            from multi_product_valuation import MultiProductValuation
 
-        if request.scenarios is None:
-            # 使用默认三情景
-            results = analyzer.compare_scenarios()
-        else:
-            scenario_configs = [s.to_scenario_config() for s in request.scenarios]
-            results = analyzer.compare_scenarios(scenarios=scenario_configs)
+            # 转换产品列表
+            products = [p.to_product_segment() for p in request.products]
 
-        # 转换结果格式
-        formatted_results = {}
-        for name, data in results.items():
-            if name == 'statistics':
-                formatted_results[name] = data
+            # 获取情景配置
+            if request.scenarios is None:
+                from models import SCENARIOS
+                scenario_configs = [SCENARIOS['base'], SCENARIOS['bull'], SCENARIOS['bear']]
             else:
-                formatted_results[name] = {
-                    'scenario': data['scenario'].to_dict(),
-                    'valuation': data['valuation'].to_dict(),
-                    'value': data['value'],
+                scenario_configs = [s.to_scenario_config() for s in request.scenarios]
+
+            results = {}
+
+            # 对每个情景进行多产品估值
+            for scenario in scenario_configs:
+                try:
+                    # 调整产品参数
+                    adjusted_products = []
+                    for product in products:
+                        adjusted_product = ProductSegment(
+                            name=product.name,
+                            description=product.description,
+                            current_revenue=product.current_revenue,
+                            revenue_weight=product.revenue_weight,
+                            # 调整增长率
+                            growth_rate_years=[
+                                max(0, g + scenario.revenue_growth_adj)
+                                for g in product.growth_rate_years
+                            ],
+                            terminal_growth_rate=max(0, product.terminal_growth_rate + scenario.terminal_growth_adj),
+                            # 调整利润率
+                            gross_margin=max(0, min(1, product.gross_margin + scenario.margin_adj)),
+                            operating_margin=max(0, min(1, product.operating_margin + scenario.margin_adj)),
+                            capex_ratio=product.capex_ratio,
+                            wc_change_ratio=product.wc_change_ratio,
+                            depreciation_ratio=product.depreciation_ratio,
+                            beta=product.beta,
+                        )
+                        adjusted_products.append(adjusted_product)
+
+                    # 执行多产品估值
+                    method_params = {
+                        'tax_rate': request.tax_rate or 0.25,
+                    }
+                    if request.company_beta is not None:
+                        method_params['company_beta'] = request.company_beta
+
+                    valuation_result = MultiProductValuation.multi_product_dcf_valuation(
+                        products=adjusted_products,
+                        **method_params
+                    )
+
+                    # 计算股权价值（企业价值 - 净债务）
+                    total_debt = request.total_debt or 0
+                    cash = request.cash_and_equivalents or 0
+                    net_debt = total_debt - cash
+                    equity_value = valuation_result.total_enterprise_value - net_debt
+
+                    results[scenario.name] = {
+                        'scenario': scenario.to_dict(),
+                        'valuation': {
+                            'method': '多产品DCF',
+                            'value': equity_value,
+                            'details': valuation_result.to_dict(),
+                        },
+                        'value': equity_value,
+                    }
+                except Exception as e:
+                    import traceback
+                    print(f"情景'{scenario.name}'计算失败: {e}")
+                    traceback.print_exc()
+
+            # 计算统计信息
+            values = [r['value'] for r in results.values()]
+            if values:
+                import numpy as np
+                results['statistics'] = {
+                    'mean': np.mean(values),
+                    'median': np.median(values),
+                    'std': np.std(values),
+                    'min': np.min(values),
+                    'max': np.max(values),
+                    'range': np.max(values) - np.min(values),
+                    'count': len(values),
                 }
 
-        # 保存历史记录
-        db.save_analysis_history('scenario', request.company.dict(), formatted_results)
+            formatted_results = results
+
+        else:
+            # 单产品模式（原有逻辑）
+            comp = request.company.to_company()
+            analyzer = ScenarioAnalyzer(comp)
+
+            if request.scenarios is None:
+                # 使用默认三情景
+                results = analyzer.compare_scenarios()
+            else:
+                scenario_configs = [s.to_scenario_config() for s in request.scenarios]
+                results = analyzer.compare_scenarios(scenarios=scenario_configs)
+
+            # 转换结果格式
+            formatted_results = {}
+            for name, data in results.items():
+                if name == 'statistics':
+                    formatted_results[name] = data
+                else:
+                    formatted_results[name] = {
+                        'scenario': data['scenario'].to_dict(),
+                        'valuation': data['valuation'].to_dict(),
+                        'value': data['value'],
+                    }
+
+        # 注释：历史记录由前端在完成所有分析后统一保存
+        # save_data = request.company.dict()
+        # if request.products:
+        #     save_data['products'] = [p.dict() for p in request.products]
+        # db.save_analysis_history('scenario', save_data, formatted_results)
 
         return {
             "success": True,
-            "company": comp.name,
+            "company": request.company.name,
             "results": formatted_results,
         }
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
 
 

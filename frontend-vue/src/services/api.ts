@@ -36,10 +36,15 @@ export const valuationAPI = {
 
 // 情景分析API
 export const scenarioAPI = {
-  analyze: (company: any, scenarios?: any[]) =>
+  analyze: (company: any, scenarios?: any[], products?: any[], companyBeta?: number, taxRate?: number, totalDebt?: number, cash?: number) =>
     apiClient.post('/api/scenario/analyze', {
       company,
-      scenarios
+      scenarios,
+      products,
+      company_beta: companyBeta,
+      tax_rate: taxRate,
+      total_debt: totalDebt,
+      cash_and_equivalents: cash
     })
 }
 
@@ -110,6 +115,21 @@ export const dataAPI = {
   // 搜索公司
   search: (keywords: string[], limit: number = 10) =>
     apiClient.post('/api/data/search', { keywords, limit })
+}
+
+// 历史记录API
+export const historyAPI = {
+  // 获取历史记录列表
+  getList: (limit: number = 50) =>
+    apiClient.get(`/api/history`, { params: { limit } }),
+
+  // 获取单个历史记录详情
+  getDetail: (historyId: number) =>
+    apiClient.get(`/api/history/${historyId}`),
+
+  // 保存完整估值结果到历史记录
+  save: (data: any) =>
+    apiClient.post('/api/history/save', data)
 }
 
 export default apiClient

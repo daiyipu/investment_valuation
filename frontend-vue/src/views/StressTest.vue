@@ -213,7 +213,7 @@ const initMonteCarloChart = () => {
     },
     xAxis: {
       type: 'category',
-      data: bins.map(b => b.toFixed(1)),
+      data: bins.map((b: number) => b.toFixed(1)),
       name: '估值（亿元）',
       nameLocation: 'middle',
       nameGap: 30,
@@ -260,15 +260,50 @@ const runStressTest = async () => {
     }
 
     const parsed = JSON.parse(data)
+
+    // 检查是否为多产品模式
+    const isMultiProduct = parsed.valuationMode === 'multi' && parsed.products && parsed.products.length > 0
+    if (isMultiProduct) {
+      alert('多产品估值模式暂不支持压力测试。\n请使用单产品估值模式进行压力测试。')
+      loading.value = false
+      return
+    }
+
     const company = parsed.company
+
+    // 确保包含所有必填字段（支持历史记录格式）
+    const companyForAPI = {
+      name: company.name || '',
+      industry: company.industry || '',
+      stage: company.stage || '成长期',
+      revenue: company.revenue || 0,
+      net_income: company.net_income ?? (company.revenue ? company.revenue * 0.15 : 0),
+      ebitda: company.ebitda,
+      gross_profit: company.gross_profit,
+      operating_cash_flow: company.operating_cash_flow,
+      total_assets: company.total_assets,
+      net_assets: company.net_assets,
+      total_debt: company.total_debt ?? 0,
+      cash_and_equivalents: company.cash_and_equivalents ?? 0,
+      growth_rate: company.growth_rate ?? 0.15,
+      margin: company.margin,
+      operating_margin: company.operating_margin,
+      tax_rate: company.tax_rate ?? 0.25,
+      beta: company.beta ?? 1.0,
+      risk_free_rate: company.risk_free_rate ?? 0.03,
+      market_risk_premium: company.market_risk_premium ?? 0.07,
+      cost_of_debt: company.cost_of_debt ?? 0.05,
+      target_debt_ratio: company.target_debt_ratio ?? 0.3,
+      terminal_growth_rate: company.terminal_growth_rate ?? 0.025
+    }
 
     // 构建收入冲击数组（转为负数百分比）
     const shocks = revenueShockLevels.value.map(level => -level / 100)
 
     // 并行调用收入冲击和蒙特卡洛模拟API
     const [revenueShockResponse, monteCarloResponse] = await Promise.all([
-      stressTestAPI.revenueShock(company, shocks),
-      stressTestAPI.monteCarlo(company, monteCarloIterations.value)
+      stressTestAPI.revenueShock(companyForAPI, shocks),
+      stressTestAPI.monteCarlo(companyForAPI, monteCarloIterations.value)
     ])
 
     // 更新数据

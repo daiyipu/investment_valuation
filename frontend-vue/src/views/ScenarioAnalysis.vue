@@ -155,7 +155,72 @@ onMounted(async () => {
       // 完整估值结果格式
       if (!parsed.scenario) {
         try {
-          const response = await scenarioAPI.analyze(parsed.company)
+          // 确保包含所有必填字段（支持历史记录格式）
+          const company = parsed.company
+          const companyForAPI = {
+            name: company.name || '',
+            industry: company.industry || '',
+            stage: company.stage || '成长期',
+            revenue: company.revenue || 0,
+            net_income: company.net_income ?? (company.revenue ? company.revenue * 0.15 : 0),
+            ebitda: company.ebitda,
+            gross_profit: company.gross_profit,
+            operating_cash_flow: company.operating_cash_flow,
+            total_assets: company.total_assets,
+            net_assets: company.net_assets,
+            total_debt: company.total_debt ?? 0,
+            cash_and_equivalents: company.cash_and_equivalents ?? 0,
+            growth_rate: company.growth_rate ?? 0.15,
+            margin: company.margin,
+            operating_margin: company.operating_margin,
+            tax_rate: company.tax_rate ?? 0.25,
+            beta: company.beta ?? 1.0,
+            risk_free_rate: company.risk_free_rate ?? 0.03,
+            market_risk_premium: company.market_risk_premium ?? 0.07,
+            cost_of_debt: company.cost_of_debt ?? 0.05,
+            target_debt_ratio: company.target_debt_ratio ?? 0.3,
+            terminal_growth_rate: company.terminal_growth_rate ?? 0.025
+          }
+
+          // 检查是否为多产品模式
+          const isMultiProduct = parsed.valuationMode === 'multi' && parsed.products && parsed.products.length > 0
+
+          let response
+          if (isMultiProduct) {
+            // 多产品模式
+            console.log('初始化：使用多产品情景分析，产品数量:', parsed.products.length)
+
+            // 转换产品数据：支持百分比整数格式（如 25 -> 0.25）和小数格式
+            const productsForAPI = parsed.products.map((p: any) => ({
+              ...p,
+              // 转换增长率：如果值 > 1，认为是百分比格式，需要除以 100
+              growth_rate_years: (p.growth_rate_years || []).map((g: number) => g > 1 ? g / 100 : g),
+              terminal_growth_rate: p.terminal_growth_rate > 1 ? p.terminal_growth_rate / 100 : p.terminal_growth_rate,
+              // 转换利润率
+              gross_margin: p.gross_margin > 1 ? p.gross_margin / 100 : p.gross_margin,
+              operating_margin: p.operating_margin > 1 ? p.operating_margin / 100 : p.operating_margin,
+              // 转换比率
+              capex_ratio: p.capex_ratio > 1 ? p.capex_ratio / 100 : p.capex_ratio,
+              wc_change_ratio: p.wc_change_ratio > 1 ? p.wc_change_ratio / 100 : p.wc_change_ratio,
+              depreciation_ratio: p.depreciation_ratio > 1 ? p.depreciation_ratio / 100 : p.depreciation_ratio,
+              // beta 保持原样
+              beta: p.beta
+            }))
+
+            response = await scenarioAPI.analyze(
+              companyForAPI,
+              undefined,  // 使用默认情景
+              productsForAPI,
+              companyForAPI.beta,
+              0.25,
+              companyForAPI.total_debt,
+              companyForAPI.cash_and_equivalents
+            )
+          } else {
+            // 单产品模式
+            response = await scenarioAPI.analyze(companyForAPI)
+          }
+
           scenarios.value = response.data.results
           sessionStorage.setItem('valuationResults', JSON.stringify({
             ...parsed,
@@ -249,7 +314,33 @@ const runAnalysis = async () => {
     }
 
     const parsed = JSON.parse(data)
-    const company = parsed.company
+    let company = parsed.company
+
+    // 确保包含所有必填字段（支持历史记录格式）
+    const companyForAPI = {
+      name: company.name || '',
+      industry: company.industry || '',
+      stage: company.stage || '成长期',
+      revenue: company.revenue || 0,
+      net_income: company.net_income ?? (company.revenue ? company.revenue * 0.15 : 0),  // 如果没有，用收入的15%估算
+      ebitda: company.ebitda,
+      gross_profit: company.gross_profit,
+      operating_cash_flow: company.operating_cash_flow,
+      total_assets: company.total_assets,
+      net_assets: company.net_assets,
+      total_debt: company.total_debt ?? 0,
+      cash_and_equivalents: company.cash_and_equivalents ?? 0,
+      growth_rate: company.growth_rate ?? 0.15,
+      margin: company.margin,
+      operating_margin: company.operating_margin,
+      tax_rate: company.tax_rate ?? 0.25,
+      beta: company.beta ?? 1.0,
+      risk_free_rate: company.risk_free_rate ?? 0.03,
+      market_risk_premium: company.market_risk_premium ?? 0.07,
+      cost_of_debt: company.cost_of_debt ?? 0.05,
+      target_debt_ratio: company.target_debt_ratio ?? 0.3,
+      terminal_growth_rate: company.terminal_growth_rate ?? 0.025
+    }
 
     // 构建情景参数数组（基准情景参数固定为0，乐观和悲观可配置）
     const scenarioParams = [
@@ -273,7 +364,45 @@ const runAnalysis = async () => {
       }
     ]
 
-    const response = await scenarioAPI.analyze(company, scenarioParams)
+    // 检查是否为多产品模式
+    const isMultiProduct = parsed.valuationMode === 'multi' && parsed.products && parsed.products.length > 0
+
+    let response
+    if (isMultiProduct) {
+      // 多产品模式：传递产品数据
+      console.log('使用多产品情景分析，产品数量:', parsed.products.length)
+
+      // 转换产品数据：支持百分比整数格式（如 25 -> 0.25）和小数格式
+      const productsForAPI = parsed.products.map((p: any) => ({
+        ...p,
+        // 转换增长率：如果值 > 1，认为是百分比格式，需要除以 100
+        growth_rate_years: (p.growth_rate_years || []).map((g: number) => g > 1 ? g / 100 : g),
+        terminal_growth_rate: p.terminal_growth_rate > 1 ? p.terminal_growth_rate / 100 : p.terminal_growth_rate,
+        // 转换利润率
+        gross_margin: p.gross_margin > 1 ? p.gross_margin / 100 : p.gross_margin,
+        operating_margin: p.operating_margin > 1 ? p.operating_margin / 100 : p.operating_margin,
+        // 转换比率
+        capex_ratio: p.capex_ratio > 1 ? p.capex_ratio / 100 : p.capex_ratio,
+        wc_change_ratio: p.wc_change_ratio > 1 ? p.wc_change_ratio / 100 : p.wc_change_ratio,
+        depreciation_ratio: p.depreciation_ratio > 1 ? p.depreciation_ratio / 100 : p.depreciation_ratio,
+        // beta 保持原样
+        beta: p.beta
+      }))
+
+      response = await scenarioAPI.analyze(
+        companyForAPI,
+        scenarioParams,
+        productsForAPI,
+        companyForAPI.beta,  // company_beta
+        0.25,  // tax_rate
+        companyForAPI.total_debt,
+        companyForAPI.cash_and_equivalents
+      )
+    } else {
+      // 单产品模式：原有逻辑
+      response = await scenarioAPI.analyze(companyForAPI, scenarioParams)
+    }
+
     scenarios.value = response.data.results
 
     // 保存到 sessionStorage

@@ -1,9 +1,15 @@
 <template>
   <div class="valuation-result">
     <div class="header">
+      <button class="btn-back-left" @click="$router.push('/valuation')">← 返回</button>
       <h1>📊 估值结果</h1>
       <p>{{ company?.name }} - {{ company?.industry }}</p>
-      <button class="btn-back" @click="$router.push('/valuation')">← 返回</button>
+      <button class="btn-save-right" @click="saveToHistory" :disabled="saving">
+        {{ saving ? '保存中...' : '💾 保存到历史记录' }}
+      </button>
+      <div v-if="saveMessage" class="save-message" :class="{ 'success': saveMessage.includes('成功'), 'error': saveMessage.includes('失败') }">
+        {{ saveMessage }}
+      </div>
     </div>
 
     <div v-if="!results" class="no-data">
@@ -425,6 +431,7 @@
 <script setup lang="ts">
 import { ref, onMounted, nextTick, computed } from 'vue'
 import * as echarts from 'echarts'
+import { historyAPI } from '../services/api'
 
 const results = ref<any>(null)
 const company = ref<any>(null)
@@ -1152,6 +1159,47 @@ const formatPercent = (value: number | string | undefined) => {
   return (numValue * 100).toFixed(1) + '%'
 }
 
+// 保存到历史记录
+const saving = ref(false)
+const saveMessage = ref('')
+
+const saveToHistory = async () => {
+  saving.value = true
+  saveMessage.value = ''
+
+  try {
+    console.log('开始保存到历史记录...')
+
+    // 准备保存的数据
+    const historyData = {
+      company: company.value,
+      ...results.value
+    }
+
+    const response = await historyAPI.save(historyData)
+
+    if (response.data.success) {
+      saveMessage.value = `✅ 保存成功！ID: ${response.data.history_id}`
+      console.log('历史记录保存成功:', response.data)
+
+      // 3秒后清除消息
+      setTimeout(() => {
+        saveMessage.value = ''
+      }, 3000)
+    } else {
+      throw new Error('保存失败')
+    }
+  } catch (error: any) {
+    console.error('保存历史记录失败:', error)
+    saveMessage.value = '❌ 保存失败，请重试'
+    setTimeout(() => {
+      saveMessage.value = ''
+    }, 3000)
+  } finally {
+    saving.value = false
+  }
+}
+
 const getScenarioResultClass = (name: string) => {
   if (name === '乐观') return 'bull'
   if (name === '悲观') return 'bear'
@@ -1203,7 +1251,7 @@ const getParamClass = (value: number | string | undefined, isInvert: boolean = f
   margin-bottom: 10px;
 }
 
-.btn-back {
+.btn-back-left {
   position: absolute;
   left: 20px;
   top: 50%;
@@ -1217,8 +1265,69 @@ const getParamClass = (value: number | string | undefined, isInvert: boolean = f
   transition: all 0.3s;
 }
 
-.btn-back:hover {
+.btn-back-left:hover {
   background: rgba(255, 255, 255, 0.3);
+}
+
+.btn-save-right {
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  color: #667eea;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.3s;
+  font-weight: 600;
+}
+
+.btn-save-right:hover:not(:disabled) {
+  background: white;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.btn-save-right:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.save-message {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 0.95em;
+  font-weight: 600;
+  animation: slideUp 0.3s ease;
+  z-index: 9999;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.save-message.success {
+  background: rgba(76, 175, 80, 0.95);
+  color: white;
+}
+
+.save-message.error {
+  background: rgba(244, 67, 54, 0.95);
+  color: white;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
 }
 
 .no-data {

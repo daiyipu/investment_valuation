@@ -1079,7 +1079,7 @@ const startValuation = async () => {
     // 情景分析使用默认参数（基准、乐观、悲观）
     const requests = [
       valuationAPI.dcf(company),
-      scenarioAPI.analyze(company, null),  // 使用默认情景
+      scenarioAPI.analyze(company),  // 使用默认情景
       stressTestAPI.full(company),
       sensitivityAPI.comprehensive(company)
     ]
@@ -1166,6 +1166,7 @@ const startValuation = async () => {
       // 小延迟确保存储完成
       await nextTick()
       console.log('即将跳转到结果页...')
+
       router.push('/valuation/result')
       console.log('✅ router.push调用完成')
     } catch (err: unknown) {

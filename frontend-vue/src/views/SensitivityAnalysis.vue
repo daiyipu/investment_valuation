@@ -146,7 +146,42 @@ const runSensitivityAnalysis = async () => {
     }
 
     const parsed = JSON.parse(data)
+
+    // 检查是否为多产品模式
+    const isMultiProduct = parsed.valuationMode === 'multi' && parsed.products && parsed.products.length > 0
+    if (isMultiProduct) {
+      alert('多产品估值模式暂不支持敏感性分析。\n请使用单产品估值模式进行敏感性分析。')
+      loading.value = false
+      return
+    }
+
     const company = parsed.company
+
+    // 确保包含所有必填字段（支持历史记录格式）
+    const companyForAPI = {
+      name: company.name || '',
+      industry: company.industry || '',
+      stage: company.stage || '成长期',
+      revenue: company.revenue || 0,
+      net_income: company.net_income ?? (company.revenue ? company.revenue * 0.15 : 0),
+      ebitda: company.ebitda,
+      gross_profit: company.gross_profit,
+      operating_cash_flow: company.operating_cash_flow,
+      total_assets: company.total_assets,
+      net_assets: company.net_assets,
+      total_debt: company.total_debt ?? 0,
+      cash_and_equivalents: company.cash_and_equivalents ?? 0,
+      growth_rate: company.growth_rate ?? 0.15,
+      margin: company.margin,
+      operating_margin: company.operating_margin,
+      tax_rate: company.tax_rate ?? 0.25,
+      beta: company.beta ?? 1.0,
+      risk_free_rate: company.risk_free_rate ?? 0.03,
+      market_risk_premium: company.market_risk_premium ?? 0.07,
+      cost_of_debt: company.cost_of_debt ?? 0.05,
+      target_debt_ratio: company.target_debt_ratio ?? 0.3,
+      terminal_growth_rate: company.terminal_growth_rate ?? 0.025
+    }
 
     // 构建参数变化字典
     const paramChangesDict: Record<string, number> = {
@@ -157,7 +192,7 @@ const runSensitivityAnalysis = async () => {
     }
 
     // 调用龙卷风图API
-    const response = await sensitivityAPI.tornado(company, paramChangesDict)
+    const response = await sensitivityAPI.tornado(companyForAPI, paramChangesDict)
 
     // 后端返回的是数组，需要转换为对象格式
     const resultArray = response.data.result || []
@@ -194,14 +229,14 @@ const initTornadoChart = () => {
   const impacts: number[] = []
 
   for (const [paramName, paramData] of Object.entries(sensitivityParams.value)) {
-    if (paramData.valuation_range) {
+    if (paramData?.valuation_range) {
       params.push(paramName)
-      impacts.push((paramData.valuation_range / 2 / 10000).toFixed(2) as any)
+      impacts.push(parseFloat((paramData.valuation_range / 2 / 10000).toFixed(2)))
     }
   }
 
   // 按影响程度排序
-  const sorted = params.map((p, i) => ({ name: p, impact: parseFloat(impacts[i] as string) }))
+  const sorted = params.map((p, i) => ({ name: p, impact: impacts[i] ?? 0 }))
     .sort((a, b) => b.impact - a.impact)
 
   chart.setOption({

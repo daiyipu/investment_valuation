@@ -20,6 +20,7 @@
 
       <div v-else-if="history.length > 0" class="history-list">
         <div v-for="item in history" :key="item.id" class="history-item" @click="viewHistoryItem(item.id)">
+          <div class="history-index">ID: {{ item.id }}</div>
           <div class="history-header">
             <span class="history-company">{{ item.company_name }}</span>
             <span class="history-date">{{ formatDate(item.created_at) }}</span>
@@ -47,7 +48,7 @@
     <div v-if="selectedItem && showModal" class="modal-overlay" @click.self="closeModal">
       <div class="modal-content">
         <div class="modal-header">
-          <h2>{{ selectedItem.company_name }} - 估值详情</h2>
+          <h2>{{ selectedItem.company_name }} - 估值详情 <span class="modal-index">ID: {{ selectedItem.id }}</span></h2>
           <button @click="closeModal" class="btn-close">×</button>
         </div>
         <div class="modal-body">
@@ -165,8 +166,19 @@ const loadToResultPage = () => {
     return
   }
 
+  // 构建兼容的数据格式：将 results 字段展开到顶层，同时保留 company 信息
+  const compatibleData = {
+    ...selectedItem.value.results,
+    company: {
+      name: selectedItem.value.company_name,
+      industry: selectedItem.value.industry,
+      stage: selectedItem.value.stage,
+      revenue: selectedItem.value.revenue
+    }
+  }
+
   // 存储到sessionStorage并跳转到结果页
-  sessionStorage.setItem('valuationResults', JSON.stringify(selectedItem.value))
+  sessionStorage.setItem('valuationResults', JSON.stringify(compatibleData))
   closeModal()
   router.push('/valuation/result')
 }
@@ -306,6 +318,23 @@ const formatDateTime = (dateStr: string) => {
   cursor: pointer;
   transition: all 0.3s;
   border: 2px solid transparent;
+  position: relative;
+}
+
+.history-index {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  padding: 4px 10px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 0.8em;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
 }
 
 .history-item:hover {
@@ -396,6 +425,17 @@ const formatDateTime = (dateStr: string) => {
   margin: 0;
   font-size: 1.3em;
   color: #333;
+}
+
+.modal-index {
+  display: inline-block;
+  padding: 2px 8px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 10px;
+  font-size: 0.75em;
+  margin-left: 8px;
+  vertical-align: middle;
 }
 
 .btn-close {
