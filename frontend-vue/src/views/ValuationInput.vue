@@ -88,6 +88,9 @@
           ➕ 添加产品
         </button>
         <span class="products-count">共 {{ products.length }} 个产品</span>
+        <button @click="autoCalculateWeights" class="btn-auto-calc" type="button" title="根据当前收入自动计算占比">
+          🔄 自动计算占比
+        </button>
       </div>
 
       <div class="products-list">
@@ -114,11 +117,28 @@
             </div>
             <div class="form-group">
               <label>当前收入(万元) *</label>
-              <input v-model.number="product.current_revenue" type="number" placeholder="50000" min="0" />
+              <input
+                v-model.number="product.current_revenue"
+                type="number"
+                placeholder="50000"
+                min="0"
+                @input="autoCalculateWeights"
+              />
             </div>
             <div class="form-group">
               <label>收入占比(%) *</label>
-              <input v-model.number="product.revenue_weight" type="number" placeholder="60" min="0" max="100" step="1" />
+              <input
+                v-model.number="product.revenue_weight"
+                type="number"
+                placeholder="自动计算"
+                min="0"
+                max="100"
+                step="1"
+                @input="manualWeightChange"
+              />
+              <small style="color: #999; font-size: 0.85em; margin-top: 4px; display: block;">
+                {{ (product.revenue_weight * 100).toFixed(1) }}%
+              </small>
             </div>
           </div>
 
@@ -240,7 +260,7 @@
     </div>
 
     <div class="form-card">
-      <div class="section-title">预测参数</div>
+      <div class="section-title">预测参数 - 自由现金流</div>
       <div class="form-grid">
         <div class="form-group">
           <label>预期增长率 (%)</label>
@@ -251,20 +271,66 @@
           <input v-model.number="form.operating_margin" type="number" step="0.1" placeholder="25" />
         </div>
         <div class="form-group">
+          <label>资本支出/收入 (%)</label>
+          <input v-model.number="form.capex_ratio" type="number" step="0.01" min="0" max="1" placeholder="0.05" />
+          <small style="color: #999; font-size: 0.8em">用于购买固定资产的支出</small>
+        </div>
+        <div class="form-group">
+          <label>营运资金变化/收入 (%)</label>
+          <input v-model.number="form.wc_change_ratio" type="number" step="0.01" min="0" max="1" placeholder="0.02" />
+          <small style="color: #999; font-size: 0.8em">应收账款、存货等变化</small>
+        </div>
+        <div class="form-group">
+          <label>折旧摊销/收入 (%)</label>
+          <input v-model.number="form.depreciation_ratio" type="number" step="0.01" min="0" max="1" placeholder="0.03" />
+          <small style="color: #999; font-size: 0.8em">非现金支出，加回计算</small>
+        </div>
+        <div class="form-group">
+          <label>税率 (%)</label>
+          <input v-model.number="form.tax_rate" type="number" step="0.01" min="0" max="1" placeholder="0.25" />
+          <small style="color: #999; font-size: 0.8em">企业所得税率</small>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-card">
+      <div class="section-title">预测参数 - WACC (加权平均资本成本)</div>
+      <div class="form-grid">
+        <div class="form-group">
           <label>贝塔系数 (β)</label>
           <input v-model.number="form.beta" type="number" step="0.1" placeholder="1.2" />
+          <small style="color: #999; font-size: 0.8em">系统性风险指标</small>
         </div>
         <div class="form-group">
           <label>无风险利率</label>
           <input v-model.number="form.risk_free_rate" type="number" step="0.01" placeholder="0.03" />
+          <small style="color: #999; font-size: 0.8em">通常使用国债收益率</small>
         </div>
         <div class="form-group">
           <label>市场风险溢价</label>
           <input v-model.number="form.market_risk_premium" type="number" step="0.01" placeholder="0.07" />
+          <small style="color: #999; font-size: 0.8em">股票市场相对无风险的超额收益</small>
         </div>
         <div class="form-group">
-          <label>永续增长率</label>
+          <label>债务成本</label>
+          <input v-model.number="form.cost_of_debt" type="number" step="0.01" placeholder="0.05" />
+          <small style="color: #999; font-size: 0.8em">借款利率</small>
+        </div>
+        <div class="form-group">
+          <label>目标债务比率 (%)</label>
+          <input v-model.number="form.target_debt_ratio" type="number" step="0.01" min="0" max="1" placeholder="0.3" />
+          <small style="color: #999; font-size: 0.8em">目标资本结构中债务占比</small>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-card">
+      <div class="section-title">预测参数 - 终值</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>永续增长率 (%)</label>
           <input v-model.number="form.terminal_growth_rate" type="number" step="0.005" placeholder="0.025" />
+          <small style="color: #999; font-size: 0.8em">预测期后的长期增长率</small>
         </div>
       </div>
     </div>
@@ -465,6 +531,12 @@ const form = ref({
   beta: 1.2,
   risk_free_rate: 0.03,
   market_risk_premium: 0.07,
+  cost_of_debt: 0.05,
+  target_debt_ratio: 0.3,
+  tax_rate: 0.25,
+  capex_ratio: 0.05,
+  wc_change_ratio: 0.02,
+  depreciation_ratio: 0.03,
   terminal_growth_rate: 0.025
 } as any)
 
@@ -1069,7 +1141,13 @@ const startValuation = async () => {
     const company = {
       ...form.value,
       growth_rate: form.value.growth_rate / 100,
-      operating_margin: form.value.operating_margin / 100
+      operating_margin: form.value.operating_margin / 100,
+      target_debt_ratio: form.value.target_debt_ratio || 0.3,
+      tax_rate: form.value.tax_rate || 0.25,
+      capex_ratio: form.value.capex_ratio || 0.05,
+      wc_change_ratio: form.value.wc_change_ratio || 0.02,
+      depreciation_ratio: form.value.depreciation_ratio || 0.03,
+      cost_of_debt: form.value.cost_of_debt || 0.05
     }
 
     console.log('公司数据:', company)
@@ -1207,6 +1285,12 @@ const resetForm = () => {
     beta: 1.0,
     risk_free_rate: 0.03,
     market_risk_premium: 0.07,
+    cost_of_debt: 0.05,
+    target_debt_ratio: 0.3,
+    tax_rate: 0.25,
+    capex_ratio: 0.05,
+    wc_change_ratio: 0.02,
+    depreciation_ratio: 0.03,
     terminal_growth_rate: 0.025
   }
   comparables.value = []
@@ -1251,6 +1335,21 @@ const removeProduct = (index: number) => {
 }
 
 // 更新产品权重（自动均分）
+// 自动计算收入占比（根据当前收入）
+const autoCalculateWeights = () => {
+  const totalRevenue = products.value.reduce((sum, p) => sum + (p.current_revenue || 0), 0)
+  if (totalRevenue > 0) {
+    products.value.forEach(p => {
+      p.revenue_weight = Math.round((p.current_revenue / totalRevenue) * 1000) / 1000
+    })
+  }
+}
+
+// 手动修改权重后标记为手动模式
+const manualWeightChange = () => {
+  // 权重手动修改后不再自动计算，由用户自行调整
+}
+
 const updateProductWeights = () => {
   const count = products.value.length
   const weight = 1 / count
@@ -1347,6 +1446,21 @@ const totalWeight = computed(() => {
 
 .btn-add:hover {
   background: #5568d3;
+}
+
+.btn-auto-calc {
+  background: #10b981;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85em;
+  margin-left: auto;
+}
+
+.btn-auto-calc:hover {
+  background: #059669;
 }
 
 .form-grid {

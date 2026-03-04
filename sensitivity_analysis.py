@@ -4,8 +4,8 @@
 """
 import numpy as np
 from typing import List, Dict, Optional, Any, Tuple
-from core.models import Company, ValuationResult
-from services.absolute_valuation import AbsoluteValuation
+from models import Company, ValuationResult
+from absolute_valuation import AbsoluteValuation
 
 
 class SensitivityAnalyzer:

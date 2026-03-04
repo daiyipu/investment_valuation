@@ -4,8 +4,8 @@
 """
 import copy
 from typing import Dict, List, Optional, Any
-from core.models import Company, ValuationResult, ScenarioConfig, SCENARIOS
-from services.absolute_valuation import AbsoluteValuation
+from models import Company, ValuationResult, ScenarioConfig, SCENARIOS
+from absolute_valuation import AbsoluteValuation
 
 
 class ScenarioAnalyzer:

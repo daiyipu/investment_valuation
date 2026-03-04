@@ -6,7 +6,7 @@ import tushare as ts
 import pandas as pd
 from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime, timedelta
-from core.models import Comparable, Company, CompanyStage
+from models import Comparable, Company, CompanyStage
 
 
 class TushareDataFetcher:

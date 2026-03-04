@@ -4,7 +4,7 @@
 """
 import numpy as np
 from typing import List, Optional, Dict, Any, Tuple
-from core.models import Company, ValuationResult
+from models import Company, ValuationResult
 
 
 class AbsoluteValuation:

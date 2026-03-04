@@ -3,7 +3,7 @@
 支持对公司多个产品/业务线分别估值，然后叠加得到公司整体估值
 """
 from typing import List, Dict, Any, Optional, Tuple
-from core.models import ProductSegment, ProductValuationResult, MultiProductValuationResult
+from models import ProductSegment, ProductValuationResult, MultiProductValuationResult
 
 
 class MultiProductValuation:

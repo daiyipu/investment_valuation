@@ -3,7 +3,7 @@
 包含风险投资法（VC法）、成本法/净资产法、交易对价参考法等
 """
 from typing import Optional, Dict, Any, List
-from core.models import Company, ValuationResult
+from models import Company, ValuationResult
 
 
 class OtherValuationMethods:

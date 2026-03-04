@@ -4,8 +4,8 @@
 """
 import numpy as np
 from typing import List, Dict, Optional, Any
-from core.models import Company, ValuationResult, StressTestResult, MonteCarloResult
-from services.absolute_valuation import AbsoluteValuation
+from models import Company, ValuationResult, StressTestResult, MonteCarloResult
+from absolute_valuation import AbsoluteValuation
 
 
 class StressTester:
