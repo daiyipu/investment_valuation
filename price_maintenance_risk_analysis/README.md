@@ -90,3 +90,62 @@ jupyter notebook
 - 数据可视化图表
 - 风险指标计算结果
 - PDF 报告（可选）
+
+## 故障排除
+
+### 中文显示乱码
+
+如果图表中的中文显示为方块或乱码，请使用以下方法解决：
+
+#### 方法 1: 运行字体诊断工具
+
+```bash
+# 在项目目录下运行
+python diagnose_font.py
+
+# 或者测试字体
+python diagnose_font.py test
+
+# 清除 matplotlib 缓存
+python diagnose_font.py clear-cache
+```
+
+#### 方法 2: 手动安装中文字体
+
+**Linux 系统:**
+```bash
+# Ubuntu/Debian
+sudo apt-get install fonts-noto-cjk fonts-wqy-microhei
+
+# CentOS/RedHat
+sudo yum install wqy-microhei-fonts wqy-zenhei-fonts
+
+# 安装后清除缓存
+fc-cache -fv
+```
+
+**macOS 系统:**
+- 系统已内置中文字体（PingFang SC、华文黑体）
+- 如有问题，打开"字体册"应用检查字体状态
+
+**Windows 系统:**
+- 系统已内置微软雅黑字体
+- 确认 `C:\Windows\Fonts\` 目录下有 `msyh.ttc`
+
+#### 方法 3: 运行字体安装助手
+
+```bash
+python install_chinese_font.py
+```
+
+#### vnpy 环境
+
+vnpy 环境使用独立的 Python 解释器，可能需要额外配置：
+
+1. 激活 vnpy 虚拟环境后安装字体
+2. 在 notebook 第一个代码块中运行：
+   ```python
+   from utils.font_config import setup_chinese_font
+   setup_chinese_font()
+   ```
+3. 清除 matplotlib 缓存并重启 Jupyter
