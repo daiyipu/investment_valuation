@@ -208,10 +208,16 @@ def clear_font_cache():
     当新安装字体后需要运行此函数
     """
     import shutil
+    import tempfile
 
     try:
-        # 获取缓存目录
-        cache_dir = fm.get_cachedir()
+        # 获取缓存目录（兼容旧版本）
+        try:
+            cache_dir = fm.get_cachedir()
+        except AttributeError:
+            # 旧版本 matplotlib
+            cache_dir = os.path.join(tempfile.gettempdir(), 'matplotlib-cache')
+
         print(f"字体缓存目录: {cache_dir}")
 
         if os.path.exists(cache_dir):

@@ -23,7 +23,14 @@ print(f"系统: {platform.system()}")
 
 # 2. matplotlib 缓存位置
 print(f"\nmatplotlib 缓存目录:")
-print(f"  {fm.get_cachedir()}")
+try:
+    cache_dir = fm.get_cachedir()
+    print(f"  {cache_dir}")
+except AttributeError:
+    # 旧版本 matplotlib 兼容
+    import tempfile
+    cache_dir = os.path.join(tempfile.gettempdir(), 'matplotlib-cache')
+    print(f"  {cache_dir} (默认位置)")
 
 # 3. 列出所有可用字体
 print(f"\n=== 所有字体 ===")
