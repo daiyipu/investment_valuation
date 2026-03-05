@@ -30,3 +30,10 @@ Thumbs.db
 # 数据文件（如果有本地数据库）
 *.db
 *.sqlite
+
+# 字体文件（版权原因，不提交到仓库）
+price_maintenance_risk_analysis/fonts/*.ttf
+price_maintenance_risk_analysis/fonts/*.ttc
+price_maintenance_risk_analysis/fonts/*.otf
+!price_maintenance_risk_analysis/fonts/.gitkeep
+!price_maintenance_risk_analysis/fonts/README.md
