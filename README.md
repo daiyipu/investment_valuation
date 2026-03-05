@@ -279,6 +279,51 @@ FastAPI Application
 - 响应格式化
 - CORS跨域支持
 
+### 10. 定增项目风险分析模块 (price_maintenance_risk_analysis/)
+
+专门用于定增（定向增发）项目的风险分析和收益预测，使用 Jupyter Notebook 进行交互式分析。
+
+**分析内容**：
+
+```
+price_maintenance_risk_analysis/
+├── notebooks/                           # Jupyter Notebook 分析文件
+│   ├── 01_sensitivity_analysis.ipynb  # 敏感性分析
+│   ├── 02_stress_test.ipynb            # 压力测试
+│   ├── 03_dcf_valuation.ipynb          # DCF估值
+│   ├── 04_monte_carlo_simulation.ipynb # 蒙特卡洛模拟
+│   ├── 05_var_calculation.ipynb        # VaR风险测算
+│   └── 06_comprehensive_analysis.ipynb # 综合分析报告
+│
+├── utils/analysis_tools.py             # 风险分析工具函数
+│   ├── PrivatePlacementRiskAnalyzer   # 定增项目风险分析器
+│   ├── calculate_break_even_price()   # 盈亏平衡价计算
+│   ├── monte_carlo_simulation()      # 蒙特卡洛模拟
+│   ├── calculate_var()                # VaR计算
+│   ├── stress_test()                  # 压力测试
+│   └── calculate_max_drawdown()       # 最大回撤计算
+│
+└── data/sample_stock_data.csv          # 样例数据
+```
+
+**主要功能**：
+- 盈亏平衡价格敏感性分析
+- 锁定期与收益率关系
+- 破发概率测算
+- 蒙特卡洛收益分布模拟
+- VaR/CVaR 风险测算
+- 极端情景压力测试
+- 综合风险评分
+- 投资建议自动生成
+
+**使用方式**：
+```bash
+cd price_maintenance_risk_analysis
+pip install jupyter notebook pandas numpy scipy matplotlib seaborn
+jupyter notebook
+# 打开任意 .ipynb 文件开始分析
+```
+
 ---
 
 ## 技术栈
