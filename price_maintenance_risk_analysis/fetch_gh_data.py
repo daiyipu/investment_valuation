@@ -147,7 +147,7 @@ def get_stock_data(ts_code, token=None):
             result['revenue'] = float(income['revenue']) if pd.notna(income['revenue']) else 0
             result['net_income'] = float(income['n_income']) if pd.notna(income['n_income']) else 0
             result['report_date'] = income['end_date']
-            print(f"   营业收入: {result['recence']/100000000:.2f} 亿元" if result['revenue'] else "   营业收入: N/A")
+            print(f"   营业收入: {result['revenue']/100000000:.2f} 亿元" if result['revenue'] else "   营业收入: N/A")
             print(f"   净利润: {result['net_income']/100000000:.2f} 亿元" if result['net_income'] else "   净利润: N/A")
 
         # 6. 获取资产负债数据
