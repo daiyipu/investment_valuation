@@ -137,6 +137,40 @@ def setup_text_with_font(ax, texts_dict):
             text.set_fontproperties(font_prop)
 
 
+def setup_axes_font(ax, font_prop=None):
+    """
+    设置坐标轴所有文本元素的字体（包括刻度标签）
+    这是修复坐标轴中文乱码的关键函数
+
+    参数:
+        ax: matplotlib axes 对象
+        font_prop: FontProperties 对象，如果为 None 则自动获取
+
+    使用方法:
+        setup_axes_font(ax)  # 自动获取字体
+        # 或
+        setup_axes_font(ax, font_prop)  # 使用指定的字体对象
+    """
+    if font_prop is None:
+        font_prop = get_font_prop()
+    if font_prop is None:
+        return
+
+    # 设置 x 轴刻度标签字体
+    for label in ax.get_xticklabels():
+        label.set_fontproperties(font_prop)
+
+    # 设置 y 轴刻度标签字体
+    for label in ax.get_yticklabels():
+        label.set_fontproperties(font_prop)
+
+    # 设置图例字体
+    legend = ax.get_legend()
+    if legend is not None:
+        for text in legend.get_texts():
+            text.set_fontproperties(font_prop)
+
+
 # 自动初始化
 init_font()
 
