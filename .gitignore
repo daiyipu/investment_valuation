@@ -48,3 +48,10 @@ price_maintenance_risk_analysis/fonts/*.otf
 # 分析报告输出
 price_maintenance_risk_analysis/report.txt
 price_maintenance_risk_analysis/output/*.txt
+price_maintenance_risk_analysis/reports/outputs/*.docx
+price_maintenance_risk_analysis/reports/outputs/*.pdf
+price_maintenance_risk_analysis/reports/images/*.png
+price_maintenance_risk_analysis/reports/images/*.jpg
+# 但保留 .gitkeep 文件
+!price_maintenance_risk_analysis/reports/outputs/.gitkeep
+!price_maintenance_risk_analysis/reports/images/.gitkeep
