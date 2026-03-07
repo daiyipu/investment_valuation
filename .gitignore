@@ -37,3 +37,14 @@ price_maintenance_risk_analysis/fonts/*.ttc
 price_maintenance_risk_analysis/fonts/*.otf
 !price_maintenance_risk_analysis/fonts/.gitkeep
 !price_maintenance_risk_analysis/fonts/README.md
+
+# Jupyter Notebook 临时文件
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+*.ipynb_checkpoints
+**/*-Copy1.ipynb
+**/*-Copy*.ipynb
+
+# 分析报告输出
+price_maintenance_risk_analysis/report.txt
+price_maintenance_risk_analysis/output/*.txt
