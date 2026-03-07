@@ -190,12 +190,76 @@ def get_stock_data(ts_code, token=None):
         return None
 
 
+def get_real_placement_price(ts_code, pro):
+    """
+    获取真实的定增发行价格
+
+    参数:
+        ts_code: 股票代码
+        pro: Tushare API对象
+
+    返回:
+        真实发行价，如果没有则返回None
+    """
+    try:
+        # 尝试使用Tushare的定增接口
+        df_placement = pro.issuance(
+            ts_code=ts_code,
+            fields='ts_code,ann_date,price_amount'
+        )
+
+        if not df_placement.empty:
+            # 获取最新的定增数据
+            latest_placement = df_placement.iloc[-1]
+            real_price = float(latest_placement['price_amount'])
+            return real_price
+
+        return None
+    except Exception as e:
+        # 如果接口调用失败或没有数据，返回None
+        return None
+
+
+def calculate_ma30_price(ts_code, pro):
+    """
+    计算MA30价格（30日移动平均线）
+
+    参数:
+        ts_code: 股票代码
+        pro: Tushare API对象
+
+    返回:
+        MA30价格
+    """
+    try:
+        # 获取过去90天的数据（确保有30个交易日）
+        end_date = datetime.now().strftime('%Y%m%d')
+        start_date = (datetime.now() - timedelta(days=90)).strftime('%Y%m%d')
+
+        df_history = pro.daily(
+            ts_code=ts_code,
+            start_date=start_date,
+            end_date=end_date,
+            fields='ts_code,trade_date,close'
+        )
+
+        if df_history.empty or len(df_history) < 30:
+            return None
+
+        df_history = df_history.sort_values('trade_date')
+        ma30 = df_history['close'].rolling(window=30).mean().iloc[-1]
+
+        return float(ma30)
+    except Exception as e:
+        return None
+
+
 def generate_private_placement_params(stock_data, custom_params=None):
     """
     根据股票数据生成定增分析参数
 
     参数:
-        stock_data: 从 get_gh_stock_data 获取的股票数据
+        stock_data: 从 get_stock_data 获取的股票数据
         custom_params: 自定义参数字典，覆盖默认值
 
     返回:
@@ -204,10 +268,49 @@ def generate_private_placement_params(stock_data, custom_params=None):
     if stock_data is None:
         return None
 
+    # 初始化Tushare API（用于获取真实定增价或MA30）
+    try:
+        pro = ts.pro_api(os.environ.get('TUSHARE_TOKEN'))
+    except:
+        pro = None
+
+    # 确定发行价格
+    issue_price = None
+    price_source = "估算"
+
+    if pro:
+        # 1. 尝试获取真实定增发行价
+        print(f"\n🔍 查找定增发行价...")
+        real_price = get_real_placement_price(stock_data['ts_code'], pro)
+        if real_price:
+            issue_price = real_price
+            price_source = "真实定增价"
+            print(f"   ✅ 使用真实定增发行价: {issue_price:.2f} 元")
+        else:
+            # 2. 使用MA30的8折
+            print(f"   ⚠️ 未找到真实定增价，尝试使用MA30的8折...")
+            ma30 = calculate_ma30_price(stock_data['ts_code'], pro)
+            if ma30:
+                issue_price = ma30 * 0.8
+                price_source = "MA30的8折"
+                print(f"   MA30: {ma30:.2f} 元")
+                print(f"   发行价 = MA30 × 0.8 = {issue_price:.2f} 元")
+            else:
+                # 3. 回退到当前价的8折
+                issue_price = stock_data.get('current_price', 20) * 0.8
+                price_source = "当前价的8折"
+                print(f"   ⚠️ 无法计算MA30，使用当前价的8折: {issue_price:.2f} 元")
+    else:
+        # 无法连接API，使用当前价的8折
+        issue_price = stock_data.get('current_price', 20) * 0.8
+        price_source = "当前价的8折"
+        print(f"   ⚠️ 使用当前价的8折: {issue_price:.2f} 元")
+
     # 默认定增参数（可自定义）
     default_params = {
         # 定增基本信息
-        'issue_price': stock_data.get('current_price', 20) * 0.8,  # 发行价通常为市价的80%（打8折）
+        'issue_price': issue_price,  # 发行价（真实或估算）
+        'price_source': price_source,  # 发行价来源
         'issue_shares': 5000000,  # 发行数量（股）
         'lockup_period': 12,  # 锁定期（月）
         'current_price': stock_data.get('current_price', 20),
@@ -237,7 +340,7 @@ def generate_private_placement_params(stock_data, custom_params=None):
 def print_analysis_summary(stock_data, placement_params):
     """打印分析摘要"""
     print("\n" + "="*70)
-    print("光弘科技（300735.SZ）定增分析参数")
+    print(f"{stock_data.get('name', 'N/A')}定增分析参数")
     print("="*70)
 
     print(f"\n📊 公司基本信息:")
@@ -249,6 +352,8 @@ def print_analysis_summary(stock_data, placement_params):
 
     print(f"\n💰 定增发行参数:")
     print(f"   发行价格: {placement_params['issue_price']:.2f} 元/股")
+    if 'price_source' in placement_params:
+        print(f"   价格来源: {placement_params['price_source']}")
     print(f"   发行数量: {placement_params['issue_shares']:,} 股")
     print(f"   融资金额: {placement_params['issue_price'] * placement_params['issue_shares'] / 100000000:.2f} 亿元")
     print(f"   锁定期: {placement_params['lockup_period']} 个月")

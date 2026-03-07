@@ -1,7 +1,8 @@
 {
-  "issue_price": 20.76,
+  "issue_price": 20.245066666666666,
+  "price_source": "MA30的8折",
   "issue_shares": 5000000,
-  "lockup_period": 12,
+  "lockup_period": 6,
   "current_price": 25.95,
   "risk_free_rate": 0.03,
   "net_assets": 4939639031.34,
@@ -9,6 +10,6 @@
   "net_income": 253532329.85,
   "revenue_growth": 0.25,
   "operating_margin": 0.2,
-  "volatility": 0.31166072370819875,
+  "volatility": 0.3088745648133423,
   "beta": 1.2
 }
