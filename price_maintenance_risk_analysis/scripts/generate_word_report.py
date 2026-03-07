@@ -228,68 +228,6 @@ def generate_sensitivity_chart(volatilities, profit_probs, current_vol, ma30, is
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
     plt.close()
 
-    # 左图：柱状图
-    colors = ['#27ae60' if p >= 60 else '#f39c12' if p >= 40 else '#e74c3c' for p in profit_probs]
-    bars = ax1.bar(range(len(volatilities)), profit_probs, color=colors, alpha=0.8, edgecolor='black', linewidth=1.5)
-    ax1.set_xlabel('年化波动率', fontproperties=font_prop, fontsize=12)
-    ax1.set_ylabel('盈利概率 (%)', fontproperties=font_prop, fontsize=12)
-    ax1.set_title('不同波动率下的盈利概率', fontproperties=font_prop, fontsize=13, fontweight='bold')
-    ax1.set_xticks(range(len(volatilities)))
-    ax1.set_xticklabels([f'{v*100:.0f}%' for v in volatilities], fontproperties=font_prop)
-    ax1.grid(True, alpha=0.3, linestyle='--')
-    ax1.set_ylim(0, 100)
-    ax1.axhline(y=50, color='gray', linestyle='--', alpha=0.5, label='盈亏平衡线')
-    ax1.legend(prop=font_prop, loc='lower right')
-
-    # 标记当前波动率
-    current_idx = np.argmin(np.abs(np.array(volatilities) - current_vol))
-    ax1.axvline(x=current_idx, color='red', linestyle='-', linewidth=2, alpha=0.7)
-    ax1.text(current_idx, 95, f'当前\n{current_vol*100:.1f}%', ha='center', va='top',
-            fontsize=9, fontproperties=font_prop, color='red', fontweight='bold')
-
-    # 添加数值标签
-    for bar, prob in zip(bars, profit_probs):
-        ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
-                f'{prob:.1f}%', ha='center', va='bottom', fontsize=10, fontweight='bold')
-
-    # 右图：热力图（波动率 vs 漂移率）
-    drift_range = np.linspace(-0.3, 0.15, 8)
-    vol_range_heatmap = np.linspace(0.20, 0.50, 8)
-    heatmap_data = []
-
-    for d in drift_range:
-        row = []
-        for v in vol_range_heatmap:
-            lockup_drift = d * (6/12)
-            lockup_vol = v * np.sqrt(6/12)
-            z = (np.log(ma30/20.25) - lockup_drift) / lockup_vol
-            row.append(stats.norm.cdf(z) * 100)
-        heatmap_data.append(row)
-
-    im = ax2.imshow(heatmap_data, cmap='RdYlGn', aspect='auto', vmin=0, vmax=100,
-                   extent=[vol_range_heatmap[0]*100, vol_range_heatmap[-1]*100, drift_range[-1]*100, drift_range[0]*100])
-    ax2.set_xlabel('波动率 (%)', fontproperties=font_prop, fontsize=11)
-    ax2.set_ylabel('漂移率 (%)', fontproperties=font_prop, fontsize=11)
-    ax2.set_title('盈利概率热力图', fontproperties=font_prop, fontsize=13, fontweight='bold')
-    ax2.tick_params(axis='both', which='major', labelsize=9)
-    for label in ax2.get_xticklabels():
-        label.set_fontproperties(font_prop)
-    for label in ax2.get_yticklabels():
-        label.set_fontproperties(font_prop)
-
-    cbar = plt.colorbar(im, ax=ax2)
-    cbar.set_label('盈利概率 (%)', fontproperties=font_prop, fontsize=10)
-    cbar.ax.tick_params(labelsize=9)
-
-    # 标记当前位置
-    ax2.scatter([current_vol*100], [-18.75], color='red', s=200, marker='*',
-               edgecolors='white', linewidths=2, label='当前位置', zorder=5)
-    ax2.legend(prop=font_prop, loc='upper right', fontsize=9)
-
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=150, bbox_inches='tight')
-    plt.close()
-
 
 def generate_stress_test_chart(scenarios, returns, save_path):
     """生成压力测试图表"""
