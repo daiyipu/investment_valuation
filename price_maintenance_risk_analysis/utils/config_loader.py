@@ -36,7 +36,7 @@ def load_placement_config(
     # 自动检测数据目录
     if data_dir is None:
         # 尝试多个可能的路径
-        possible_dirs = ['.', '..']
+        possible_dirs = ['.', '..', 'data', '../data']
         for test_dir in possible_dirs:
             test_file = os.path.join(test_dir, f"{stock_code.replace('.', '_')}_placement_params.json")
             if os.path.exists(test_file):
