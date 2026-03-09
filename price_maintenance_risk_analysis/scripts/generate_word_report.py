@@ -224,7 +224,7 @@ def generate_discount_scenario_charts(base_price, current_price, volatility, dri
         premium_data.append({'rate': p, 'profit_prob': profit_prob, 'expected_return': expected_return})
 
     # 生成图表（2x2布局）
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
 
     # 1. 折价发行盈利概率
     axes[0, 0].bar([d['rate'] for d in discount_data], [d['profit_prob'] for d in discount_data],
@@ -327,7 +327,7 @@ def generate_multi_dimension_scenario_charts(current_price, base_price, volatili
     df = pd.DataFrame(results)
 
     # 生成图表（2x2布局）
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
 
     # 图1: 热力图 - 波动率×折扣率（使用60日窗口）
     pivot_60d = df[df['window'] == 60].pivot(index='volatility', columns='discount', values='profit_prob')

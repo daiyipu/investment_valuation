@@ -931,22 +931,25 @@ def generate_multi_dimension_scenario_charts_split(current_price, base_price, vo
     df_multi = pd.DataFrame(multi_dim_results)
 
     # 图1：热力图 - 波动率 × 折价率 → 盈利概率（60日窗口）
-    fig, ax = plt.subplots(figsize=(14, 10))
+    fig, ax = plt.subplots(figsize=(16, 10))
     df_60d = df_multi[df_multi['时间窗口'] == 60].copy()
     pivot_data = df_60d.pivot(index='波动率', columns='折扣率', values='盈利概率')
 
     vol_labels = [f"{int(v*100)}%" for v in pivot_data.index]
     discount_labels = [f"{int(d):+d}%" for d in pivot_data.columns]
 
-    im = ax.imshow(pivot_data.values, cmap='RdYlGn', aspect='auto', vmin=0, vmax=100,
-                   extent=[min(discount_scenarios), max(discount_scenarios), min(volatility_scenarios)*100, max(volatility_scenarios)*100])
+    # 使用索引和列数来设置刻度位置，而不是extent
+    im = ax.imshow(pivot_data.values, cmap='RdYlGn', aspect='auto', vmin=0, vmax=100)
     ax.set_xlabel('折扣率 (%)', fontproperties=font_prop, fontsize=14)
     ax.set_ylabel('波动率 (%)', fontproperties=font_prop, fontsize=14)
     ax.set_title('盈利概率热力图：波动率 × 折价率 (60日窗口)', fontproperties=font_prop, fontsize=16, fontweight='bold')
-    ax.set_xticks(discount_scenarios)
+
+    # 设置刻度位置（使用索引位置）
+    ax.set_xticks(range(len(discount_scenarios)))
     ax.set_xticklabels(discount_labels, fontproperties=font_prop, fontsize=12)
-    ax.set_yticks(volatility_scenarios)
+    ax.set_yticks(range(len(volatility_scenarios)))
     ax.set_yticklabels(vol_labels, fontproperties=font_prop, fontsize=12)
+
     cbar = plt.colorbar(im, ax=ax)
     cbar.set_label('盈利概率 (%)', fontproperties=font_prop, fontsize=12)
 
