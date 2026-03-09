@@ -249,6 +249,7 @@ def save_market_indices_data(indices_results: Dict, data_dir: str = '..'):
             'volatility_60d': result['volatility']['60日']['latest'],
             'volatility_120d': result['volatility']['120日']['latest'],
             'volatility_180d': result['volatility']['180日']['latest'],
+            'volatility_250d': result['volatility'].get('250日', {}).get('latest', result['volatility']['180日']['latest']),
             'volatility': result['volatility']['60日']['latest'],  # 默认60日
 
             # 收益率（多个窗口）
@@ -256,6 +257,7 @@ def save_market_indices_data(indices_results: Dict, data_dir: str = '..'):
             'return_60d': result['returns']['60日']['annualized_return'],
             'return_120d': result['returns']['120日']['annualized_return'],
             'return_180d': result['returns']['180日']['annualized_return'],
+            'return_250d': result['returns'].get('250日', {}).get('annualized_return', result['returns']['180日']['annualized_return']),
             'drift': result['returns']['60日']['annualized_return'],  # 默认60日
 
             # 技术指标
@@ -263,9 +265,12 @@ def save_market_indices_data(indices_results: Dict, data_dir: str = '..'):
             'ma_60': result['price']['60日']['latest_ma'],
             'ma_120': result['price']['120日']['latest_ma'],
             'ma_180': result['price']['180日']['latest_ma'],
+            'ma_250': result['price'].get('250日', {}).get('latest_ma', result['price']['180日']['latest_ma']),
 
-            # 胜率
+            # 胜率（多个窗口）
             'win_rate_60d': result['returns']['60日']['win_rate'],
+            'win_rate_120d': result['returns']['120日']['win_rate'],
+            'win_rate_250d': result['returns'].get('250日', {}).get('win_rate', result['returns']['180日']['win_rate']),
         }
 
     # 保存为JSON文件
