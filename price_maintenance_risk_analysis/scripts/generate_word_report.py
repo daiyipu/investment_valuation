@@ -1204,9 +1204,10 @@ def generate_stock_market_data_charts_split(market_data, price_data, volatility_
 
     returns_pct = price_data.get('pct_chg', [])
     if len(returns_pct) > 0:
-        ax.hist(returns_pct * 100, bins=50, color='#3498db', alpha=0.7, edgecolor='black')
+        # pct_chg 已经是百分比形式（如 2.5 表示 2.5%），不需要再乘以 100
+        ax.hist(returns_pct, bins=50, color='#3498db', alpha=0.7, edgecolor='black')
 
-        mean_return = np.mean(returns_pct) * 100
+        mean_return = np.mean(returns_pct)
         ax.axvline(x=mean_return, color='#e74c3c', linestyle='--',
                   label=f'平均收益率 {mean_return:.3f}%', linewidth=2)
         ax.axvline(x=0, color='#27ae60', linestyle='-', label='盈亏平衡', linewidth=1.5)
