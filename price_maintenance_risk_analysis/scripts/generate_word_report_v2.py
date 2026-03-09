@@ -1758,6 +1758,8 @@ def generate_relative_valuation_charts_split(current_metrics, industry_avg, peer
     ax.set_title('不同估值情景下的目标价格', fontproperties=font_prop, fontsize=16, fontweight='bold')
     ax.legend(prop=font_prop, fontsize=12)
     ax.grid(True, alpha=0.3, axis='x')
+    # 设置y轴刻度位置和标签
+    ax.set_yticks(range(len(df_scenarios)))
     ax.set_yticklabels(df_scenarios['情景'], fontproperties=font_prop, fontsize=11)
 
     plt.tight_layout()
@@ -1777,6 +1779,8 @@ def generate_relative_valuation_charts_split(current_metrics, industry_avg, peer
     ax.set_ylabel('情景', fontproperties=font_prop, fontsize=14)
     ax.set_title('不同估值情景下的预期收益率', fontproperties=font_prop, fontsize=16, fontweight='bold')
     ax.grid(True, alpha=0.3, axis='x')
+    # 设置y轴刻度位置和标签
+    ax.set_yticks(range(len(df_scenarios)))
     ax.set_yticklabels(df_scenarios['情景'], fontproperties=font_prop, fontsize=11)
 
     plt.tight_layout()
