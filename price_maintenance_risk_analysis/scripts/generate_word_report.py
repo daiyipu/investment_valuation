@@ -1109,17 +1109,21 @@ def generate_relative_valuation_charts(current_metrics, industry_avg, peer_compa
     bars1 = ax1.barh(df_scenarios['情景'], df_scenarios['目标价格(元)'], color=colors_scenario, alpha=0.7)
     ax1.axvline(x=current_price, color='black', linestyle='--', label='当前价格')
     ax1.set_xlabel('目标价格 (元)', fontproperties=font_prop, fontsize=12)
+    ax1.set_ylabel('情景', fontproperties=font_prop, fontsize=12)
     ax1.set_title('不同估值情景下的目标价格', fontproperties=font_prop, fontsize=13, fontweight='bold')
     ax1.legend(prop=font_prop)
     ax1.grid(True, alpha=0.3, axis='x')
+    ax1.set_yticklabels(df_scenarios['情景'], fontproperties=font_prop, fontsize=10)
 
     # 右图：预期收益率对比
     colors_return = ['green' if r > 0 else 'red' for r in df_scenarios['预期收益率(%)']]
     bars2 = ax2.barh(df_scenarios['情景'], df_scenarios['预期收益率(%)'], color=colors_return, alpha=0.7)
     ax2.axvline(x=0, color='black', linestyle='-', linewidth=1)
     ax2.set_xlabel('预期收益率 (%)', fontproperties=font_prop, fontsize=12)
+    ax2.set_ylabel('情景', fontproperties=font_prop, fontsize=12)
     ax2.set_title('不同估值情景下的预期收益率', fontproperties=font_prop, fontsize=13, fontweight='bold')
     ax2.grid(True, alpha=0.3, axis='x')
+    ax2.set_yticklabels(df_scenarios['情景'], fontproperties=font_prop, fontsize=10)
 
     plt.tight_layout()
 
