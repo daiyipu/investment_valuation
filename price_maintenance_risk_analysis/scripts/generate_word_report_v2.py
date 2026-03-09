@@ -2990,7 +2990,7 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
     total_liab_value = 0.0
 
     try:
-        from utils.market_data_loader import TushareFinancialData
+        from update_market_data import TushareFinancialData
 
         ts_token = os.environ.get('TUSHARE_TOKEN', '')
         if ts_token:
