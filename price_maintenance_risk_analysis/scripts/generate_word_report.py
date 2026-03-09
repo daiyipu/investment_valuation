@@ -244,6 +244,7 @@ def generate_discount_scenario_charts(base_price, current_price, volatility, dri
     axes[0, 1].set_xlabel('溢价率 (%)', fontproperties=font_prop)
     axes[0, 1].set_ylabel('盈利概率 (%)', fontproperties=font_prop)
     axes[0, 1].set_title('溢价发行 - 盈利概率', fontproperties=font_prop, fontsize=12, fontweight='bold')
+    axes[0, 1].set_ylim(0, 25)
     for label in axes[0, 1].get_xticklabels():
         label.set_fontproperties(font_prop)
     for label in axes[0, 1].get_yticklabels():

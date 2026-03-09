@@ -801,11 +801,11 @@ def generate_discount_scenario_charts_split(base_price, current_price, volatilit
     ax.set_title('溢价发行情景 - 盈利概率', fontproperties=font_prop, fontsize=16, fontweight='bold')
     ax.set_xticks([p['rate'] for p in premium_data])
     ax.set_xticklabels([f"{p['rate']}%" for p in premium_data], fontproperties=font_prop, fontsize=12)
-    ax.set_ylim(0, 100)
+    ax.set_ylim(0, 25)
     ax.grid(True, alpha=0.3, linestyle='--')
     ax.axhline(y=50, color='gray', linestyle='--', alpha=0.5, label='盈亏平衡线')
     for bar, p in zip(bars, premium_data):
-        ax.text(bar.get_x() + bar.get_width()/2, p['profit_prob'] + 1,
+        ax.text(bar.get_x() + bar.get_width()/2, p['profit_prob'] + 0.5,
                 f"{p['profit_prob']:.1f}%", ha='center', va='bottom', fontsize=12, fontweight='bold')
     ax.legend(prop=font_prop, fontsize=12)
     plt.tight_layout()
