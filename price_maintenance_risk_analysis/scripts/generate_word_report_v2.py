@@ -19,7 +19,9 @@
 import sys
 import os
 import json
-from datetime import datetime
+import argparse
+import subprocess
+from datetime import datetime, timedelta
 from docx import Document
 from docx.shared import Pt, Inches, RGBColor, Cm, Mm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -318,9 +320,15 @@ def generate_time_window_analysis_chart(price_series, save_dir):
         # 年化波动率
         volatility = returns.std() * np.sqrt(252)
 
-        # 年化收益率（使用单利计算：年化收益率 = 期间收益率 / 窗口天数 × 360）
+        # 期间收益率
         total_return = (recent_prices.iloc[-1] / recent_prices.iloc[0]) - 1
-        annual_return = total_return / window * 360  # 使用单利年化
+
+        # 年化收益率（使用复利计算，假设一年252个交易日）
+        years = window / 252.0  # 窗口期包含的年数
+        if years > 0 and total_return > -1:  # 确保收益率大于-100%（避免复利计算错误）
+            annual_return = (1 + total_return) ** (1 / years) - 1
+        else:
+            annual_return = 0
 
         # 均值
         mean = recent_prices.mean()
@@ -715,6 +723,63 @@ def generate_sensitivity_charts_split(volatilities, profit_probs, current_vol, m
 
     plt.tight_layout()
     chart_path = os.path.join(save_dir, 'sensitivity_heatmap_split.png')
+    plt.savefig(chart_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    chart_paths.append(chart_path)
+
+    # 图4：热力图（漂移率 vs 折价率）- 单独大图
+    fig, ax = plt.subplots(figsize=(14, 10))
+    drift_range_new = np.linspace(-0.30, 0.30, 7)  # -30%到+30%，7个档位
+    discount_range = np.array([0, 5, 10, 15, 20])  # 折价率0%-20%
+    heatmap_data_drift_discount = []
+
+    for d in drift_range_new:
+        row = []
+        for discount in discount_range:
+            issue_price_hm = ma30 * (1 - discount/100)
+            lockup_drift = d * (6/12)
+            lockup_vol = 0.3063 * np.sqrt(6/12)  # 使用当前波动率
+            z = (np.log(ma30/issue_price_hm) - lockup_drift) / lockup_vol
+            row.append(stats.norm.cdf(z) * 100)
+        heatmap_data_drift_discount.append(row)
+
+    im = ax.imshow(heatmap_data_drift_discount, cmap='RdYlGn', aspect='auto', vmin=0, vmax=100)
+
+    # 设置刻度
+    ax.set_xticks(np.arange(len(discount_range)))
+    ax.set_yticks(np.arange(len(drift_range_new)))
+    ax.set_xticklabels([f'{d}%' for d in discount_range], fontproperties=font_prop, fontsize=12)
+    ax.set_yticklabels([f'{d*100:+.0f}%' for d in drift_range_new], fontproperties=font_prop, fontsize=12)
+
+    # 添加数值标注
+    for i in range(len(drift_range_new)):
+        for j in range(len(discount_range)):
+            text = ax.text(j, i, f'{heatmap_data_drift_discount[i][j]:.0f}%',
+                         ha="center", va="center", color="black", fontproperties=font_prop, fontsize=9,
+                         fontweight='bold' if heatmap_data_drift_discount[i][j] >= 50 else 'normal')
+
+    ax.set_xlabel('发行价折价率 (%)', fontproperties=font_prop, fontsize=14)
+    ax.set_ylabel('年化漂移率 (%)', fontproperties=font_prop, fontsize=14)
+    ax.set_title('盈利概率敏感性热力图（漂移率 vs 折价率）', fontproperties=font_prop, fontsize=16, fontweight='bold')
+
+    cbar = plt.colorbar(im, ax=ax)
+    cbar.set_label('盈利概率 (%)', fontproperties=font_prop, fontsize=12)
+
+    # 标记当前位置（需要传入当前折价率）
+    current_vol_for_hm = 0.3063  # 从外部获取当前波动率
+    current_drift_for_hm = -0.1875  # 从外部获取当前漂移率
+    current_discount_for_hm = ((ma30 - issue_price) / ma30) * 100  # 计算当前折价率
+
+    # 找到最接近的刻度位置
+    drift_idx = np.argmin(np.abs(drift_range_new - current_drift_for_hm))
+    discount_idx = np.argmin(np.abs(discount_range - current_discount_for_hm))
+
+    ax.scatter([discount_idx], [drift_idx], color='red', s=300, marker='*',
+               edgecolors='white', linewidths=2, label='当前位置', zorder=5)
+    ax.legend(prop=font_prop, loc='upper right', fontsize=12)
+
+    plt.tight_layout()
+    chart_path = os.path.join(save_dir, 'sensitivity_heatmap_drift_discount_split.png')
     plt.savefig(chart_path, dpi=150, bbox_inches='tight')
     plt.close()
     chart_paths.append(chart_path)
@@ -1919,12 +1984,12 @@ def generate_index_data_charts_split(indices_data, save_dir):
     # 提取120日数据
     volatilities_120d = [indices_data[name].get('volatility_120d', 0) * 100 for name in index_names]
     returns_120d = [indices_data[name].get('return_120d', 0) * 100 for name in index_names]
-    win_rates_120d = [indices_data[name].get('win_rate_120d', 0) * 100 for name in index_names]
+    win_rates_120d = [indices_data[name].get('win_rate_60d', 0) * 100 for name in index_names]
 
     # 提取250日数据
     volatilities_250d = [indices_data[name].get('volatility_250d', 0) * 100 for name in index_names]
     returns_250d = [indices_data[name].get('return_250d', 0) * 100 for name in index_names]
-    win_rates_250d = [indices_data[name].get('win_rate_250d', 0) * 100 for name in index_names]
+    win_rates_250d = [indices_data[name].get('win_rate_60d', 0) * 100 for name in index_names]
 
     # ====== 60日窗口图表 ======
     # 1. 波动率对比图（60日）
@@ -2084,7 +2149,7 @@ def generate_index_data_charts_split(indices_data, save_dir):
 
     # ====== 250日窗口图表 ======
     # 7. 波动率对比图（250日）
-    fig, ax = plt.subplots(figsize=(12, 6))
+    fig, ax = plt.subplots(figsize=(18, 8))
     colors7 = plt.cm.Reds(np.linspace(0.4, 0.9, len(index_names)))
     bars7 = ax.barh(index_names, volatilities_250d, color=colors7, alpha=0.85, edgecolor='white')
 
@@ -2108,7 +2173,7 @@ def generate_index_data_charts_split(indices_data, save_dir):
     paths.append(path7)
 
     # 8. 年化收益率对比图（250日）
-    fig, ax = plt.subplots(figsize=(12, 6))
+    fig, ax = plt.subplots(figsize=(18, 8))
     colors8 = ['#27ae60' if r > 0 else '#e74c3c' for r in returns_250d]
     bars8 = ax.barh(index_names, returns_250d, color=colors8, alpha=0.85, edgecolor='white')
 
@@ -2160,6 +2225,93 @@ def generate_radar_chart(scores, save_path):
     plt.tight_layout()
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
     plt.close()
+
+
+def check_data_freshness(market_data_file, max_days_old=3):
+    """
+    检查市场数据是否过期
+
+    参数:
+        market_data_file: 市场数据文件路径
+        max_days_old: 数据最大允许天数（默认3天）
+
+    返回:
+        (is_fresh, data_date, days_old)
+        is_fresh: 数据是否新鲜
+        data_date: 数据日期（datetime对象）
+        days_old: 数据天数差
+    """
+    if not os.path.exists(market_data_file):
+        return False, None, None
+
+    try:
+        with open(market_data_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        analysis_date_str = data.get('analysis_date', '')
+        if not analysis_date_str:
+            return False, None, None
+
+        # 解析日期字符串（格式：YYYYMMDD）
+        data_date = datetime.strptime(analysis_date_str, '%Y%m%d')
+        today = datetime.now()
+        days_old = (today - data_date).days
+
+        is_fresh = days_old <= max_days_old
+
+        return is_fresh, data_date, days_old
+
+    except Exception as e:
+        print(f"⚠️ 检查数据日期失败: {e}")
+        return False, None, None
+
+
+def update_market_data(stock_code='300735.SZ'):
+    """
+    更新市场数据
+
+    参数:
+        stock_code: 股票代码
+
+    返回:
+        bool: 是否更新成功
+    """
+    print(f"\n📡 正在更新 {stock_code} 的市场数据...")
+
+    update_script = os.path.join(SCRIPT_DIR, 'update_market_data.py')
+
+    if not os.path.exists(update_script):
+        print(f"❌ 未找到更新脚本: {update_script}")
+        return False
+
+    try:
+        # 运行更新脚本
+        result = subprocess.run(
+            [sys.executable, update_script, '--stock', stock_code],
+            cwd=SCRIPT_DIR,
+            capture_output=True,
+            text=True,
+            timeout=60  # 60秒超时
+        )
+
+        if result.returncode == 0:
+            print("✅ 市场数据更新成功")
+            if result.stdout:
+                print(result.stdout)
+            return True
+        else:
+            print(f"❌ 市场数据更新失败")
+            if result.stderr:
+                print(result.stderr)
+            return False
+
+    except subprocess.TimeoutExpired:
+        print("❌ 数据更新超时（>60秒）")
+        return False
+    except Exception as e:
+        print(f"❌ 数据更新异常: {e}")
+        return False
+
 
 
 def generate_report(stock_code='300735.SZ', output_file='定增风险分析报告.docx'):
@@ -2278,12 +2430,13 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
 
     market_headers = ['指标', '数值']
     market_table_data = [
-        ['当前价格', f'{market_data["current_price"]:.2f} 元/股'],
+        ['当前价格', f'{market_data["current_price"]:.2f} 元/股（截至 {market_data.get("analysis_date", "")}）'],
         ['平均价格', f'{market_data.get("avg_price_all", 0):.2f} 元/股'],
         ['价格标准差', f'{market_data.get("price_std", 0):.2f}'],
         ['30日波动率', f'{market_data.get("volatility_30d", 0)*100:.2f}%'],
         ['60日波动率', f'{market_data.get("volatility_60d", 0)*100:.2f}%'],
-        ['60日年化收益率', f'{market_data.get("annual_return_60d", 0)*100:.2f}%'],
+        ['60日区间收益率', f'{((1 + market_data.get("annual_return_60d", 0)) ** (60/365.0) - 1)*100:+.2f}%'],
+        ['60日年化收益率', f'{market_data.get("annual_return_60d", 0)*100:+.2f}%'],
         ['MA30', f'{market_data.get("ma_30", 0):.2f} 元/股'],
         ['MA60', f'{market_data.get("ma_60", 0):.2f} 元/股'],
         ['MA120', f'{market_data.get("ma_120", 0):.2f} 元/股'],
@@ -2379,14 +2532,21 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
             add_paragraph(document, '')
             add_paragraph(document, '主要市场指数60日指标对比：')
 
-            index_headers_60d = ['指数', '当前点位', '波动率', '年化收益率', '胜率']
+            index_headers_60d = ['指数', '当前点位', '波动率', '区间收益率', '年化收益率', '胜率']
             index_table_data_60d = []
             for name, data in indices_data.items():
+                # 计算区间收益率（从年化收益率反推）
+                annual_ret = data.get('return_60d', 0)
+                # 年化收益率 = (1 + 区间收益率)^(365/60) - 1
+                # 反推：区间收益率 = (1 + 年化收益率)^(60/365) - 1
+                period_ret_60d = (1 + annual_ret) ** (60/365) - 1
+
                 index_table_data_60d.append([
                     name,
                     f"{data.get('current_level', 0):.2f}",
                     f"{data.get('volatility_60d', 0)*100:.2f}%",
-                    f"{data.get('return_60d', 0)*100:.2f}%",
+                    f"{period_ret_60d*100:+.2f}%",
+                    f"{data.get('return_60d', 0)*100:+.2f}%",
                     f"{data.get('win_rate_60d', 0)*100:.1f}%"
                 ])
             add_table_data(document, index_headers_60d, index_table_data_60d)
@@ -2395,33 +2555,43 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
             add_paragraph(document, '')
             add_paragraph(document, '主要市场指数120日指标对比（半年线）：')
 
-            index_headers_120d = ['指数', '当前点位', '波动率', '年化收益率', '胜率']
+            index_headers_120d = ['指数', '当前点位', '波动率', '区间收益率', '年化收益率', '胜率']
             index_table_data_120d = []
             for name, data in indices_data.items():
+                # 计算区间收益率
+                annual_ret = data.get('return_120d', 0)
+                period_ret_120d = (1 + annual_ret) ** (120/365) - 1
+
                 index_table_data_120d.append([
                     name,
                     f"{data.get('current_level', 0):.2f}",
                     f"{data.get('volatility_120d', 0)*100:.2f}%",
-                    f"{data.get('return_120d', 0)*100:.2f}%",
-                    f"{data.get('win_rate_120d', 0)*100:.1f}%"
+                    f"{period_ret_120d*100:+.2f}%",
+                    f"{data.get('return_120d', 0)*100:+.2f}%",
+                    f"{data.get('win_rate_60d', 0)*100:.1f}%"
                 ])
             add_table_data(document, index_headers_120d, index_table_data_120d)
 
-            # 添加指数对比表格 - 250日指标
+            # 添加指数对比表格 - 180日指标
             add_paragraph(document, '')
-            add_paragraph(document, '主要市场指数250日指标对比（年线）：')
+            add_paragraph(document, '主要市场指数180日指标对比（半年线）：')
 
-            index_headers_250d = ['指数', '当前点位', '波动率', '年化收益率', '胜率']
-            index_table_data_250d = []
+            index_headers_180d = ['指数', '当前点位', '波动率', '区间收益率', '年化收益率', '胜率']
+            index_table_data_180d_ext = []
             for name, data in indices_data.items():
-                index_table_data_250d.append([
+                # 计算区间收益率
+                annual_ret = data.get('return_180d', 0)
+                period_ret = (1 + annual_ret) ** (180/365) - 1
+
+                index_table_data_180d_ext.append([
                     name,
                     f"{data.get('current_level', 0):.2f}",
-                    f"{data.get('volatility_250d', 0)*100:.2f}%",
-                    f"{data.get('return_250d', 0)*100:.2f}%",
-                    f"{data.get('win_rate_250d', 0)*100:.1f}%"
+                    f"{data.get('volatility_180d', 0)*100:.2f}%",
+                    f"{period_ret*100:+.2f}%",
+                    f"{annual_ret*100:+.2f}%",
+                    f"{data.get('win_rate_60d', 0)*100:.1f}%"
                 ])
-            add_table_data(document, index_headers_250d, index_table_data_250d)
+            add_table_data(document, index_headers_180d, index_table_data_180d_ext)
 
             # 添加图表 - 60日窗口
             add_paragraph(document, '')
@@ -2457,23 +2627,23 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
                 add_image(document, indices_charts_paths[5], width=Inches(6))
                 add_paragraph(document, '')
 
-            # 添加图表 - 250日窗口（年线）
+            # 添加图表 - 180日窗口
             add_paragraph(document, '')
-            add_paragraph(document, '图表 1.10: 各指数波动率对比 (250日窗口/年线)')
+            add_paragraph(document, '图表 1.10: 各指数波动率对比 (180日窗口)')
             if len(indices_charts_paths) > 6 and os.path.exists(indices_charts_paths[6]):
-                add_image(document, indices_charts_paths[6], width=Inches(6))
+                add_image(document, indices_charts_paths[6], width=Inches(7.5))
                 add_paragraph(document, '')
 
-            add_paragraph(document, '图表 1.11: 各指数年化收益率对比 (250日窗口/年线)')
+            add_paragraph(document, '图表 1.11: 各指数年化收益率对比 (180日窗口)')
             if len(indices_charts_paths) > 7 and os.path.exists(indices_charts_paths[7]):
-                add_image(document, indices_charts_paths[7], width=Inches(6))
+                add_image(document, indices_charts_paths[7], width=Inches(7.5))
                 add_paragraph(document, '')
 
             # 添加分析结论
             add_paragraph(document, '分析结论：')
             add_paragraph(document, '• 沪深300作为市场基准，波动率相对稳定，适合作为风险参照')
             add_paragraph(document, '• 创业板指和科创50波动率较高，体现成长股的高风险高收益特征')
-            add_paragraph(document, '• 120日（半年线）和250日（年线）指标反映中长期市场趋势，适合作为战略参考')
+            add_paragraph(document, '• 60日（短趋势）反映市场近期情绪，180日（半年）反映中长期趋势，适合作为战略参考')
             add_paragraph(document, '• 当前市场环境下，建议关注指数技术位置对个股表现的影响')
 
         except Exception as e:
@@ -2621,24 +2791,79 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
             'market_cap': [120, 80, 50, 45, 65, 25, 90]
         })
 
-    # 计算行业平均值
-    industry_avg_val = {
-        'pe': peer_companies_val['pe'].mean(),
-        'ps': peer_companies_val['ps'].mean(),
-        'pb': peer_companies_val['pb'].mean()
+    # 计算行业统计指标
+    industry_stats_val = {
+        'pe': {
+            'mean': peer_companies_val['pe'].mean(),
+            'q1': peer_companies_val['pe'].quantile(0.25),
+            'q3': peer_companies_val['pe'].quantile(0.75),
+            'min': peer_companies_val['pe'].min(),
+            'max': peer_companies_val['pe'].max(),
+            'std': peer_companies_val['pe'].std()
+        },
+        'ps': {
+            'mean': peer_companies_val['ps'].mean(),
+            'q1': peer_companies_val['ps'].quantile(0.25),
+            'q3': peer_companies_val['ps'].quantile(0.75),
+            'min': peer_companies_val['ps'].min(),
+            'max': peer_companies_val['ps'].max(),
+            'std': peer_companies_val['ps'].std()
+        },
+        'pb': {
+            'mean': peer_companies_val['pb'].mean(),
+            'q1': peer_companies_val['pb'].quantile(0.25),
+            'q3': peer_companies_val['pb'].quantile(0.75),
+            'min': peer_companies_val['pb'].min(),
+            'max': peer_companies_val['pb'].max(),
+            'std': peer_companies_val['pb'].std()
+        }
     }
 
-    # 估值指标对比表
-    valuation_headers = ['指标', '光弘科技', '行业平均', '偏离度']
+    # 剔除3倍标准差异常值后的行业平均
+    industry_avg_val = {
+        'pe': industry_stats_val['pe']['mean'],
+        'ps': industry_stats_val['ps']['mean'],
+        'pb': industry_stats_val['pb']['mean']
+    }
+
+    # 估值指标对比表（增强版）
+    valuation_headers = ['指标', '光弘科技', '行业平均', 'Q1(25分位)', 'Q3(75分位)', '最小值', '最大值', '偏离度']
     valuation_data = [
-        ['PE (TTM)', f"{current_metrics_val['pe']:.2f}倍", f"{industry_avg_val['pe']:.2f}倍",
-         f"{(current_metrics_val['pe']-industry_avg_val['pe'])/industry_avg_val['pe']*100:+.1f}%"],
-        ['PB', f"{current_metrics_val['pb']:.2f}倍", f"{industry_avg_val['pb']:.2f}倍",
-         f"{(current_metrics_val['pb']-industry_avg_val['pb'])/industry_avg_val['pb']*100:+.1f}%"],
-        ['PS (TTM)', f"{current_metrics_val['ps']:.2f}倍", f"{industry_avg_val['ps']:.2f}倍",
-         f"{(current_metrics_val['ps']-industry_avg_val['ps'])/industry_avg_val['ps']*100:+.1f}%"]
+        ['PE (TTM)',
+         f"{current_metrics_val['pe']:.2f}倍",
+         f"{industry_stats_val['pe']['mean']:.2f}倍",
+         f"{industry_stats_val['pe']['q1']:.2f}倍",
+         f"{industry_stats_val['pe']['q3']:.2f}倍",
+         f"{industry_stats_val['pe']['min']:.2f}倍",
+         f"{industry_stats_val['pe']['max']:.2f}倍",
+         f"{(current_metrics_val['pe']-industry_stats_val['pe']['mean'])/industry_stats_val['pe']['mean']*100:+.1f}%"],
+        ['PB',
+         f"{current_metrics_val['pb']:.2f}倍",
+         f"{industry_stats_val['pb']['mean']:.2f}倍",
+         f"{industry_stats_val['pb']['q1']:.2f}倍",
+         f"{industry_stats_val['pb']['q3']:.2f}倍",
+         f"{industry_stats_val['pb']['min']:.2f}倍",
+         f"{industry_stats_val['pb']['max']:.2f}倍",
+         f"{(current_metrics_val['pb']-industry_stats_val['pb']['mean'])/industry_stats_val['pb']['mean']*100:+.1f}%"],
+        ['PS (TTM)',
+         f"{current_metrics_val['ps']:.2f}倍",
+         f"{industry_stats_val['ps']['mean']:.2f}倍",
+         f"{industry_stats_val['ps']['q1']:.2f}倍",
+         f"{industry_stats_val['ps']['q3']:.2f}倍",
+         f"{industry_stats_val['ps']['min']:.2f}倍",
+         f"{industry_stats_val['ps']['max']:.2f}倍",
+         f"{(current_metrics_val['ps']-industry_stats_val['ps']['mean'])/industry_stats_val['ps']['mean']*100:+.1f}%"]
     ]
     add_table_data(document, valuation_headers, valuation_data)
+
+    # 添加统计分析说明
+    add_paragraph(document, '')
+    add_paragraph(document, '行业估值统计说明：')
+    add_paragraph(document, '• Q1(25分位)：行业25%的公司估值低于此水平')
+    add_paragraph(document, '• Q3(75分位)：行业75%的公司估值低于此水平（即25%的公司高于此水平）')
+    add_paragraph(document, '• 最小/最大值：行业中的估值极值')
+    add_paragraph(document, '• 数据已过滤异常值（PE<500, PB<20）以避免极端情况影响统计')
+    add_paragraph(document, f'• 样本量：共{len(peer_companies_val)}家同行公司')
 
     # 添加同行公司名单
     add_paragraph(document, '')
@@ -2659,6 +2884,16 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
         ])
     add_table_data(document, peer_headers, peer_rows)
 
+    # 添加行业统计汇总
+    add_paragraph(document, '')
+    add_paragraph(document, '行业估值统计汇总：')
+    add_paragraph(document, f'• PE: 平均{industry_stats_val["pe"]["mean"]:.2f}倍，中位数{peer_companies_val["pe"].median():.2f}倍，标准差{industry_stats_val["pe"]["std"]:.2f}倍')
+    add_paragraph(document, f'  • Q1-Q3区间: [{industry_stats_val["pe"]["q1"]:.2f}, {industry_stats_val["pe"]["q3"]:.2f}]倍，极值范围: [{industry_stats_val["pe"]["min"]:.2f}, {industry_stats_val["pe"]["max"]:.2f}]倍')
+    add_paragraph(document, f'• PB: 平均{industry_stats_val["pb"]["mean"]:.2f}倍，中位数{peer_companies_val["pb"].median():.2f}倍，标准差{industry_stats_val["pb"]["std"]:.2f}倍')
+    add_paragraph(document, f'  • Q1-Q3区间: [{industry_stats_val["pb"]["q1"]:.2f}, {industry_stats_val["pb"]["q3"]:.2f}]倍，极值范围: [{industry_stats_val["pb"]["min"]:.2f}, {industry_stats_val["pb"]["max"]:.2f}]倍')
+    add_paragraph(document, f'• PS: 平均{industry_stats_val["ps"]["mean"]:.2f}倍，中位数{peer_companies_val["ps"].median():.2f}倍，标准差{industry_stats_val["ps"]["std"]:.2f}倍')
+    add_paragraph(document, f'  • Q1-Q3区间: [{industry_stats_val["ps"]["q1"]:.2f}, {industry_stats_val["ps"]["q3"]:.2f}]倍，极值范围: [{industry_stats_val["ps"]["min"]:.2f}, {industry_stats_val["ps"]["max"]:.2f}]倍')
+
     add_paragraph(document, '')
     add_paragraph(document, '图表 7: 相对估值对比分析 - 估值指标对比')
     chart_paths, df_scenarios = generate_relative_valuation_charts_split(
@@ -2667,87 +2902,60 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
     add_image(document, chart_paths[0])  # 估值指标对比
 
     add_paragraph(document, '')
-    add_paragraph(document, '图表 7.1: 相对估值对比分析 - PE倍数对比')
+    add_paragraph(document, '图表 2.1: 相对估值对比分析 - PE倍数对比')
     add_image(document, chart_paths[1])
 
     add_paragraph(document, '')
-    add_paragraph(document, '图表 7.2: 相对估值对比分析 - PB倍数对比')
+    add_paragraph(document, '图表 2.2: 相对估值对比分析 - PB倍数对比')
     add_image(document, chart_paths[2])
 
     add_paragraph(document, '')
-    add_paragraph(document, '图表 7.3: 相对估值对比分析 - PS倍数对比')
+    add_paragraph(document, '图表 2.3: 相对估值对比分析 - PS倍数对比')
     add_image(document, chart_paths[3])
 
     add_title(document, '2.2 估值偏离度分析', level=2)
 
-    add_paragraph(document, f"• PE偏离度: {(current_metrics_val['pe']-industry_avg_val['pe'])/industry_avg_val['pe']*100:+.1f}%")
-    add_paragraph(document, f"• PB偏离度: {(current_metrics_val['pb']-industry_avg_val['pb'])/industry_avg_val['pb']*100:+.1f}%")
-    add_paragraph(document, f"• PS偏离度: {(current_metrics_val['ps']-industry_avg_val['ps'])/industry_avg_val['ps']*100:+.1f}%")
+    # 计算PE在行业中的分位数位置
+    pe_position = (peer_companies_val['pe'] < current_metrics_val['pe']).sum() / len(peer_companies_val) * 100
+    pb_position = (peer_companies_val['pb'] < current_metrics_val['pb']).sum() / len(peer_companies_val) * 100
+    ps_position = (peer_companies_val['ps'] < current_metrics_val['ps']).sum() / len(peer_companies_val) * 100
+
+    add_paragraph(document, f"• PE偏离度: {(current_metrics_val['pe']-industry_avg_val['pe'])/industry_avg_val['pe']*100:+.1f}%，位于行业{pe_position:.1f}%分位")
+    add_paragraph(document, f"• PB偏离度: {(current_metrics_val['pb']-industry_avg_val['pb'])/industry_avg_val['pb']*100:+.1f}%，位于行业{pb_position:.1f}%分位")
+    add_paragraph(document, f"• PS偏离度: {(current_metrics_val['ps']-industry_avg_val['ps'])/industry_avg_val['ps']*100:+.1f}%，位于行业{ps_position:.1f}%分位")
 
     add_paragraph(document, '')
-    if current_metrics_val['pe'] > industry_avg_val['pe'] * 1.2:
-        add_paragraph(document, '⚠️ PE显著高于行业平均，可能存在估值偏高风险')
-    elif current_metrics_val['pe'] < industry_avg_val['pe'] * 0.8:
-        add_paragraph(document, '✅ PE低于行业平均，可能存在估值低估机会')
+
+    # PE分位数分析
+    if current_metrics_val['pe'] > industry_stats_val['pe']['q3']:
+        add_paragraph(document, f'⚠️ PE({current_metrics_val["pe"]:.2f}倍)高于行业Q3({industry_stats_val["pe"]["q3"]:.2f}倍)，处于行业高位，估值偏高')
+    elif current_metrics_val['pe'] < industry_stats_val['pe']['q1']:
+        add_paragraph(document, f'✅ PE({current_metrics_val["pe"]:.2f}倍)低于行业Q1({industry_stats_val["pe"]["q1"]:.2f}倍)，处于行业低位，估值偏低')
     else:
-        add_paragraph(document, 'ℹ️ PE接近行业平均，估值相对合理')
+        add_paragraph(document, f'ℹ️ PE({current_metrics_val["pe"]:.2f}倍)介于行业Q1({industry_stats_val["pe"]["q1"]:.2f}倍)和Q3({industry_stats_val["pe"]["q3"]:.2f}倍)之间，估值合理')
+
+    # PB分位数分析
+    if current_metrics_val['pb'] > industry_stats_val['pb']['q3']:
+        add_paragraph(document, f'⚠️ PB({current_metrics_val["pb"]:.2f}倍)高于行业Q3({industry_stats_val["pb"]["q3"]:.2f}倍)，市净率偏高')
+    elif current_metrics_val['pb'] < industry_stats_val['pb']['q1']:
+        add_paragraph(document, f'✅ PB({current_metrics_val["pb"]:.2f}倍)低于行业Q1({industry_stats_val["pb"]["q1"]:.2f}倍)，市净率偏低')
+
+    # PS分位数分析
+    if current_metrics_val['ps'] > industry_stats_val['ps']['q3']:
+        add_paragraph(document, f'⚠️ PS({current_metrics_val["ps"]:.2f}倍)高于行业Q3({industry_stats_val["ps"]["q3"]:.2f}倍)，市销率偏高')
+    elif current_metrics_val['ps'] < industry_stats_val['ps']['q1']:
+        add_paragraph(document, f'✅ PS({current_metrics_val["ps"]:.2f}倍)低于行业Q1({industry_stats_val["ps"]["q1"]:.2f}倍)，市销率偏低')
 
     add_title(document, '2.3 估值回归情景分析', level=2)
 
-    add_paragraph(document, '分析估值回归到行业平均水平时的情景：')
-
-    # 计算回归情景
-    net_income_rel = project_params.get('net_income', 253532329.85)
-    net_assets_rel = project_params.get('net_assets', 4939639031.34)
-    total_shares_rel = 767460689
-    current_price_rel = project_params['current_price']
-
-    eps_rel = net_income_rel / total_shares_rel
-    bps_rel = net_assets_rel / total_shares_rel
-
-    target_price_pe = eps_rel * industry_avg_val['pe']
-    return_pe = (target_price_pe - current_price_rel) / current_price_rel * 100
-
-    target_price_pb = bps_rel * industry_avg_val['pb']
-    return_pb = (target_price_pb - current_price_rel) / current_price_rel * 100
-
-    target_price_avg = (target_price_pe + target_price_pb) / 2
-    return_avg_rel = (target_price_avg - current_price_rel) / current_price_rel * 100
-
-    # 情景数据表
-    scenario_headers = ['情景', 'PE', 'PB', 'PS', '目标价格(元)', '预期收益率(%)']
-    scenario_data = [
-        ['当前估值', f"{current_metrics_val['pe']:.2f}", f"{current_metrics_val['pb']:.2f}", f"{current_metrics_val['ps']:.2f}",
-         f"{current_price_rel:.2f}", "0.0"],
-        ['PE→行业平均', f"{industry_avg_val['pe']:.2f}", f"{current_metrics_val['pb']:.2f}", f"{current_metrics_val['ps']:.2f}",
-         f"{target_price_pe:.2f}", f"{return_pe:+.1f}"],
-        ['PB→行业平均', f"{current_metrics_val['pe']:.2f}", f"{industry_avg_val['pb']:.2f}", f"{current_metrics_val['ps']:.2f}",
-         f"{target_price_pb:.2f}", f"{return_pb:+.1f}"],
-        ['全面回归', f"{industry_avg_val['pe']:.2f}", f"{industry_avg_val['pb']:.2f}", f"{industry_avg_val['ps']:.2f}",
-         f"{target_price_avg:.2f}", f"{return_avg_rel:+.1f}"]
-    ]
-    add_table_data(document, scenario_headers, scenario_data)
-
+    add_paragraph(document, '估值回归情景分析已移至第七章"压力测试"中，与市场危机情景、个股利空情景等极端压力情景一起进行综合评估。')
     add_paragraph(document, '')
-    add_paragraph(document, '图表 8: 估值情景分析 - 目标价格')
-    add_image(document, chart_paths[4])
-
+    add_paragraph(document, '该章节将评估PE回归到行业Q1（25分位，即下四分位数）这一极端情况下的投资风险。')
+    add_paragraph(document, '• PE→行业Q1（25分位）：估值回归到行业下四分位数，代表行业较低估值水平')
     add_paragraph(document, '')
-    add_paragraph(document, '图表 8.1: 估值情景分析 - 预期收益率')
-    add_image(document, chart_paths[5])
-
-    add_paragraph(document, '情景分析结论：')
-    add_paragraph(document, f'• 如果PE回归到行业平均，目标价格约 {target_price_pe:.2f} 元，预期收益率 {return_pe:+.1f}%')
-    add_paragraph(document, f'• 如果PB回归到行业平均，目标价格约 {target_price_pb:.2f} 元，预期收益率 {return_pb:+.1f}%')
-    add_paragraph(document, f'• 综合估值目标价格约 {target_price_avg:.2f} 元，预期收益率 {return_avg_rel:+.1f}%')
-
+    add_paragraph(document, '通过这一极端情景分析，评估在最坏估值回调情况下，项目的安全边际和抗风险能力。')
     add_paragraph(document, '')
-    if return_avg_rel > 10:
-        add_paragraph(document, '📈 估值偏低，具有投资价值')
-    elif return_avg_rel < -10:
-        add_paragraph(document, '📉 估值偏高，需谨慎投资')
-    else:
-        add_paragraph(document, '📊 估值合理，可正常投资')
+    add_paragraph(document, '详细分析请参见：第七章 压力测试 → 7.4 PE回归压力测试')
 
     add_section_break(document)
 
@@ -2802,6 +3010,10 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
     cash_assets = 0.0
     total_liab_value = 0.0
 
+    # 初始化CAGR计算变量
+    calculated_fcf_cagr = None
+    historical_incomes = None
+
     try:
         from update_market_data import TushareFinancialData
 
@@ -2841,6 +3053,24 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
                 # 更新项目参数
                 project_params['net_income'] = net_income
 
+            # 获取历史净利润数据以计算CAGR
+            historical_incomes = financial.get_historical_net_income(years=5)
+            calculated_fcf_cagr = None
+            if historical_incomes and len(historical_incomes) >= 2:
+                # 计算CAGR (复合年增长率)
+                # CAGR = (终值/起始值)^(1/年数) - 1
+                start_income = historical_incomes[-1]
+                end_income = historical_incomes[0]
+                n_years = len(historical_incomes) - 1
+
+                if start_income > 0 and end_income > 0:
+                    calculated_fcf_cagr = (end_income / start_income) ** (1 / n_years) - 1
+                    print(f"✅ 计算历史CAGR成功:")
+                    print(f"   起始净利润: {start_income/100000000:.2f} 亿元")
+                    print(f"   最新净利润: {end_income/100000000:.2f} 亿元")
+                    print(f"   历史年数: {n_years} 年")
+                    print(f"   CAGR: {calculated_fcf_cagr*100:+.2f}%")
+
     except Exception as e:
         print(f"从Tushare获取财务数据失败: {e}")
 
@@ -2873,6 +3103,17 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
     # 计算基础FCF
     base_fcf = net_income  # FCF = 净利润（保守估计）
 
+    # 使用历史CAGR作为FCF增长率，如果没有则使用默认值
+    # 初始化FCF增长率变量（需要在表格前初始化）
+    fcf_growth_example = 0.10  # 默认10%
+    fcf_growth_source = "默认假设（无历史数据）"
+
+    if calculated_fcf_cagr is not None and historical_incomes is not None:
+        fcf_growth_example = max(calculated_fcf_cagr, 0.05)  # 至少5%，避免过于保守
+        if fcf_growth_example > 0.30:  # 限制最高30%
+            fcf_growth_example = 0.30
+        fcf_growth_source = f"基于历史{len(historical_incomes)-1}年CAGR"
+
     dcf_process_data = [
         ['财务数据（来源：Tushare）', ''],
         ['净利润', f'{net_income/100000000:.2f} 亿元'],
@@ -2885,7 +3126,7 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
         ['DCF假设参数', ''],
         ['预测期', '10年'],
         ['基准FCF', f'{base_fcf/100000000:.2f} 亿元'],
-        ['FCF增长率（预测期）', '15%-30%'],
+        ['FCF增长率（预测期）', f'{fcf_growth_example*100:.1f}% ({fcf_growth_source})'],
         ['WACC范围', '8.0% - 13.0%'],
         ['永续增长率', '3.0%']
     ]
@@ -2894,12 +3135,11 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
     add_paragraph(document, '')
     add_paragraph(document, '估值计算过程（示例）：')
 
-    # 以中间值计算示例
     wacc_example = 0.10  # 10%
-    growth_example = 0.025  # 2.5%
+    growth_example = 0.025  # 2.5% 永续增长率
 
     # 计算示例
-    fcfs = [base_fcf * (1.1 ** i) for i in range(10)]
+    fcfs = [base_fcf * ((1 + fcf_growth_example) ** i) for i in range(10)]
     pv_fcfs = sum([fcf / ((1 + wacc_example) ** (i+1)) for i, fcf in enumerate(fcfs)])
     terminal_fcf = fcfs[-1] * (1 + growth_example)
     terminal_value = terminal_fcf / (wacc_example - growth_example)
@@ -2911,6 +3151,8 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
 
     example_data = [
         ['WACC', f'{wacc_example*100:.1f}%'],
+        ['FCF增长率（预测期）', f'{fcf_growth_example*100:.1f}%'],
+        ['（数据来源）', fcf_growth_source],
         ['永续增长率', f'{growth_example*100:.1f}%'],
         ['预测期FCF现值', f'{pv_fcfs/100000000:.2f} 亿元'],
         ['终值', f'{terminal_value/100000000:.2f} 亿元'],
@@ -2950,13 +3192,19 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
 
     add_paragraph(document, '本章节分析单一参数变化对定增项目盈利概率的影响，包括波动率、锁定期等关键参数的敏感性分析。')
 
-    add_title(document, '4.1 波动率敏感性分析', level=2)
+    add_title(document, '4.1 波动率敏感性分析（60日窗口）', level=2)
+
+    add_paragraph(document, '本节分析基于60日历史窗口的波动率对盈利概率的影响。')
+    add_paragraph(document, '不同时间窗口的波动率不同，敏感性也会有差异。')
 
     # 生成敏感性分析数据和图表
     volatilities = np.linspace(0.20, 0.50, 7)
-    drift_rate = risk_params.get('drift', market_data.get('drift', 0.08))
+    # 使用60日窗口的参数
+    drift_rate = market_data.get('annual_return_60d', risk_params.get('drift', 0.08))
+    current_vol_60d = market_data.get('volatility_60d', risk_params.get('volatility', 0.30))
 
     prob_results = []
+    mean_return_results = []  # 新增：记录不同波动率下的期望收益率
     for vol in volatilities:
         lockup_months = project_params['lockup_period']
         lockup_drift = drift_rate * (lockup_months / 12)
@@ -2966,35 +3214,72 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
         prob = stats.norm.cdf(d)
         prob_results.append(prob * 100)
 
+        # 计算期望收益率（利润率均值）
+        # 使用对数正态分布的期望公式：E[P] = S0 * exp(μ + σ²/2)
+        # 期望收益率 = (E[P] - issue_price) / issue_price
+        expected_price = ma30 * np.exp(lockup_drift + lockup_vol**2 / 2)
+        expected_return = (expected_price - project_params['issue_price']) / project_params['issue_price']
+        mean_return_results.append(expected_return * 100)
+
     # 保存图表（使用拆分版）
     sensitivity_chart_paths = generate_sensitivity_charts_split(
-        volatilities, prob_results, market_data['volatility'],
+        volatilities, prob_results, current_vol_60d,
         ma30, project_params['issue_price'], IMAGES_DIR)
 
-    vol_data = [[f'{vol*100:.0f}%', f'{prob:.1f}%'] for vol, prob in zip(volatilities, prob_results)]
-    add_table_data(document, ['波动率', '盈利概率'], vol_data)
+    vol_data = [[f'{vol*100:.0f}%', f'{prob:.1f}%', f'{ret:+.1f}%'] for vol, prob, ret in zip(volatilities, prob_results, mean_return_results)]
+    add_table_data(document, ['年化波动率 (60日窗口)', '盈利概率', '期望收益率'], vol_data)
+
+    # 计算波动率敏感性指标
+    vol_sensitivity_prob = []  # 波动率对盈利概率的影响
+    vol_sensitivity_return = []  # 波动率对期望收益率的影响
+    for i in range(len(volatilities) - 1):
+        prob_change = prob_results[i+1] - prob_results[i]
+        return_change = mean_return_results[i+1] - mean_return_results[i]
+        vol_sensitivity_prob.append(abs(prob_change))
+        vol_sensitivity_return.append(abs(return_change))
+
+    avg_prob_change = np.mean(vol_sensitivity_prob)
+    avg_return_change = np.mean(vol_sensitivity_return)
+
+    add_paragraph(document, '')
+    add_paragraph(document, '分析说明：', bold=True)
+    add_paragraph(document, f'• 当前60日窗口波动率: {current_vol_60d*100:.2f}%')
+    add_paragraph(document, f'• 历史年化收益率（漂移率）: {drift_rate*100:+.2f}%')
+    add_paragraph(document, f'• 发行价格: {project_params["issue_price"]:.2f} 元/股')
+    add_paragraph(document, f'• 折价率: {(project_params["issue_price"]/project_params["current_price"] - 1)*100:+.2f}%')
+    add_paragraph(document, f'• MA30价格: {ma30:.2f} 元/股（作为基准）')
+    add_paragraph(document, '')
+    add_paragraph(document, '敏感性分析结论：')
+    add_paragraph(document, '• 波动率越高，价格不确定性越大，盈利概率越低')
+    add_paragraph(document, f'• 波动率每提升5%，盈利概率平均下降约{avg_prob_change:.1f}个百分点')
+    add_paragraph(document, f'• 波动率每提升5%，期望收益率平均下降约{avg_return_change:.1f}个百分点')
+    add_paragraph(document, f'• 注：期望收益率基于对数正态分布计算，漂移率{drift_rate*100:+.2f}%，折价率{(project_params["issue_price"]/project_params["current_price"] - 1)*100:+.2f}%')
 
     # 添加拆分的敏感性分析图表
     add_paragraph(document, '')
-    add_paragraph(document, '图表 2.1: 波动率与盈利概率')
+    add_paragraph(document, '图表 4.1: 波动率与盈利概率')
     add_image(document, sensitivity_chart_paths[0], width=Inches(6))
     add_paragraph(document, '')
 
-    add_paragraph(document, '图表 2.1.1: 发行价折扣与盈利概率')
+    add_paragraph(document, '图表 4.2: 发行价折扣与盈利概率')
     add_image(document, sensitivity_chart_paths[1], width=Inches(6))
     add_paragraph(document, '')
 
-    add_paragraph(document, '图表 2.1.2: 盈利概率热力图')
+    add_paragraph(document, '图表 4.3: 盈利概率热力图（波动率 vs 漂移率）')
     add_image(document, sensitivity_chart_paths[2], width=Inches(6))
+    add_paragraph(document, '')
 
-    add_paragraph(document, '分析结论：')
-    add_paragraph(document, f'• 在当前市场波动率（{market_data["volatility"]*100:.1f}%）下，项目盈利概率受波动率影响显著')
-    add_paragraph(document, '• 波动率越高，盈利概率的不确定性越大')
-    add_paragraph(document, '• 折价发行为投资者提供了一定的安全边际')
+    add_paragraph(document, '图表 4.4: 盈利概率热力图（漂移率 vs 折价率）')
+    add_image(document, sensitivity_chart_paths[3], width=Inches(6))
+
+    add_paragraph(document, '分析结论（基于60日窗口）：')
+    add_paragraph(document, f'• 在当前60日窗口波动率（{current_vol_60d*100:.2f}%）下，项目盈利概率受波动率影响显著')
+    add_paragraph(document, f'• 如果波动率上升至{current_vol_60d*100+10:.1f}%（增加10个百分点），盈利概率将下降约15-20个百分点')
+    add_paragraph(document, '• 建议结合不同窗口期（4.3节）综合评估波动风险')
 
     # ==================== 2.3 不同时间窗口风险指标分析 ====================
     add_paragraph(document, '')
-    add_title(document, '5.4 不同时间窗口风险指标分析', level=2)
+    add_title(document, '4.3 不同时间窗口风险指标分析', level=2)
 
     add_paragraph(document, '本章节分析不同时间窗口对风险指标的影响，包括波动率、收益率、最大回撤等。')
     add_paragraph(document, '通常情况下，时间窗口越短，波动率越高；时间窗口越长，数据越稳定。')
@@ -3016,6 +3301,8 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
             df_prices = pro.daily(ts_code=stock_code, start_date=start_date, end_date=end_date)
 
             if not df_prices.empty and len(df_prices) > 180:
+                # 按日期排序，确保数据按时间顺序排列
+                df_prices = df_prices.sort_values('trade_date').reset_index(drop=True)
                 # 使用收盘价
                 price_series = df_prices['close'].reset_index(drop=True)
 
@@ -3037,15 +3324,15 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
 
                 # 添加图表
                 add_paragraph(document, '')
-                add_paragraph(document, '图表 2: 不同时间窗口的波动率对比')
+                add_paragraph(document, '图表 4.5: 不同时间窗口的波动率对比')
                 add_image(document, chart_paths[0], width=Inches(6.5))
 
                 add_paragraph(document, '')
-                add_paragraph(document, '图表 2.1: 不同时间窗口的收益率对比')
+                add_paragraph(document, '图表 4.6: 不同时间窗口的收益率对比')
                 add_image(document, chart_paths[1], width=Inches(6.5))
 
                 add_paragraph(document, '')
-                add_paragraph(document, '图表 2.2: 不同时间窗口的风险指标对比')
+                add_paragraph(document, '图表 4.7: 不同时间窗口的风险指标对比')
                 add_image(document, chart_paths[2], width=Inches(6.5))
 
                 # 分析结论
@@ -3113,15 +3400,15 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
     lockup_chart1_path, lockup_chart2_path = generate_lockup_sensitivity_charts_split(
         issue_price, market_data['current_price'], IMAGES_DIR)
     add_paragraph(document, '')
-    add_paragraph(document, '图表 1.2: 锁定期敏感性分析 - 盈亏平衡价格')
+    add_paragraph(document, '图表 4.8: 锁定期敏感性分析 - 盈亏平衡价格')
     add_image(document, lockup_chart1_path, width=Inches(6.5))
     add_paragraph(document, '')
-    add_paragraph(document, '图表 1.3: 锁定期敏感性分析 - 需要涨幅')
+    add_paragraph(document, '图表 4.9: 锁定期敏感性分析 - 需要涨幅')
     add_image(document, lockup_chart2_path, width=Inches(6.5))
 
     # ==================== 2.6 参数敏感性排序（龙卷风图） ====================
     add_paragraph(document, '')
-    add_title(document, '5.6 参数敏感性排序（龙卷风图）', level=2)
+    add_title(document, '4.4 参数敏感性排序（龙卷风图）', level=2)
 
     add_paragraph(document, '龙卷风图展示了各参数变化对盈利概率的影响程度，帮助识别最敏感的风险因子。')
 
@@ -3132,7 +3419,7 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
     generate_tornado_chart(project_params['issue_price'], market_data['current_price'],
                          project_params['lockup_period'], volatility, drift, tornado_chart_path)
 
-    add_paragraph(document, '图表 1.3: 参数敏感性排序（龙卷风图）')
+    add_paragraph(document, '图表 4.10: 参数敏感性排序（龙卷风图）')
     add_image(document, tornado_chart_path, width=Inches(6))
 
     add_paragraph(document, '敏感性分析结论：')
@@ -3142,7 +3429,7 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
 
     # ==================== 2.5 发行价折扣敏感性分析 ====================
     add_paragraph(document, '')
-    add_title(document, '5.5 发行价折扣敏感性分析', level=2)
+    add_title(document, '4.5 发行价折扣敏感性分析', level=2)
 
     add_paragraph(document, '本节分析不同发行价折扣情景下的盈利概率和预期收益率，包括折价发行和溢价发行两种情景。')
     add_paragraph(document, '')
@@ -3158,19 +3445,19 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
 
     # 添加拆分的图表
     add_paragraph(document, '')
-    add_paragraph(document, '图表 3.1.1: 折价发行情景 - 盈利概率')
+    add_paragraph(document, '图表 4.11: 折价发行情景 - 盈利概率')
     add_image(document, scenario_chart_paths[0], width=Inches(6.5))
     add_paragraph(document, '')
 
-    add_paragraph(document, '图表 3.1.2: 溢价发行情景 - 盈利概率')
+    add_paragraph(document, '图表 4.12: 溢价发行情景 - 盈利概率')
     add_image(document, scenario_chart_paths[1], width=Inches(6.5))
     add_paragraph(document, '')
 
-    add_paragraph(document, '图表 3.1.3: 预期收益率对比')
+    add_paragraph(document, '图表 4.13: 预期收益率对比')
     add_image(document, scenario_chart_paths[2], width=Inches(6.5))
     add_paragraph(document, '')
 
-    add_paragraph(document, '图表 3.1.4: 发行价格对比')
+    add_paragraph(document, '图表 4.14: 发行价格对比')
     add_image(document, scenario_chart_paths[3], width=Inches(6.5))
 
     # 分析结论
@@ -3203,6 +3490,213 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
     add_paragraph(document, '• 折价越多，盈利概率越高，但融资额越少')
     add_paragraph(document, '• 溢价越多，盈利概率越低，破发风险越大')
 
+    # ==================== 4.6 净利润增长率敏感性分析 ====================
+    # 注：净利润增长率是价格变化的内在原因，已在价格相关维度中体现，此处不再单独分析
+    # add_paragraph(document, '')
+    # add_title(document, '4.6 净利润增长率敏感性分析', level=2)
+    #
+    # add_paragraph(document, '归母净利润增长率是影响股价表现的核心因素之一。本节分析不同净利润增长率情景对定增项目收益的影响。')
+    # add_paragraph(document, '')
+    #
+    # # 定义不同的净利润增长率情景（0%到50%）
+    # growth_rates = [0.0, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50]
+    # current_price = project_params['current_price']
+    # issue_price = project_params['issue_price']
+    # lockup_years = project_params['lockup_period'] / 12
+    #
+    # # 假设净利润增长率对股价的传导系数（通常为0.5-0.8，考虑市场不确定性）
+    # # 保守估计：70%的净利润增长会反映在股价上
+    # growth_transmission_coeff = 0.7
+    #
+    # growth_analysis_data = []
+    # growth_scenarios = []
+    #
+    # print("\n运行净利润增长率敏感性分析...")
+    # for growth_rate in growth_rates:
+    #     # 计算锁定期末的预期价格（基于净利润增长传导）
+    #     # 公式：预期价格 = 当前价格 × (1 + 净利润增长率 × 传导系数 × 锁定期年数)
+    #     expected_price_growth = current_price * (1 + growth_rate * growth_transmission_coeff * lockup_years)
+    #
+    #     # 计算收益率和年化收益率
+    #     total_return = (expected_price_growth - issue_price) / issue_price
+    #     annualized_return = (1 + total_return) ** (1 / lockup_years) - 1
+    #
+    #     # 使用蒙特卡洛模拟计算盈利概率（考虑波动率）
+    #     volatility = market_data.get('volatility_60d', risk_params.get('volatility', 0.30))
+    #     n_sim = 5000
+    #
+    #     # 调整drift：基础drift + 增长率贡献
+    #     base_drift = market_data.get('annual_return_60d', risk_params.get('drift', 0.08))
+    #     growth_drift = base_drift + (growth_rate * growth_transmission_coeff)
+    #
+    #     lockup_days = project_params['lockup_period'] * 30
+    #     lockup_vol = volatility * np.sqrt(lockup_days / 365)
+    #     lockup_drift_period = growth_drift * (lockup_days / 365)
+    #
+    #     np.random.seed(42)
+    #     sim_returns = np.random.normal(lockup_drift_period, lockup_vol, n_sim)
+    #     final_prices = current_price * np.exp(sim_returns)
+    #     profit_losses = (final_prices - issue_price) / issue_price
+    #     profit_prob = (profit_losses > 0).mean() * 100
+    #
+    #     # 95%置信区间
+    #     percentile_5_return = np.percentile(profit_losses, 5)
+    #     percentile_95_return = np.percentile(profit_losses, 95)
+    #
+    #     growth_analysis_data.append([
+    #         f'{growth_rate*100:.0f}%',
+    #         f'{expected_price_growth:.2f}',
+    #         f'{total_return*100:.2f}%',
+    #         f'{annualized_return*100:.2f}%',
+    #         f'{profit_prob:.1f}%',
+    #         f'{percentile_5_return*100:.2f}%',
+    #         f'{percentile_95_return*100:.2f}%'
+    #     ])
+    #
+    #     growth_scenarios.append({
+    #         'growth_rate': growth_rate,
+    #         'expected_price': expected_price_growth,
+    #         'total_return': total_return,
+    #         'annualized_return': annualized_return,
+    #         'profit_prob': profit_prob
+    #     })
+    #
+    #     print(f"  增长率 {growth_rate*100:.0f}%: 预期价={expected_price_growth:.2f}元, "
+    #           f"年化收益={annualized_return*100:.2f}%, 盈利概率={profit_prob:.1f}%")
+    #
+    # # 添加敏感性分析表格
+    # add_paragraph(document, '不同净利润增长率情景下的定增收益分析：')
+    # add_paragraph(document, '（注：假设70%的净利润增长会传导至股价，考虑市场不确定性）')
+    #
+    # growth_headers = ['净利润增长率', '预期期末价格(元)', '总收益率', '年化收益率', '盈利概率', '5% VaR', '95% VaR']
+    # add_table_data(document, growth_headers, growth_analysis_data)
+    #
+    # # 生成净利润增长率敏感性图表
+    # add_paragraph(document, '')
+    # add_paragraph(document, '图表 4.14: 净利润增长率敏感性分析')
+    #
+    # try:
+    #     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    #
+    #     growth_labels = [f'{g*100:.0f}%' for g in growth_rates]
+    #     annual_returns = [s['annualized_return']*100 for s in growth_scenarios]
+    #     profit_probs = [s['profit_prob'] for s in growth_scenarios]
+    #     expected_prices = [s['expected_price'] for s in growth_scenarios]
+    #
+    #     # 左图：增长率 vs 年化收益率
+    #     ax1 = axes[0]
+    #     ax1.plot(growth_labels, annual_returns, marker='o', linewidth=2.5,
+    #             markersize=8, color='#3498db', label='年化收益率')
+    #     ax1.axhline(y=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
+    #     ax1.axhline(y=20, color='green', linestyle=':', linewidth=1, alpha=0.5, label='20%目标收益线')
+    #
+    #     # 标注关键点
+    #     for i, (label, value, price) in enumerate(zip(growth_labels, annual_returns, expected_prices)):
+    #         color = 'green' if price > issue_price else 'red'
+    #         # 只在关键点标注（0%, 10%, 20%, 30%, 50%）
+    #         if growth_rates[i] in [0.0, 0.10, 0.20, 0.30, 0.50]:
+    #             ax1.text(i, value + (3 if value > 0 else -3), f'{value:.1f}%',
+    #                     ha='center', va='bottom' if value > 0 else 'top',
+    #                     fontproperties=font_prop, fontsize=9, fontweight='bold', color=color)
+    #
+    #     ax1.set_xlabel('归母净利润增长率', fontproperties=font_prop, fontsize=12)
+    #     ax1.set_ylabel('年化收益率 (%)', fontproperties=font_prop, fontsize=12)
+    #     ax1.set_title('净利润增长率对年化收益的影响', fontproperties=font_prop, fontsize=13, fontweight='bold')
+    #     ax1.grid(True, alpha=0.3)
+    #     ax1.legend(prop=font_prop, fontsize=10)
+    #
+    #     for label in ax1.get_xticklabels():
+    #         label.set_fontproperties(font_prop)
+    #     for label in ax1.get_yticklabels():
+    #         label.set_fontproperties(font_prop)
+    #
+    #     # 右图：增长率 vs 盈利概率
+    #     ax2 = axes[1]
+    #     bars = ax2.bar(growth_labels, profit_probs,
+    #                   color=['#e74c3c' if p < 50 else '#f39c12' if p < 70 else '#27ae60'
+    #                          for p in profit_probs],
+    #                   alpha=0.7, edgecolor='white')
+    #     ax2.axhline(y=50, color='black', linestyle='--', linewidth=1, alpha=0.5, label='盈亏平衡线')
+    #     ax2.axhline(y=80, color='green', linestyle=':', linewidth=1, alpha=0.5, label='高概率线(80%)')
+    #     ax2.set_xlabel('归母净利润增长率', fontproperties=font_prop, fontsize=12)
+    #     ax2.set_ylabel('盈利概率 (%)', fontproperties=font_prop, fontsize=12)
+    #     ax2.set_title('净利润增长率对盈利概率的影响', fontproperties=font_prop, fontsize=13, fontweight='bold')
+    #     ax2.set_ylim(0, 100)
+    #     ax2.grid(True, alpha=0.3, axis='y')
+    #     ax2.legend(prop=font_prop, fontsize=10)
+    #
+    #     # 添加数值标签（只标注关键点）
+    #     for i, (bar, prob) in enumerate(zip(bars, profit_probs)):
+    #         if growth_rates[i] in [0.0, 0.10, 0.20, 0.30, 0.50]:
+    #             ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
+    #                     f'{prob:.1f}%', ha='center', va='bottom',
+    #                     fontproperties=font_prop, fontsize=9, fontweight='bold')
+    #
+    #     for label in ax2.get_xticklabels():
+    #         label.set_fontproperties(font_prop)
+    #     for label in ax2.get_yticklabels():
+    #         label.set_fontproperties(font_prop)
+    #
+    #     plt.suptitle('净利润增长率敏感性分析（基于70%传导系数）',
+    #                 fontproperties=font_prop, fontsize=15, fontweight='bold')
+    #     plt.tight_layout()
+    #
+    #     # 保存图表
+    #     growth_sensitivity_chart_path = os.path.join(IMAGES_DIR, '04_14_growth_rate_sensitivity.png')
+    #     plt.savefig(growth_sensitivity_chart_path, dpi=150, bbox_inches='tight')
+    #     plt.close()
+    #
+    #     # 添加图表到文档
+    #     add_image(document, growth_sensitivity_chart_path, width=Inches(6))
+    #     add_paragraph(document, '')
+    #
+    #     # 添加分析结论
+    #     add_paragraph(document, '净利润增长率敏感性分析结论：')
+    #
+    #     # 找出盈亏平衡的增长率
+    #     breakeven_growth = None
+    #     for scenario in growth_scenarios:
+    #         if scenario['profit_prob'] >= 50:
+    #             breakeven_growth = scenario['growth_rate']
+    #             break
+    #
+    #     if breakeven_growth is not None:
+    #         add_paragraph(document, f'• 盈利概率达到50%的最低净利润增长率约为{breakeven_growth*100:.0f}%')
+    #     else:
+    #         add_paragraph(document, f'• 即使净利润增长50%，盈利概率仍未达到50%，说明当前定增价格偏高')
+    #
+    #     # 分析不同增长情景
+    #     zero_growth_return = growth_scenarios[0]['annualized_return']
+    #     high_growth_return = growth_scenarios[-1]['annualized_return']
+    #     mid_growth_return = growth_scenarios[4]['annualized_return']  # 20%增长
+    #
+    #     add_paragraph(document, f'• 净利润零增长情景下，预期年化收益率为{zero_growth_return*100:+.2f}%')
+    #     add_paragraph(document, f'• 净利润20%增长情景下，预期年化收益率为{mid_growth_return*100:+.2f}%')
+    #     add_paragraph(document, f'• 净利润50%高增长情景下，预期年化收益率为{high_growth_return*100:+.2f}%')
+    #     add_paragraph(document, f'• 增长率每提升10%，年化收益率约提升{(high_growth_return - zero_growth_return)/5*100:.2f}个百分点')
+    #
+    #     # 投资建议
+    #     add_paragraph(document, '')
+    #     add_paragraph(document, '💡 投资建议：')
+    #
+    #     # 估算公司当前的历史增长率
+    #     revenue_growth = project_params.get('revenue_growth', 0.25)  # 默认25%
+    #     add_paragraph(document, f'• 公司当前营收增长率约为{revenue_growth*100:.1f}%，可参考作为净利润增长预期')
+    #     add_paragraph(document, '• 如果公司处于成长期，净利润增长率可能高于营收增长率')
+    #     add_paragraph(document, '• 如果公司处于成熟期，净利润增长率可能接近或低于营收增长率')
+    #     add_paragraph(document, '• 建议结合行业前景、公司竞争力、历史增长数据综合评估可实现的增长率')
+    #
+    #     # 风险提示
+    #     add_paragraph(document, '')
+    #     add_paragraph(document, '⚠️ 风险提示：')
+    #     add_paragraph(document, '• 净利润增长受宏观经济、行业竞争、公司经营等多重因素影响')
+    #     add_paragraph(document, '• 历史增长率不代表未来表现，需警惕增长放缓或下滑风险')
+    #     add_paragraph(document, '• 高增长（>30%）通常难以持续，需要关注业绩不确定性')
+    #
+    # except Exception as e:
+    #     print(f"⚠️ 生成净利润增长率敏感性图表失败: {e}")
+    #     add_paragraph(document, f'⚠️ 净利润增长率敏感性图表生成失败: {e}')
+
     add_section_break(document)
 
     # ==================== 五、蒙特卡洛模拟 ====================
@@ -3212,13 +3706,23 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
 
     add_title(document, '5.1 模拟参数', level=2)
 
+    # 计算定增折价率
+    discount_rate = (project_params['issue_price'] - project_params['current_price']) / project_params['current_price'] * 100
+
+    # 使用180日窗口参数（对应半年度解禁期）
+    # 保存为全局变量供后续章节（如VaR）使用
+    mc_volatility = market_data.get('volatility_180d', market_data.get('volatility', 0.30))
+    mc_drift = market_data.get('annual_return_180d', market_data.get('drift', 0.08))
+
     mc_params = [
         ['模拟次数', '10,000次'],
         ['锁定期', f'{project_params["lockup_period"]} 个月'],
         ['初始价格', f'{project_params["current_price"]:.2f} 元/股'],
-        ['年化波动率', f'{market_data["volatility"]*100:.1f}%'],
-        ['年化漂移率', f'{market_data["drift"]*100:.1f}%'],
-        ['发行价格', f'{project_params["issue_price"]:.2f} 元/股']
+        ['年化波动率', f'{mc_volatility*100:.1f}%'],
+        ['年化漂移率', f'{mc_drift*100:.1f}%'],
+        ['发行价格', f'{project_params["issue_price"]:.2f} 元/股'],
+        ['定增折价率', f'{discount_rate:+.2f}%'],
+        ['数据窗口', '180日（半年度）']
     ]
     add_table_data(document, ['参数', '值'], mc_params)
 
@@ -3228,8 +3732,8 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
     lockup_days = project_params['lockup_period'] * 30
     n_simulations = 10000
 
-    lockup_drift = risk_params.get('drift', market_data.get('drift', 0.08)) * (lockup_days / 365)
-    lockup_vol = risk_params.get('volatility', market_data.get('volatility', 0.35)) * np.sqrt(lockup_days / 365)
+    lockup_drift = mc_drift * (lockup_days / 365)
+    lockup_vol = mc_volatility * np.sqrt(lockup_days / 365)
 
     np.random.seed(42)
     returns = np.random.normal(lockup_drift, lockup_vol, n_simulations)
@@ -3256,27 +3760,27 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
     ]
     add_table_data(document, ['指标', '值'], mc_results)
 
-    add_paragraph(document, '图表 4: 蒙特卡洛模拟结果 - 价格分布')
+    add_paragraph(document, '图表 5.1: 蒙特卡洛模拟结果 - 价格分布')
     add_image(document, mc_chart_paths[0])
 
     add_paragraph(document, '')
-    add_paragraph(document, '图表 4.1: 蒙特卡洛模拟结果 - 收益率分布')
+    add_paragraph(document, '图表 5.2: 蒙特卡洛模拟结果 - 收益率分布')
     add_image(document, mc_chart_paths[1])
 
     add_paragraph(document, '')
-    add_paragraph(document, '图表 4.2: 蒙特卡洛模拟结果 - 累积分布函数')
+    add_paragraph(document, '图表 5.3: 蒙特卡洛模拟结果 - 累积分布函数')
     add_image(document, mc_chart_paths[2])
 
     add_paragraph(document, '')
-    add_paragraph(document, '图表 4.3: 蒙特卡洛模拟结果 - 盈亏概率')
+    add_paragraph(document, '图表 5.4: 蒙特卡洛模拟结果 - 盈亏概率')
     add_image(document, mc_chart_paths[3])
 
     add_paragraph(document, '')
-    add_paragraph(document, '图表 4.4: 蒙特卡洛模拟结果 - 关键统计指标')
+    add_paragraph(document, '图表 5.5: 蒙特卡洛模拟结果 - 关键统计指标')
     add_image(document, mc_chart_paths[4])
 
     add_paragraph(document, '')
-    add_paragraph(document, '图表 4.5: 蒙特卡洛模拟结果 - 概率分布曲线')
+    add_paragraph(document, '图表 5.6: 蒙特卡洛模拟结果 - 概率分布曲线')
     add_image(document, mc_chart_paths[5])
 
     add_paragraph(document, '蒙特卡洛模拟结论：')
@@ -3284,16 +3788,16 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
     add_paragraph(document, f'• 预期收益率约 {mean_return*100:.1f}%')
     add_paragraph(document, f'• 95%的置信区间内，亏损可能不超过 {abs(percent_5)*100:.1f}%')
 
-    # ==================== 5\.1 多窗口期蒙特卡洛分析 ====================
-    add_title(document, '5.1 多窗口期蒙特卡洛分析', level=2)
+    # ==================== 5\.3 多窗口期蒙特卡洛分析 ====================
+    add_title(document, '5.3 多窗口期蒙特卡洛分析', level=2)
 
-    add_paragraph(document, '本节分析不同时间窗口（60日/120日/250日）下的蒙特卡洛模拟结果，对比不同窗口期的波动率和收益率对定增收益的影响。')
+    add_paragraph(document, '本节分析不同时间窗口（60日/120日/180日）下的蒙特卡洛模拟结果，对比不同窗口期的波动率和收益率对定增收益的影响。')
 
     # 多窗口期配置
     windows_mc = {
         '60日': {'days': 60, 'vol_key': 'volatility_60d', 'return_key': 'annual_return_60d'},
         '120日': {'days': 120, 'vol_key': 'volatility_120d', 'return_key': 'annual_return_120d'},
-        '250日': {'days': 250, 'vol_key': 'volatility_250d', 'return_key': 'annual_return_250d'}
+        '180日': {'days': 180, 'vol_key': 'volatility_180d', 'return_key': 'annual_return_180d'}
     }
 
     # 为每个窗口期运行模拟
@@ -3306,7 +3810,12 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
 
         # 获取该窗口期的波动率和收益率
         window_vol = market_data.get(config['vol_key'], risk_params.get('volatility', 0.30))
-        window_drift = market_data.get(config['return_key'], risk_params.get('drift', 0.08))
+
+        # 获取历史年化收益率，如果缺失则使用备选数据
+        window_drift = market_data.get(config['return_key'])
+        if window_drift is None:
+            window_drift = risk_params.get('drift', 0.08)
+            print(f"    警告：未找到{window_name}年化收益率，使用默认值({window_drift*100:.2f}%)")
 
         # 计算时间步数（交易日转换为天，假设1月=21交易日）
         time_steps = config['days']
@@ -3350,33 +3859,86 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
     add_paragraph(document, '')
     add_paragraph(document, '不同窗口期蒙特卡洛模拟对比：')
 
-    window_headers = ['窗口期', '波动率', '收益率', '预期年化收益', '中位数收益', '盈利概率', '5% VaR', '95% VaR']
+    # 计算当前项目的折扣率
+    current_discount = (project_params['current_price'] - project_params['issue_price']) / project_params['current_price'] * 100
+
+    # 修正表头，明确区分历史数据和模拟结果，并添加折扣率列
+    window_headers = ['窗口期', '波动率', '历史年化收益率', '折扣率', '模拟预期年化收益', '中位数收益', '盈利概率', '5% VaR', '95% VaR']
     window_table_data = []
-    for window_name in ['60日', '120日', '250日']:
+
+    # 为每个窗口期，计算不同折扣率（0%, 5%, 10%, 15%, 20%）下的模拟结果
+    discount_scenarios = [0, 5, 10, 15, 20]
+
+    for window_name in ['60日', '120日', '180日']:
         if window_name in multi_window_mc_results:
             r = multi_window_mc_results[window_name]
+
+            # 如果是60日窗口，显示当前实际折扣率；其他窗口期也显示相同的折扣率
+            # 因为折扣率是项目属性，不随窗口期变化
             window_table_data.append([
                 window_name,
                 f"{r['volatility']*100:.2f}%",
-                f"{r['drift']*100:.2f}%",
-                f"{r['mean_return']*100:.2f}%",
+                f"{r['drift']*100:.2f}%",  # 历史年化收益率（蒙特卡洛输入参数）
+                f"{current_discount:.2f}%",  # 当前项目的折扣率
+                f"{r['mean_return']*100:.2f}%",  # 模拟预期年化收益（蒙特卡洛输出）
                 f"{r['median_return']*100:.2f}%",
                 f"{r['profit_prob']:.1f}%",
                 f"{r['percentile_5']*100:.2f}%",
                 f"{r['percentile_95']*100:.2f}%"
             ])
 
+            # 为该窗口期添加不同折扣率情景的分析
+            window_vol = r['volatility']
+            window_drift = r['drift']
+            time_steps = {'60日': 60, '120日': 120, '180日': 180}[window_name]
+
+            # 对每个折扣率运行模拟
+            for discount in discount_scenarios:
+                issue_price_with_discount = project_params['current_price'] * (1 - discount/100)
+
+                sim_discount = analyzer.monte_carlo_simulation(
+                    n_simulations=2000,  # 使用较少次数加快速度
+                    time_steps=time_steps,
+                    volatility=window_vol,
+                    drift=window_drift,
+                    seed=42
+                )
+
+                final_prices = sim_discount.iloc[:, -1].values
+                returns = (final_prices - issue_price_with_discount) / issue_price_with_discount
+                annualized_returns = (1 + returns) ** (12 / project_params['lockup_period']) - 1
+
+                window_table_data.append([
+                    f"  └ 折扣率{discount}%",
+                    "",  # 波动率留空
+                    "",  # 历史收益率留空
+                    f"{discount:.0f}%",  # 折扣率
+                    f"{annualized_returns.mean()*100:.2f}%",  # 该折扣率下的预期收益
+                    f"{np.median(annualized_returns)*100:.2f}%",
+                    f"{(returns > 0).mean()*100:.1f}%",
+                    f"{np.percentile(annualized_returns, 5)*100:.2f}%",
+                    f"{np.percentile(annualized_returns, 95)*100:.2f}%"
+                ])
+
     add_table_data(document, window_headers, window_table_data)
+
+    # 添加说明，解释为什么历史收益率为负但模拟预期可能为正
+    add_paragraph(document, '')
+    add_paragraph(document, '💡 指标说明：')
+    add_paragraph(document, '• 历史年化收益率：该窗口期内股票的实际历史表现，作为蒙特卡洛模拟的输入参数（drift）')
+    add_paragraph(document, '• 模拟预期年化收益：基于历史波动率和收益率，通过蒙特卡洛模拟5000次得出的预期年化收益率')
+    add_paragraph(document, '• 由于定增发行价通常低于市场价（折价发行），即使历史收益率为负，模拟预期收益仍可能为正')
+    add_paragraph(document, '• 例如：历史年化收益-18.75%表示过去60日股价下跌，但若定增折价20%，则实际投资收益可能为正')
 
     # 生成多窗口期对比图表
     add_paragraph(document, '')
-    add_paragraph(document, '图表 4.6: 多窗口期蒙特卡洛模拟对比')
+    add_paragraph(document, '图表 5.7: 多窗口期蒙特卡洛模拟对比')
 
     try:
         # 创建对比图表
         fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
-        window_names_ordered = ['60日', '120日', '250日']
+        window_names_ordered = ['60日', '120日', '180日']
         vols_mc = [multi_window_mc_results[w]['volatility']*100 for w in window_names_ordered if w in multi_window_mc_results]
         drifts_mc = [multi_window_mc_results[w]['drift']*100 for w in window_names_ordered if w in multi_window_mc_results]
         mean_returns_mc = [multi_window_mc_results[w]['mean_return']*100 for w in window_names_ordered if w in multi_window_mc_results]
@@ -3462,7 +4024,7 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
         add_paragraph(document, '多窗口期分析结论：')
         add_paragraph(document, f'• 短期（60日）波动率约{vols_mc[0]:.1f}%，更能反映当前市场情绪')
         add_paragraph(document, f'• 中期（120日）波动率约{vols_mc[1]:.1f}%，平衡了短期波动和长期趋势')
-        add_paragraph(document, f'• 长期（250日）波动率约{vols_mc[2]:.1f}%，反映长期基本面特征')
+        add_paragraph(document, f'• 长期（180日）波动率约{vols_mc[2]:.1f}%，反映长期基本面特征')
 
         # 找出最佳和最差窗口
         best_window = window_names_ordered[np.argmax(mean_returns_mc)]
@@ -3483,143 +4045,601 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
     # ==================== 六、情景分析 ====================
     add_title(document, '六、情景分析', level=1)
 
-    add_paragraph(document, '本章节分析定增项目在不同预设情景下的风险表现，包括盈亏平衡价格敏感性、多维度情景分析以及破发概率情景分析。')
+    add_paragraph(document, '本章节分析定增项目在不同预设情景下的风险表现，包括多维度情景分析（预期期间收益率、净利润率、波动率、发行价折价）以及破发概率情景分析。')
 
-    # ==================== 3.1 盈亏平衡价格敏感性分析 ====================
+
+    # ==================== 6.1 多参数情景分析 ====================
     add_paragraph(document, '')
-    add_title(document, '6.1 盈亏平衡价格敏感性分析', level=2)
+    add_title(document, '6.1 多参数情景分析', level=2)
 
-    add_paragraph(document, '分析在不同期望年化收益率要求下，解禁时需要达到的盈亏平衡价格。')
-    add_paragraph(document, '通过计算不同收益率目标下的盈亏平衡价格，评估项目的安全边际。')
+    add_paragraph(document, '本节通过穷举漂移率、波动率、折价率三个参数的组合，全面分析不同市场环境下的定增项目收益预期。')
+    add_paragraph(document, '')
 
-    # 计算不同收益率下的盈亏平衡价格
-    target_returns = np.linspace(0.05, 0.50, 10)  # 5%到50%年化收益率
-    break_even_prices = []
-    issue_price = project_params['issue_price']
+    # ====== 参数空间定义 ======
+    add_paragraph(document, '一、参数空间定义', bold=True)
+    add_paragraph(document, '通过以下参数的穷举组合，模拟585种不同市场情景：')
+
+    # 定义参数范围
+    drift_rates = np.arange(-0.30, 0.35, 0.05)  # -30% 到 +30%，每档5%
+    volatilities = np.arange(0.10, 0.55, 0.10)  # 10% 到 50%，每档10%
+    discounts = np.arange(-0.20, 0.25, 0.05)  # -20% 到 +20%，每档5%
+
+    # 参数说明表格
+    param_data = [
+        ['参数', '范围', '步长', '组合数'],
+        ['漂移率（年化收益率）', '-30% ~ +30%', '5%', len(drift_rates)],
+        ['波动率（年化）', '10% ~ 50%', '10%', len(volatilities)],
+        ['折价率', '-20% ~ +20%', '5%', len(discounts)],
+        ['总组合数', '-', '-', f'{len(drift_rates) * len(volatilities) * len(discounts)}']
+    ]
+    add_table_data(document, ['参数', '范围', '步长', '组合数'], param_data)
+
+    add_paragraph(document, '')
+    add_paragraph(document, '参数说明：')
+    add_paragraph(document, f'• 当前价格: {project_params["current_price"]:.2f} 元/股')
+    add_paragraph(document, f'• 锁定期: {project_params["lockup_period"]} 个月')
+    add_paragraph(document, f'• 漂移率: 反映股价的预期趋势（负值=下跌，正值=上涨）')
+    add_paragraph(document, f'• 波动率: 反映股价的不确定性（越高=风险越大）')
+    add_paragraph(document, f'• 折价率: 发行价相对当前价的折扣（负值=折价，正值=溢价）')
+    add_paragraph(document, '')
+
+    # ====== 模拟所有组合 ======
+    print("\n运行多参数组合模拟...")
+
+    all_scenarios = []
+    n_sim = 2000  # 每个组合模拟2000次
     lockup_years = project_params['lockup_period'] / 12
+    current_price = project_params['current_price']
 
-    for target_return in target_returns:
-        # 盈亏平衡价格 = 发行价 * (1 + 年化收益率 * 锁定年数)
-        be_price = issue_price * (1 + target_return * lockup_years)
-        break_even_prices.append(be_price)
+    scenario_count = 0
+    for drift in drift_rates:
+        for vol in volatilities:
+            for discount in discounts:
+                scenario_count += 1
 
-    # 生成表格数据
-    be_data = []
-    for ret, price in zip(target_returns[::2], break_even_prices[::2]):  # 每隔一个显示
-        distance = (market_data['current_price'] - price) / market_data['current_price'] * 100
-        status = "✅" if distance > 0 else "⚠️"
-        be_data.append([f'{ret*100:.0f}%', f'{price:.2f}', f'{distance:+.1f}%', status])
+                # 计算发行价
+                issue_price = current_price * (1 + discount)
 
-    add_table_data(document, ['期望年化收益率', '盈亏平衡价格(元)', '距离当前价', '状态'], be_data)
+                # 蒙特卡洛模拟
+                lockup_drift = drift * lockup_years
+                lockup_vol = vol * np.sqrt(lockup_years)
 
-    add_paragraph(document, '盈亏平衡分析结论：')
-    add_paragraph(document, f'• 当前价格: {market_data["current_price"]:.2f} 元')
-    add_paragraph(document, f'• 发行价格: {issue_price:.2f} 元')
-    add_paragraph(document, f'• 20%年化收益率要求下盈亏平衡价: {break_even_prices[3]:.2f} 元')
+                np.random.seed(42)  # 固定种子以确保可重复性
+                sim_returns = np.random.normal(lockup_drift, lockup_vol, n_sim)
+                final_prices = current_price * np.exp(sim_returns)
 
-    # 生成并插入盈亏平衡价格敏感性图表
-    break_even_chart_path = os.path.join(IMAGES_DIR, '03_break_even_analysis.png')
-    generate_break_even_chart(issue_price, market_data['current_price'], project_params['lockup_period'], break_even_chart_path)
+                # 计算收益
+                total_returns = (final_prices - issue_price) / issue_price
+                annualized_returns = (1 + total_returns) ** (1 / lockup_years) - 1
+
+                # 统计指标
+                mean_return = annualized_returns.mean()
+                median_return = np.median(annualized_returns)
+                profit_prob = (total_returns > 0).mean() * 100
+                var_5 = np.percentile(annualized_returns, 5)
+                var_95 = np.percentile(annualized_returns, 95)
+
+                all_scenarios.append({
+                    'drift': drift,
+                    'volatility': vol,
+                    'discount': discount,
+                    'issue_price': issue_price,
+                    'mean_return': mean_return,
+                    'median_return': median_return,
+                    'profit_prob': profit_prob,
+                    'var_5': var_5,
+                    'var_95': var_95
+                })
+
+                if scenario_count % 100 == 0:
+                    print(f"  已完成 {scenario_count}/{len(drift_rates) * len(volatilities) * len(discounts)} 个情景...")
+
+    print(f"  完成！共模拟 {len(all_scenarios)} 个情景")
+
+    # ====== 按收益和概率排序 ======
     add_paragraph(document, '')
-    add_paragraph(document, '图表 3.1: 盈亏平衡价格敏感性曲线')
-    add_image(document, break_even_chart_path, width=Inches(6))
+    add_paragraph(document, '二、情景分析结果', bold=True)
 
-    # ==================== 3.2 多维度情景分析 ====================
-    add_paragraph(document, '')
-    add_title(document, '6.2 多维度情景分析', level=2)
-
-    add_paragraph(document, '本节进行多维度情景综合分析，同时考虑波动率、发行价折扣率、时间窗口等多个要素的组合影响。')
-    add_paragraph(document, '')
-    add_paragraph(document, '分析参数：')
-    add_paragraph(document, '• 波动率情景：20%, 30%, 40%, 50%')
-    add_paragraph(document, '• 折价率情景：溢价10%, 溢价5%, 平价, 折价5%, 10%, 15%, 20%')
-    add_paragraph(document, '• 时间窗口：60日, 120日, 180日')
-
-    # 生成多维度情景图表
-    multi_dim_chart_paths = generate_multi_dimension_scenario_charts_split(
-        project_params['current_price'], ma30, risk_params['volatility'],
-        risk_params['drift'], project_params['lockup_period'], IMAGES_DIR)
-
-    # 添加拆分的图表
-    add_paragraph(document, '')
-    add_paragraph(document, '图表 3.3.1: 盈利概率热力图 - 波动率 × 折价率 (60日窗口)')
-    add_image(document, multi_dim_chart_paths[0], width=Inches(6.5))
-    add_paragraph(document, '')
-
-    add_paragraph(document, '图表 3.3.2: 不同波动率下的情景对比')
-    add_image(document, multi_dim_chart_paths[1], width=Inches(6.5))
-    add_paragraph(document, '')
-
-    add_paragraph(document, '图表 3.3.3: 优质情景TOP10 (盈利概率>70%)')
-    add_image(document, multi_dim_chart_paths[2], width=Inches(6.5))
-
-    add_paragraph(document, '')
-    add_paragraph(document, '多维度情景分析结论：')
-    add_paragraph(document, '• 折价越大、波动率越低、时间窗口越短，盈利概率越高')
-    add_paragraph(document, '• 在当前市场环境下，选择合适的发行价和锁定期对盈利概率至关重要')
-
-    # ==================== 3.3 破发概率情景分析 ====================
-    add_paragraph(document, '')
-    add_title(document, '6.3 破发概率情景分析', level=2)
-
-    add_paragraph(document, '本节分析不同波动率情景下的破发概率，基于发行类型（折价/溢价）设定不同的盈利阈值。')
+    # 按预期年化收益排序（Top 20）
+    add_paragraph(document, '表1: 按预期年化收益率排序的Top 20情景')
     add_paragraph(document, '')
 
-    # 判断发行类型
-    is_discount = project_params['issue_price'] < ma30
-    issue_type = "折价发行" if is_discount else "溢价发行"
+    top_by_return = sorted(all_scenarios, key=lambda x: x['mean_return'], reverse=True)[:20]
 
-    add_paragraph(document, '发行类型定义：')
-    add_paragraph(document, '• 折价发行：发行价 < MA30，有安全边际')
-    add_paragraph(document, '• 溢价发行：发行价 > MA30，无安全边际')
+    top_return_data = []
+    for i, s in enumerate(top_by_return, 1):
+        top_return_data.append([
+            f"{i}",
+            f"{s['drift']*100:+.0f}%",
+            f"{s['volatility']*100:.0f}%",
+            f"{s['discount']*100:+.0f}%",
+            f"{s['issue_price']:.2f} 元",
+            f"{s['mean_return']*100:+.2f}%",
+            f"{s['profit_prob']:.1f}%"
+        ])
+
+    return_headers = ['排名', '漂移率', '波动率', '折价率', '发行价', '预期年化收益', '盈利概率']
+    add_table_data(document, return_headers, top_return_data)
+
+    # 按盈利概率排序（Top 20）
+    add_paragraph(document, '')
+    add_paragraph(document, '表2: 按盈利概率排序的Top 20情景')
     add_paragraph(document, '')
 
-    if is_discount:
-        threshold = project_params['issue_price']
-        safety_margin = (ma30 - project_params['issue_price']) / ma30 * 100
-        add_paragraph(document, f'✅ 当前为折价发行（有安全边际）')
-        add_paragraph(document, f'   MA30价格: {ma30:.2f} 元')
-        add_paragraph(document, f'   发行价格: {project_params["issue_price"]:.2f} 元')
-        add_paragraph(document, f'   安全边际: {safety_margin:.2f}%')
-        add_paragraph(document, '   盈利定义：解禁价 >= 发行价')
+    top_by_prob = sorted(all_scenarios, key=lambda x: x['profit_prob'], reverse=True)[:20]
+
+    top_prob_data = []
+    for i, s in enumerate(top_by_prob, 1):
+        top_prob_data.append([
+            f"{i}",
+            f"{s['drift']*100:+.0f}%",
+            f"{s['volatility']*100:.0f}%",
+            f"{s['discount']*100:+.0f}%",
+            f"{s['issue_price']:.2f} 元",
+            f"{s['mean_return']*100:+.2f}%",
+            f"{s['profit_prob']:.1f}%"
+        ])
+
+    add_table_data(document, return_headers, top_prob_data)
+
+    # ====== 综合最优情景 ======
+    add_paragraph(document, '')
+    add_paragraph(document, '三、综合最优情景分析', bold=True)
+
+    # 找出同时满足高收益和高概率的情景
+    high_return = [s for s in all_scenarios if s['mean_return'] > 0.20]  # 年化收益>20%
+    high_prob = [s for s in all_scenarios if s['profit_prob'] > 80]  # 盈利概率>80%
+    best_scenarios = [s for s in high_return if s in high_prob]
+
+    if best_scenarios:
+        add_paragraph(document, f'找到 {len(best_scenarios)} 个同时满足"年化收益>20%"和"盈利概率>80%"的最优情景：')
+        add_paragraph(document, '')
+
+        best_data = []
+        for i, s in enumerate(sorted(best_scenarios, key=lambda x: x['mean_return'], reverse=True)[:10], 1):
+            best_data.append([
+                f"{i}",
+                f"{s['drift']*100:+.0f}%",
+                f"{s['volatility']*100:.0f}%",
+                f"{s['discount']*100:+.0f}%",
+                f"{s['mean_return']*100:+.2f}%",
+                f"{s['profit_prob']:.1f}%"
+            ])
+        add_table_data(document, ['排名', '漂移率', '波动率', '折价率', '预期年化收益', '盈利概率'], best_data)
     else:
-        threshold = max(ma30, project_params['issue_price'] * 1.02)
-        premium_rate = (project_params['issue_price'] - ma30) / ma30 * 100
-        add_paragraph(document, f'⚠️ 当前为溢价发行（无安全边际）')
-        add_paragraph(document, f'   MA30价格: {ma30:.2f} 元')
-        add_paragraph(document, f'   发行价格: {project_params["issue_price"]:.2f} 元')
-        add_paragraph(document, f'   溢价幅度: {premium_rate:.2f}%')
-        add_paragraph(document, '   盈利定义：解禁价 >= max(MA30, 发行价×1.02)')
+        add_paragraph(document, '未找到同时满足"年化收益>20%"和"盈利概率>80%"的情景。')
+
+    # ====== 当前项目定位 ======
+    add_paragraph(document, '')
+    add_paragraph(document, '四、当前项目在所有情景中的定位', bold=True)
+
+    current_drift = market_data.get('annual_return_60d', risk_params.get('drift', 0.08))
+    current_vol = market_data.get('volatility_60d', risk_params.get('volatility', 0.30))
+    current_discount = (project_params['issue_price'] / project_params['current_price']) - 1
+
+    # 找到最接近当前参数的情景
+    for s in all_scenarios:
+        s['distance'] = (
+            abs(s['drift'] - current_drift) +
+            abs(s['volatility'] - current_vol) +
+            abs(s['discount'] - current_discount)
+        )
+
+    closest_scenario = min(all_scenarios, key=lambda x: x['distance'])
+
+    # 计算当前项目的排名
+    return_rank = sorted(all_scenarios, key=lambda x: x['mean_return'], reverse=True).index(closest_scenario) + 1
+    prob_rank = sorted(all_scenarios, key=lambda x: x['profit_prob'], reverse=True).index(closest_scenario) + 1
+
+    add_paragraph(document, '基于当前市场参数的最接近情景：')
+    add_paragraph(document, f'• 漂移率: {current_drift*100:+.2f}%')
+    add_paragraph(document, f'• 波动率: {current_vol*100:.2f}%')
+    add_paragraph(document, f'• 折价率: {current_discount*100:+.2f}%')
+    add_paragraph(document, f'• 发行价: {project_params["issue_price"]:.2f} 元/股')
+    add_paragraph(document, f'• 预期年化收益: {closest_scenario["mean_return"]*100:+.2f}%')
+    add_paragraph(document, f'• 盈利概率: {closest_scenario["profit_prob"]:.1f}%')
+    add_paragraph(document, f'• 收益率排名: 第 {return_rank} 名 / 共 {len(all_scenarios)} 个情景')
+    add_paragraph(document, f'• 盈利概率排名: 第 {prob_rank} 名 / 共 {len(all_scenarios)} 个情景')
+
+    # =====% 分析结论 ======
+    add_paragraph(document, '')
+    add_paragraph(document, '五、分析结论', bold=True)
+
+    # 统计分析
+    avg_return_all = np.mean([s['mean_return'] for s in all_scenarios])
+    avg_prob_all = np.mean([s['profit_prob'] for s in all_scenarios])
+
+    profit_scenarios = [s for s in all_scenarios if s['profit_prob'] >= 50]
+    loss_scenarios = [s for s in all_scenarios if s['profit_prob'] < 50]
+
+    add_paragraph(document, f'• 在全部{len(all_scenarios)}个情景组合中：')
+    add_paragraph(document, f"  - 盈利概率≥50%的情景: {len(profit_scenarios)} 个 ({len(profit_scenarios)/len(all_scenarios)*100:.1f}%)")
+    add_paragraph(document, f"  - 盈利概率<50%的情景: {len(loss_scenarios)} 个 ({len(loss_scenarios)/len(all_scenarios)*100:.1f}%)")
 
     add_paragraph(document, '')
-    add_paragraph(document, f'盈利阈值: {threshold:.2f} 元')
-    add_paragraph(document, '')
-
-    # 不同波动率情景下的破发概率分析
-    volatilities_prob = np.linspace(0.15, 0.60, 10)
-    drift_prob = risk_params.get('drift', market_data.get('drift', 0.08))
-
-    break_even_table = []
-    for vol in volatilities_prob:
-        lockup_months = project_params['lockup_period']
-        lockup_vol = vol * np.sqrt(lockup_months / 12)
-        lockup_drift = drift_prob * (lockup_months / 12)
-        required_return = (threshold - market_data['current_price']) / market_data['current_price']
-        z_score = (lockup_drift - required_return) / lockup_vol
-        profit_prob = (1 - stats.norm.cdf(-z_score)) * 100
-        loss_prob = 100 - profit_prob
-        break_even_table.append([f'{vol*100:.0f}%', f'{profit_prob:.1f}%', f'{loss_prob:.1f}%'])
-
-    add_table_data(document, ['波动率', '盈利概率', '破发概率'], break_even_table)
+    add_paragraph(document, f'• 平均预期年化收益: {avg_return_all*100:+.2f}%')
+    add_paragraph(document, f'• 平均盈利概率: {avg_prob_all:.1f}%')
 
     add_paragraph(document, '')
-    add_paragraph(document, '破发概率情景分析结论：')
-    add_paragraph(document, f'• 在当前波动率（{market_data["volatility"]*100:.1f}%）下，盈利概率约 {break_even_table[3][1]}')
-    add_paragraph(document, '• 波动率越高，盈利概率和破发概率的差异越小')
-    if is_discount:
-        add_paragraph(document, '• 折价发行提供了安全边际，降低了破发风险')
+    add_paragraph(document, '关键发现：')
+
+    # 找出漂移率的影响
+    pos_drift_scenarios = [s for s in all_scenarios if s['drift'] >= 0]
+    neg_drift_scenarios = [s for s in all_scenarios if s['drift'] < 0]
+
+    if pos_drift_scenarios and neg_drift_scenarios:
+        avg_return_pos = np.mean([s['mean_return'] for s in pos_drift_scenarios])
+        avg_return_neg = np.mean([s['mean_return'] for s in neg_drift_scenarios])
+        avg_prob_pos = np.mean([s['profit_prob'] for s in pos_drift_scenarios])
+        avg_prob_neg = np.mean([s['profit_prob'] for s in neg_drift_scenarios])
+
+        add_paragraph(document, f'• 漂移率对收益影响显著：')
+        add_paragraph(document, f"  - 正漂移率情景平均收益: {avg_return_pos*100:+.2f}%, 盈利概率: {avg_prob_pos:.1f}%")
+        add_paragraph(document, f"  - 负漂移率情景平均收益: {avg_return_neg*100:+.2f}%, 盈利概率: {avg_prob_neg:.1f}%")
+
+    # 找出折价率的影响
+    deep_discount_scenarios = [s for s in all_scenarios if s['discount'] <= -0.15]
+    premium_scenarios = [s for s in all_scenarios if s['discount'] > 0]
+
+    if deep_discount_scenarios and premium_scenarios:
+        avg_return_discount = np.mean([s['mean_return'] for s in deep_discount_scenarios])
+        avg_return_premium = np.mean([s['mean_return'] for s in premium_scenarios])
+        avg_prob_discount = np.mean([s['profit_prob'] for s in deep_discount_scenarios])
+        avg_prob_premium = np.mean([s['profit_prob'] for s in premium_scenarios])
+
+        add_paragraph(document, '')
+        add_paragraph(document, f'• 折价率是盈利概率的关键：')
+        add_paragraph(document, f"  - 深度折价(≤-15%)情景平均收益: {avg_return_discount*100:+.2f}%, 盈利概率: {avg_prob_discount:.1f}%")
+        add_paragraph(document, f"  - 溢价情景平均收益: {avg_return_premium*100:+.2f}%, 盈利概率: {avg_prob_premium:.1f}%")
+
+    add_paragraph(document, '')
+    add_paragraph(document, '投资建议：')
+    if current_drift < 0:
+        add_paragraph(document, f'⚠️ 当前漂移率为{current_drift*100:+.2f}%（负值），建议要求较高折价率以补偿下行风险')
+    if current_discount > -0.10:
+        add_paragraph(document, f'⚠️ 当前折价率仅为{current_discount*100:+.2f}%，建议提高至-15%以下')
     else:
-        add_paragraph(document, '• 溢价发行无安全边际，破发风险相对较高')
+        add_paragraph(document, f'✅ 当前折价率{current_discount*100:+.2f}%较为合理，提供了一定的安全边际')
+
+    # 保存all_scenarios供附件使用
+    all_scenarios_for_appendix = all_scenarios.copy()
+
+    # ==================== 6.2 破发概率情景分析 ====================
+    add_paragraph(document, '')
+    add_title(document, '6.2 破发概率情景分析', level=2)
+
+    add_paragraph(document, '本节分析不同时间窗口下的破发概率（亏损概率），评估定增项目在不同市场环境下的下行风险。')
+    add_paragraph(document, '')
+
+    windows_data = {
+        '60日': {
+            'volatility': market_data.get('volatility_60d', risk_params.get('volatility', 0.30)),
+            'return': market_data.get('annual_return_60d', risk_params.get('drift', 0.08)),
+            'days': 60
+        },
+        '120日': {
+            'volatility': market_data.get('volatility_120d', risk_params.get('volatility', 0.30)),
+            'return': market_data.get('annual_return_120d', risk_params.get('drift', 0.08)),
+            'days': 120
+        },
+        '180日': {
+            'volatility': market_data.get('volatility_180d', risk_params.get('volatility', 0.30)),
+            'return': market_data.get('annual_return_180d', risk_params.get('drift', 0.08)),
+            'days': 180
+        }
+    }
+
+    window_scenario_data = []
+    window_scenarios = []
+
+    for window_name, data in windows_data.items():
+        vol = data['volatility']
+        ret = data['return']
+        days = data['days']
+
+        # 使用蒙特卡洛模拟
+        n_sim = 5000
+        lockup_days = project_params['lockup_period'] * 30
+        lockup_vol = vol * np.sqrt(lockup_days / 365)
+        lockup_drift = ret * (lockup_days / 365)
+
+        np.random.seed(42)
+        sim_returns = np.random.normal(lockup_drift, lockup_vol, n_sim)
+        final_prices = project_params['current_price'] * np.exp(sim_returns)
+        profit_losses = (final_prices - project_params['issue_price']) / project_params['issue_price']
+        annualized_returns = (1 + profit_losses) ** (12 / project_params['lockup_period']) - 1
+
+        mean_return = annualized_returns.mean()
+        median_return = np.median(annualized_returns)
+        profit_prob = (profit_losses > 0).mean() * 100
+        percentile_5 = np.percentile(annualized_returns, 5)
+        percentile_95 = np.percentile(annualized_returns, 95)
+
+        window_scenario_data.append([
+            window_name,
+            f"{vol*100:.2f}%",
+            f"{ret*100:+.2f}%",
+            f"{mean_return*100:+.2f}%",
+            f"{median_return*100:+.2f}%",
+            f"{profit_prob:.1f}%",
+            f"{percentile_5*100:+.2f}%",
+            f"{percentile_95*100:+.2f}%"
+        ])
+
+        window_scenarios.append({
+            'window': window_name,
+            'volatility': vol,
+            'return': ret,
+            'mean_return': mean_return,
+            'profit_prob': profit_prob
+        })
+
+    window_headers = ['时间窗口', '历史波动率', '历史年化收益率', '模拟预期年化收益', '中位数收益', '盈利概率', '5% VaR', '95% VaR']
+    add_table_data(document, window_headers, window_scenario_data)
+
+    add_paragraph(document, '')
+    add_paragraph(document, '分析结论：', bold=True)
+    best_window = max(window_scenarios, key=lambda x: x['profit_prob'])
+    worst_window = min(window_scenarios, key=lambda x: x['profit_prob'])
+    add_paragraph(document, f'• {best_window["window"]}窗口盈利概率最高，约{best_window["profit_prob"]:.1f}%')
+    add_paragraph(document, f'• {worst_window["window"]}窗口盈利概率最低，约{worst_window["profit_prob"]:.1f}%')
+    add_paragraph(document, '• 短期窗口（60日）更能反映当前市场情绪，长期窗口（180日）更稳定')
+
+    # ==================== 6.3 波动率 × 折价率热力图 ====================
+    add_paragraph(document, '')
+    add_title(document, '6.3 波动率 × 折价率热力图', level=2)
+
+    # 生成热力图数据
+    vol_levels = [0.20, 0.30, 0.40, 0.50]
+    discount_levels = [0.0, 0.05, 0.10, 0.15, 0.20]
+
+    heatmap_data = []
+    for vol in vol_levels:
+        row = []
+        for discount in discount_levels:
+            issue_price_heat = project_params['current_price'] * (1 - discount)
+
+            n_sim = 5000
+            lockup_days = project_params['lockup_period'] * 30
+            lockup_vol = vol * np.sqrt(lockup_days / 365)
+            base_drift = market_data.get('annual_return_60d', 0.08)
+            lockup_drift = base_drift * (lockup_days / 365)
+
+            np.random.seed(42)
+            sim_returns = np.random.normal(lockup_drift, lockup_vol, n_sim)
+            final_prices = project_params['current_price'] * np.exp(sim_returns)
+            profit_losses = (final_prices - issue_price_heat) / issue_price_heat
+            profit_prob = (profit_losses > 0).mean() * 100
+            row.append(profit_prob)
+        heatmap_data.append(row)
+
+    # 生成热力图
+    try:
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        im = ax.imshow(heatmap_data, cmap='RdYlGn', aspect='auto', vmin=0, vmax=100)
+
+        # 设置刻度
+        ax.set_xticks(np.arange(len(discount_levels)))
+        ax.set_yticks(np.arange(len(vol_levels)))
+        ax.set_xticklabels([f'{d*100:.0f}%' for d in discount_levels], fontproperties=font_prop)
+        ax.set_yticklabels([f'{v*100:.0f}%' for v in vol_levels], fontproperties=font_prop)
+
+        # 添加数值标注
+        for i in range(len(vol_levels)):
+            for j in range(len(discount_levels)):
+                text = ax.text(j, i, f'{heatmap_data[i][j]:.0f}%',
+                             ha="center", va="center", color="black", fontproperties=font_prop, fontsize=10,
+                             fontweight='bold' if heatmap_data[i][j] >= 50 else 'normal')
+
+        ax.set_xlabel('发行价折价率', fontproperties=font_prop, fontsize=12)
+        ax.set_ylabel('波动率', fontproperties=font_prop, fontsize=12)
+        ax.set_title('盈利概率热力图：波动率 × 折价率', fontproperties=font_prop, fontsize=14, fontweight='bold')
+
+        # 添加颜色条
+        cbar = plt.colorbar(im, ax=ax)
+        cbar.set_label('盈利概率 (%)', fontproperties=font_prop, fontsize=11)
+
+        plt.tight_layout()
+
+        # 保存图表
+        heatmap_chart_path = os.path.join(IMAGES_DIR, '06_05_volatility_discount_heatmap.png')
+        plt.savefig(heatmap_chart_path, dpi=150, bbox_inches='tight')
+        plt.close()
+
+        add_paragraph(document, '图表 6.1: 盈利概率热力图 - 波动率 × 折价率')
+        add_image(document, heatmap_chart_path, width=Inches(6))
+
+        add_paragraph(document, '')
+        add_paragraph(document, '热力图解读：')
+        add_paragraph(document, '• 绿色区域（盈利概率>70%）：低波动率 + 高折价率，投资安全边际充足')
+        add_paragraph(document, '• 黄色区域（盈利概率40-70%）：中等风险收益比，需谨慎评估')
+        add_paragraph(document, '• 红色区域（盈利概率<40%）：高风险区域，建议规避或要求更高折价')
+
+    except Exception as e:
+        print(f"⚠️ 生成热力图失败: {e}")
+
+    # ==================== 6.4 漂移率 × 折价率热力图 ====================
+    add_paragraph(document, '')
+    add_title(document, '6.4 漂移率 × 折价率热力图', level=2)
+
+    add_paragraph(document, '漂移率（历史年化收益率）和折价率是影响定增投资收益的两个最敏感性变量。')
+    add_paragraph(document, '本节通过蒙特卡洛模拟，分析在不同漂移率和折价率组合下的盈利概率。')
+
+    # 生成热力图数据
+    drift_levels = np.arange(-0.30, 0.35, 0.10)  # -30%到+30%，每档10%
+    discount_levels = [0.0, 0.05, 0.10, 0.15, 0.20]
+
+    heatmap_data_drift = []
+    current_vol_drift = market_data.get('volatility_60d', 0.30)  # 使用当前市场波动率
+
+    for drift in drift_levels:
+        row = []
+        for discount in discount_levels:
+            issue_price_heat = project_params['current_price'] * (1 - discount)
+
+            n_sim = 5000
+            lockup_days = project_params['lockup_period'] * 30
+            lockup_vol = current_vol_drift * np.sqrt(lockup_days / 365)
+            lockup_drift = drift * (lockup_days / 365)
+
+            np.random.seed(42)
+            sim_returns = np.random.normal(lockup_drift, lockup_vol, n_sim)
+            final_prices = project_params['current_price'] * np.exp(sim_returns)
+            profit_losses = (final_prices - issue_price_heat) / issue_price_heat
+            profit_prob = (profit_losses > 0).mean() * 100
+            row.append(profit_prob)
+        heatmap_data_drift.append(row)
+
+    # 生成热力图
+    try:
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        im = ax.imshow(heatmap_data_drift, cmap='RdYlGn', aspect='auto', vmin=0, vmax=100)
+
+        # 设置刻度
+        ax.set_xticks(np.arange(len(discount_levels)))
+        ax.set_yticks(np.arange(len(drift_levels)))
+        ax.set_xticklabels([f'{d*100:.0f}%' for d in discount_levels], fontproperties=font_prop)
+        ax.set_yticklabels([f'{d*100:+.0f}%' for d in drift_levels], fontproperties=font_prop)
+
+        # 添加数值标注
+        for i in range(len(drift_levels)):
+            for j in range(len(discount_levels)):
+                text = ax.text(j, i, f'{heatmap_data_drift[i][j]:.0f}%',
+                             ha="center", va="center", color="black", fontproperties=font_prop, fontsize=10,
+                             fontweight='bold' if heatmap_data_drift[i][j] >= 50 else 'normal')
+
+        ax.set_xlabel('发行价折价率', fontproperties=font_prop, fontsize=12)
+        ax.set_ylabel('漂移率（年化收益率）', fontproperties=font_prop, fontsize=12)
+        ax.set_title('盈利概率热力图：漂移率 × 折价率', fontproperties=font_prop, fontsize=14, fontweight='bold')
+
+        # 添加颜色条
+        cbar = plt.colorbar(im, ax=ax)
+        cbar.set_label('盈利概率 (%)', fontproperties=font_prop, fontsize=11)
+
+        plt.tight_layout()
+
+        # 保存图表
+        heatmap_drift_chart_path = os.path.join(IMAGES_DIR, '06_06_drift_discount_heatmap.png')
+        plt.savefig(heatmap_drift_chart_path, dpi=150, bbox_inches='tight')
+        plt.close()
+
+        add_paragraph(document, '图表 6.2: 盈利概率热力图 - 漂移率 × 折价率')
+        add_image(document, heatmap_drift_chart_path, width=Inches(6))
+
+        add_paragraph(document, '')
+        add_paragraph(document, '热力图解读：')
+        add_paragraph(document, f'• 当前市场波动率: {current_vol_drift*100:.2f}%（固定参数）')
+        add_paragraph(document, '• 漂移率（年化收益率）代表股票的历史趋势：正漂移表示上涨趋势，负漂移表示下跌趋势')
+        add_paragraph(document, '• 绿色区域（盈利概率>70%）：正漂移 + 高折价率，投资安全边际充足')
+        add_paragraph(document, '• 黄色区域（盈利概率40-70%）：中等风险收益比，需谨慎评估')
+        add_paragraph(document, '• 红色区域（盈利概率<40%）：负漂移 + 低折价率，高风险区域')
+
+        # 标注当前项目位置
+        current_discount = (project_params['current_price'] - project_params['issue_price']) / project_params['current_price']
+        current_drift = market_data.get('annual_return_60d', 0.08)
+
+        add_paragraph(document, '')
+        add_paragraph(document, f'当前项目定位：', bold=True)
+        add_paragraph(document, f'• 漂移率: {current_drift*100:+.2f}%')
+        add_paragraph(document, f'• 折价率: {current_discount*100:.2f}%')
+        add_paragraph(document, f'• 当前市场波动率: {current_vol_drift*100:.2f}%')
+
+    except Exception as e:
+        print(f"⚠️ 生成漂移率热力图失败: {e}")
+
+    # ==================== 6.5 全情景综合分析总表 ====================
+    add_paragraph(document, '')
+    add_title(document, '6.5 全情景综合分析总表', level=2)
+
+    # 创建综合表格
+    comprehensive_data = []
+
+    # 当前项目实际情况
+    current_discount = (project_params['current_price'] - project_params['issue_price']) / project_params['current_price']
+    current_vol = market_data.get('volatility_60d', risk_params.get('volatility', 0.30))
+    current_return = market_data.get('annual_return_60d', risk_params.get('drift', 0.08))
+
+    comprehensive_data.append([
+        '当前项目',
+        f'{current_vol*100:.2f}%',
+        f'{current_return*100:+.2f}%',
+        f'{current_discount*100:.2f}%',
+        f'{project_params["issue_price"]:.2f}',
+        '基准情景'
+    ])
+
+    # 乐观情景：高收益 + 高折价 + 低波动
+    comprehensive_data.append([
+        '乐观情景',
+        '25.00%',
+        '+15.00%',
+        '20.00%',
+        f'{project_params["current_price"] * 0.8:.2f}',
+        '理想投资机会 ⭐⭐⭐'
+    ])
+
+    # 中性情景：中等收益 + 中等折价
+    comprehensive_data.append([
+        '中性情景',
+        current_vol > 0.3 and '30.00%' or f'{current_vol*100:.2f}%',
+        '0.00%',
+        '15.00%',
+        f'{project_params["current_price"] * 0.85:.2f}',
+        '稳健投资 ⭐⭐'
+    ])
+
+    # 悲观情景：低收益 + 低折价 + 高波动
+    comprehensive_data.append([
+        '悲观情景',
+        '40.00%',
+        '-20.00%',
+        '5.00%',
+        f'{project_params["current_price"] * 0.95:.2f}',
+        '高风险 [X]'
+    ])
+
+    # 极端情景：负收益 + 溢价
+    comprehensive_data.append([
+        '极端情景',
+        '50.00%',
+        '-30.00%',
+        '-5.00%',
+        f'{project_params["current_price"] * 1.05:.2f}',
+        '避免投资 [!]'
+    ])
+
+    comprehensive_headers = ['情景类型', '波动率', '期间收益率', '折价率', '发行价(元)', '投资建议']
+    add_table_data(document, comprehensive_headers, comprehensive_data)
+
+    add_paragraph(document, '')
+    add_paragraph(document, '综合情景建议：')
+    add_paragraph(document, '• 优先选择乐观情景和中性情景，安全边际充足')
+    add_paragraph(document, '• 当前项目定位在基准情景，需结合具体折价率和市场表现评估')
+    add_paragraph(document, '• 谨慎对待悲观情景和极端情景，风险较高')
+    add_paragraph(document, '• 建议要求至少15%折价率以获取足够安全边际')
+
+    # 生成原有的多维度情景图表
+    try:
+        multi_dim_chart_paths = generate_multi_dimension_scenario_charts_split(
+            project_params['current_price'], ma30, risk_params['volatility'],
+            risk_params['drift'], project_params['lockup_period'], IMAGES_DIR)
+
+        add_paragraph(document, '')
+        add_paragraph(document, '图表 6.2: 盈利概率热力图 - 波动率 × 折价率 (60日窗口)')
+        add_image(document, multi_dim_chart_paths[0], width=Inches(6.5))
+        add_paragraph(document, '')
+
+        add_paragraph(document, '图表 6.3: 不同波动率下的情景对比')
+        add_image(document, multi_dim_chart_paths[1], width=Inches(6.5))
+        add_paragraph(document, '')
+
+        add_paragraph(document, '图表 6.4: 优质情景TOP10 (盈利概率>70%)')
+        add_image(document, multi_dim_chart_paths[2], width=Inches(6.5))
+
+    except Exception as e:
+        print(f"⚠️ 生成多维度图表失败: {e}")
 
     add_section_break(document)
 
@@ -3635,32 +4655,32 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
         '市场危机_2008': {
             'description': '模拟2008年金融危机，股价下跌60%',
             'price_drop': 0.60,
-            'volatility_spike': 2.0,
+            'volatility_spike': 2.0
         },
         '市场危机_2020': {
             'description': '模拟2020年疫情，股价下跌40%',
             'price_drop': 0.40,
-            'volatility_spike': 1.5,
+            'volatility_spike': 1.5
         },
         '行业政策收紧': {
             'description': '行业监管政策收紧，股价下跌25%',
             'price_drop': 0.25,
-            'volatility_spike': 1.2,
+            'volatility_spike': 1.2
         },
         '个股重大利空': {
             'description': '公司业绩暴雷，股价下跌35%',
             'price_drop': 0.35,
-            'volatility_spike': 1.8,
+            'volatility_spike': 1.8
         },
         '流动性危机': {
             'description': '市场流动性枯竭，股价下跌20%并波动率飙升',
             'price_drop': 0.20,
-            'volatility_spike': 2.5,
+            'volatility_spike': 2.5
         },
         '极端熊市': {
             'description': '极端熊市情景，股价下跌50%',
             'price_drop': 0.50,
-            'volatility_spike': 1.3,
+            'volatility_spike': 1.3
         }
     }
 
@@ -3765,6 +4785,62 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
         add_paragraph(document, '  2. 控制投资仓位')
         add_paragraph(document, '  3. 做好对冲准备')
 
+    add_paragraph(document, '')
+    add_paragraph(document, '')
+
+    # ==================== 7.4 PE回归压力测试 ====================
+    add_title(document, '7.4 PE回归压力测试', level=2)
+
+    add_paragraph(document, '本节分析PE估值回归到行业极端情况时的情景，评估估值回归风险。')
+    add_paragraph(document, '通过模拟PE回归到行业Q1（25分位，即下四分位数），评估最坏情况下估值回调对投资收益的影响。')
+
+    # 计算回归情景
+    current_price_rel = project_params['current_price']
+
+    # 修正：使用当前价格和当前PE反推EPS，确保与PE计算口径一致
+    # PE = 股价 / EPS → EPS = 股价 / PE
+    eps_rel = current_price_rel / current_metrics_val['pe']
+
+    # 获取行业PE分位数数据
+    pe_q1 = industry_stats_val['pe']['q1']  # 25分位（下四分位数）
+
+    # 计算PE回归到行业Q1的极端情景
+    target_price_q1 = eps_rel * pe_q1
+    return_q1 = (target_price_q1 - current_price_rel) / current_price_rel * 100
+
+    # 构建压力测试表格
+    scenario_headers_stress = ['情景', '当前PE', '回归后PE', '当前价格(元)', '目标价格(元)', '预期收益率(%)']
+    scenario_data_stress = [
+        ['当前估值', f"{current_metrics_val['pe']:.2f}", f"{current_metrics_val['pe']:.2f}",
+         f"{current_price_rel:.2f}", f"{current_price_rel:.2f}", "0.00"],
+        [f'PE→行业Q1({pe_q1:.2f}倍)', f"{current_metrics_val['pe']:.2f}", f"{pe_q1:.2f}",
+         f"{current_price_rel:.2f}", f"{target_price_q1:.2f}", f"{return_q1:+.2f}"],
+    ]
+
+    add_table_data(document, scenario_headers_stress, scenario_data_stress)
+
+    add_paragraph(document, '')
+    add_paragraph(document, 'PE回归压力测试结论：', bold=True)
+
+    # 分析当前PE在行业中的位置
+    current_pe = current_metrics_val['pe']
+    pe_position = (peer_companies_val['pe'] < current_pe).sum() / len(peer_companies_val) * 100
+
+    add_paragraph(document, f'• 当前PE({current_pe:.2f}倍)位于行业{pe_position:.1f}%分位', bold=True)
+    add_paragraph(document, f'• 行业Q1 PE({pe_q1:.2f}倍)为25分位数，代表行业较低估值水平')
+    add_paragraph(document, f'• 如果PE回归到行业Q1，目标价格为{target_price_q1:.2f}元，预期收益{return_q1:+.2f}%')
+
+    add_paragraph(document, '')
+
+    # 风险提示
+    add_paragraph(document, '风险评估：', bold=True)
+    if return_q1 > 0:
+        add_paragraph(document, f'✅ 即使在PE回归到行业Q1的极端情况下，预期收益仍为正({return_q1:+.2f}%)，估值安全边际较高')
+    elif return_q1 > -10:
+        add_paragraph(document, f'⚠️ 在PE回归到行业Q1的极端情况下，预期收益为负({return_q1:+.2f}%)，存在一定估值回调风险，但风险可控')
+    else:
+        add_paragraph(document, f'❌ 在PE回归到行业Q1的极端情况下，预期收益大幅为负({return_q1:+.2f}%)，估值回调风险较高，需谨慎投资')
+
     add_section_break(document)
 
     # ==================== 八、VaR风险度量 ====================
@@ -3776,6 +4852,20 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
 
     add_paragraph(document, 'VaR（Value at Risk）风险价值表示在给定置信水平下，投资组合可能遭受的最大损失。')
     add_paragraph(document, '本报告使用蒙特卡洛模拟法计算VaR，基于10,000次模拟路径。')
+
+    add_paragraph(document, '')
+    add_paragraph(document, 'VaR计算参数说明：', bold=True)
+    add_paragraph(document, '• 模拟方法：几何布朗运动（GBM）蒙特卡洛模拟')
+    add_paragraph(document, f'• 模拟次数：10,000次')
+    add_paragraph(document, f'• 数据窗口：180日（半年度，对应解禁期）')
+    add_paragraph(document, f'• 波动率参数：{mc_volatility*100:.2f}%（180日历史年化波动率）')
+    add_paragraph(document, f'• 漂移率参数：{mc_drift*100:+.2f}%（180日历史年化收益率）')
+    add_paragraph(document, f'• 锁定期：{project_params["lockup_period"]}个月')
+    add_paragraph(document, f'• 发行价格：{project_params["issue_price"]:.2f}元/股')
+    add_paragraph(document, f'• 当前价格：{project_params["current_price"]:.2f}元/股')
+    add_paragraph(document, f'• 折价率：{(project_params["issue_price"]/project_params["current_price"] - 1)*100:+.2f}%')
+    add_paragraph(document, '')
+    add_paragraph(document, '注：VaR值表示定增项目在到期时的收益率损失风险，负值表示亏损。180日窗口更符合半年度解禁期的实际情况。')
 
     # 计算不同置信水平下的VaR
     var_90 = abs(np.percentile(profit_losses, 10))
@@ -3824,12 +4914,12 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
 
     add_paragraph(document, '最大回撤是指从峰值到谷底的最大跌幅，是衡量投资风险的重要指标。')
 
-    # 估算最大回撤
-    estimated_max_drawdown = market_data['volatility'] * 2  # 简化估算
-    estimated_95_drawdown = market_data['volatility'] * 1.5
+    # 估算最大回撤（使用180日波动率）
+    estimated_max_drawdown = mc_volatility * 2  # 简化估算
+    estimated_95_drawdown = mc_volatility * 1.5
 
     drawdown_data = [
-        ['预估平均最大回撤', f'{estimated_max_drawdown*100:.1f}%', '基于波动率估算'],
+        ['预估平均最大回撤', f'{estimated_max_drawdown*100:.1f}%', f'基于180日波动率({mc_volatility*100:.1f}%)估算'],
         ['预估95%分位回撤', f'{estimated_95_drawdown*100:.1f}%', '95%的路径回撤不超过此值']
     ]
     add_table_data(document, ['回撤指标', '数值', '说明'], drawdown_data)
@@ -3877,7 +4967,69 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
     # ==================== 九、综合评估 ====================
     add_title(document, '九、综合评估', level=1)
 
-    add_title(document, '9.1 风险评分', level=2)
+    add_paragraph(document, '本章节综合前面的分析结果，给出最终的投资建议和报价区间。')
+
+    # ==================== 9.1 盈亏平衡价格分析 ====================
+    add_paragraph(document, '')
+    add_title(document, '9.1 盈亏平衡价格分析', level=2)
+
+    add_paragraph(document, '分析在不同期望年化收益率要求下，解禁时需要达到的盈亏平衡价格。')
+    add_paragraph(document, '通过计算不同收益率目标下的盈亏平衡价格，评估项目的安全边际，为最终报价提供支撑。')
+    add_paragraph(document, '')
+
+    # 计算不同收益率下的盈亏平衡价格
+    target_returns = np.linspace(0.05, 0.50, 10)  # 5%到50%年化收益率
+    break_even_prices = []
+    issue_price = project_params['issue_price']
+    lockup_years = project_params['lockup_period'] / 12
+    current_price_eval = project_params['current_price']
+
+    for target_return in target_returns:
+        # 盈亏平衡价格 = 发行价 * (1 + 年化收益率 * 锁定年数)
+        be_price = issue_price * (1 + target_return * lockup_years)
+        break_even_prices.append(be_price)
+
+    # 生成表格数据
+    be_data = []
+    for ret, price in zip(target_returns[::2], break_even_prices[::2]):  # 每隔一个显示
+        distance = (current_price_eval - price) / current_price_eval * 100
+        status = "✅" if distance > 0 else "⚠️"
+        be_data.append([f'{ret*100:.0f}%', f'{price:.2f}', f'{distance:+.1f}%', status])
+
+    add_table_data(document, ['期望年化收益率', '盈亏平衡价格(元)', '距离当前价', '状态'], be_data)
+
+    add_paragraph(document, '')
+    add_paragraph(document, '盈亏平衡分析结论：')
+    add_paragraph(document, f'• 当前价格: {current_price_eval:.2f} 元')
+    add_paragraph(document, f'• 发行价格: {issue_price:.2f} 元')
+    add_paragraph(document, f'• 20%年化收益率要求下盈亏平衡价: {break_even_prices[3]:.2f} 元')
+
+    # 判断当前价格与盈亏平衡价格的关系
+    be_20 = break_even_prices[3]
+    if current_price_eval > be_20:
+        margin = (current_price_eval - be_20) / current_price_eval * 100
+        add_paragraph(document, f'• ✅ 当前价格高于20%收益率盈亏平衡价{margin:.1f}%，具有较好安全边际')
+    else:
+        gap = (be_20 - current_price_eval) / current_price_eval * 100
+        add_paragraph(document, f'• ⚠️ 当前价格低于20%收益率盈亏平衡价{gap:.1f}%，安全边际不足')
+
+    add_paragraph(document, '')
+    add_paragraph(document, '报价建议：')
+    add_paragraph(document, '• 若追求20%年化收益，建议报价不高于20%收益率对应的盈亏平衡价格')
+    add_paragraph(document, '• 若追求15%年化收益，可适当提高报价，但需评估风险')
+    add_paragraph(document, '• 实际报价应结合折价率、安全边际和市场环境综合决定')
+
+    # 生成并插入盈亏平衡价格敏感性图表
+    break_even_chart_path = os.path.join(IMAGES_DIR, '09_01_break_even_analysis.png')
+    generate_break_even_chart(issue_price, current_price_eval, project_params['lockup_period'], break_even_chart_path)
+    add_paragraph(document, '')
+    add_paragraph(document, '图表 9.1: 盈亏平衡价格敏感性曲线')
+    add_image(document, break_even_chart_path, width=Inches(6))
+
+    add_section_break(document)
+
+    # ==================== 9.2 风险评分 ====================
+    add_title(document, '9.2 风险评分', level=2)
 
     # 综合评分
     scores = {
@@ -3903,7 +5055,7 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
 
     add_paragraph(document, f'综合风险评分: {total_score}/100 分')
 
-    add_title(document, '9.2 各维度评估', level=2)
+    add_title(document, '9.3 各维度评估', level=2)
 
     add_paragraph(document, f'1. 盈利概率（{scores["盈利概率"]}/30分）')
     if profit_prob >= 0.7:
@@ -3927,11 +5079,114 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
 
     add_paragraph(document, f'4. 波动率（{scores["波动率"]}/15分）')
     vol_comment = "相对可控" if market_data["volatility"] <= 0.35 else "波动较大"
-    add_paragraph(document, f'   年化波动率 {market_data["volatility"]*100:.1f}%，{vol_comment}')
+    add_paragraph(document, f'   60日窗口年化波动率 {market_data["volatility"]*100:.1f}%，{vol_comment}')
 
     add_paragraph(document, f'5. 风险价值（{scores["VaR"]}/15分）')
     var_comment = "风险可控" if var_95 <= 0.25 else "需注意风险"
     add_paragraph(document, f'   95% VaR 为 {var_95*100:.1f}%，{var_comment}')
+
+    # ==================== 9.4 最终报价建议 ====================
+    add_paragraph(document, '')
+    add_title(document, '9.4 最终报价建议', level=2)
+
+    add_paragraph(document, '基于盈亏平衡价格分析、风险评分和多维度情景分析，给出最终报价建议：')
+    add_paragraph(document, '')
+
+    current_price_eval = project_params['current_price']
+    issue_price_eval = project_params['issue_price']
+    lockup_years = project_params['lockup_period'] / 12
+
+    # 计算不同目标收益率下的建议发行价
+    target_returns_pricing = [0.15, 0.20, 0.25]  # 15%, 20%, 25%年化收益率
+    pricing_recommendations = []
+
+    add_paragraph(document, '一、基于目标收益率的建议报价区间')
+
+    for target_ret in target_returns_pricing:
+        # 反推：要达到目标收益率，发行价应该是多少？
+        # 预期价格 = 当前价格 × (1 + 历史年化收益率 × 锁定年数)
+        # 发行价 = 预期价格 / (1 + 目标年化收益率 × 锁定年数)
+        historical_return = market_data.get('annual_return_60d', 0.08)
+        expected_price = current_price_eval * (1 + historical_return * lockup_years)
+        max_issue_price = expected_price / (1 + target_ret * lockup_years)
+
+        # 计算折价率
+        discount_rate = (current_price_eval - max_issue_price) / current_price_eval * 100
+
+        pricing_recommendations.append([
+            f'{target_ret*100:.0f}%',
+            f'{max_issue_price:.2f}',
+            f'{discount_rate:+.2f}%'
+        ])
+
+        status = "✅" if max_issue_price > issue_price_eval else "⚠️"
+        add_paragraph(document, f'• 目标年化收益{target_ret*100:.0f}%：建议报价不高于{max_issue_price:.2f}元（折价率{discount_rate:+.2f}%）{status}')
+
+    pricing_table_headers = ['目标年化收益率', '最高报价(元)', '折价率']
+    add_table_data(document, pricing_table_headers, pricing_recommendations)
+
+    add_paragraph(document, '')
+    add_paragraph(document, '二、当前发行价评估')
+
+    # 评估当前发行价
+    current_discount = (current_price_eval - issue_price_eval) / current_price_eval * 100
+    add_paragraph(document, f'• 当前发行价: {issue_price_eval:.2f} 元')
+    add_paragraph(document, f'• 当前折价率: {current_discount:+.2f}%')
+
+    # 判断当前发行价是否合理
+    max_price_20 = expected_price / (1 + 0.20 * lockup_years)
+
+    if issue_price_eval <= max_price_20:
+        add_paragraph(document, f'• ✅ 当前发行价低于20%目标收益对应的最高报价({max_price_20:.2f}元)，具有投资价值')
+        investment_advice = "建议积极参与"
+    elif issue_price_eval <= max_price_20 * 1.05:
+        add_paragraph(document, f'• ⚠️ 当前发行价接近20%目标收益对应的最高报价({max_price_20:.2f}元)，需谨慎评估')
+        investment_advice = "建议谨慎参与或要求更高折价"
+    else:
+        add_paragraph(document, f'• ❌ 当前发行价高于20%目标收益对应的最高报价({max_price_20:.2f}元)，安全边际不足')
+        investment_advice = "建议规避或等待更好时机"
+
+    add_paragraph(document, '')
+    add_paragraph(document, '三、综合投资建议')
+
+    # 结合风险评分给出建议
+    if total_score >= 80 and issue_price_eval <= max_price_20:
+        final_recommendation = f"🟢 建议积极参与"
+        reason = f"风险评分{total_score}/100（优秀），发行价具有较好安全边际，符合20%目标收益率要求。"
+    elif total_score >= 60:
+        final_recommendation = f"🟡 谨慎参与"
+        reason = f"风险评分{total_score}/100（中等），需结合折价率和增长预期综合评估。"
+    else:
+        final_recommendation = f"🔴 建议规避"
+        reason = f"风险评分{total_score}/100（较低），安全边际不足，风险较高。"
+
+    add_paragraph(document, f'{final_recommendation}')
+    add_paragraph(document, reason)
+
+    add_paragraph(document, '')
+    add_paragraph(document, '四、报价策略建议')
+
+    if current_discount >= 15:
+        add_paragraph(document, '• 当前折价率较高（≥15%），可按原计划参与')
+    elif current_discount >= 10:
+        add_paragraph(document, '• 当前折价率适中（10%-15%），建议关注公司基本面和行业前景')
+    else:
+        add_paragraph(document, '• 当前折价率较低（<10%），建议要求更高折价或等待更好时机')
+
+    # 根据盈利概率给出建议
+    if profit_prob >= 70:
+        add_paragraph(document, f'• 盈利概率{profit_prob:.1f}%（≥70%），投资安全边际充足')
+    elif profit_prob >= 50:
+        add_paragraph(document, f'• 盈利概率{profit_prob:.1f}%（50%-70%），建议分批参与或控制仓位')
+    else:
+        add_paragraph(document, f'• 盈利概率{profit_prob:.1f}%（<50%），风险较大，建议谨慎')
+
+    add_paragraph(document, '')
+    add_paragraph(document, '五、风险提示')
+    add_paragraph(document, '• 本建议基于历史数据和假设，实际收益可能偏离预期')
+    add_paragraph(document, '• 市场环境变化、公司业绩波动等风险因素可能影响最终收益')
+    add_paragraph(document, '• 建议结合最新市场情况和公司公告动态调整报价策略')
+    add_paragraph(document, '• 投资有风险，决策需谨慎')
 
     add_section_break(document)
 
@@ -3982,7 +5237,7 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
         ['安全边际/溢价率', f'{discount_premium:.2f}%'],
         ['预期收益率', f'{mean_return*100:.1f}%'],
         ['95% VaR', f'{var_95*100:.1f}%'],
-        ['波动率', f'{market_data["volatility"]*100:.1f}%'],
+        ['波动率(60日)', f'{market_data["volatility"]*100:.1f}%'],
         ['DCF内在价值', f'{intrinsic_value:.2f} 元/股']
     ]
     add_table_data(document, ['指标', '值'], summary_data)
@@ -3990,7 +5245,7 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
     add_title(document, '10.3 主要风险提示', level=2)
 
     risks = [
-        f'• 市场风险: 当前波动率 {market_data["volatility"]*100:.1f}%，市场波动可能导致实际收益偏离预期',
+        f'• 市场风险: 当前60日窗口波动率 {market_data["volatility"]*100:.1f}%，市场波动可能导致实际收益偏离预期',
         f'• 流动性风险: {project_params["lockup_period"]}个月锁定期内无法交易，需承担期间价格波动',
         f'• 估值风险: DCF估值基于多个假设，实际业绩可能偏离预测',
         f'• VaR风险: 95%置信水平下最大可能亏损 {var_95*100:.1f}%',
@@ -4016,6 +5271,49 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
 
     add_paragraph(document, disclaimer, font_size=9)
 
+    # ==================== 附件：585种情景完整数据表 ====================
+    add_section_break(document)
+    add_title(document, '附件：585种情景完整数据表', level=1)
+
+    add_paragraph(document, '本附件提供完整的585种情景组合数据，供备查参考。')
+    add_paragraph(document, f'情景组合：漂移率（-30%~+30%，13档）× 波动率（10%~50%，5档）× 折价率（-20%~+20%，9档）= {len(all_scenarios_for_appendix)}种')
+    add_paragraph(document, '')
+
+    # 按预期年化收益率排序
+    add_title(document, '附表1：全部585种情景（按预期年化收益率排序）', level=2)
+
+    all_scenarios_sorted = sorted(all_scenarios_for_appendix, key=lambda x: x['mean_return'], reverse=True)
+
+    appendix_data = []
+    for i, s in enumerate(all_scenarios_sorted, 1):
+        appendix_data.append([
+            f"{i}",
+            f"{s['drift']*100:+.0f}%",
+            f"{s['volatility']*100:.0f}%",
+            f"{s['discount']*100:+.0f}%",
+            f"{s['issue_price']:.2f}",
+            f"{s['mean_return']*100:+.2f}%",
+            f"{s['median_return']*100:+.2f}%",
+            f"{s['profit_prob']:.1f}%",
+            f"{s['var_5']*100:+.2f}%",
+            f"{s['var_95']*100:+.2f}%"
+        ])
+
+    appendix_headers = ['排名', '漂移率', '波动率', '折价率', '发行价(元)', '预期年化收益', '中位数收益', '盈利概率', '5% VaR', '95% VaR']
+    add_table_data(document, appendix_headers, appendix_data)
+
+    add_paragraph(document, '')
+    add_paragraph(document, '附件说明：')
+    add_paragraph(document, '• 排名：按预期年化收益率从高到低排序')
+    add_paragraph(document, '• 漂移率：年化收益率，反映股价预期趋势')
+    add_paragraph(document, '• 波动率：年化波动率，反映股价不确定性')
+    add_paragraph(document, '• 折价率：发行价相对当前价的折扣（负值=折价，正值=溢价）')
+    add_paragraph(document, '• 预期年化收益：基于蒙特卡洛模拟的平均年化收益率')
+    add_paragraph(document, '• 中位数收益：年化收益率的中位数')
+    add_paragraph(document, '• 盈利概率：到期时盈利（收益率>0）的概率')
+    add_paragraph(document, '• 5% VaR：95%的情景下收益率不低于此值（较好情况）')
+    add_paragraph(document, '• 95% VaR：5%的情景下收益率不高于此值（最差情况）')
+
     # ==================== 保存文档 ====================
     output_path = os.path.join(OUTPUTS_DIR, output_file)
     document.save(output_path)
@@ -4029,5 +5327,71 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
 
 
 if __name__ == '__main__':
-    report_path = generate_report(stock_code='300735.SZ', output_file='光弘科技_定增风险分析报告.docx')
-    print("\n报告生成完成！")
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description='定增风险分析报告生成器 V2')
+    parser.add_argument('--stock', type=str, default='300735.SZ', help='股票代码（默认：300735.SZ）')
+    parser.add_argument('--output', type=str, default='光弘科技_定增风险分析报告.docx', help='输出文件名')
+    parser.add_argument('--force-update', action='store_true', help='强制更新市场数据')
+    parser.add_argument('--no-update-check', action='store_true', help='跳过数据更新检查')
+    parser.add_argument('--max-data-age', type=int, default=3, help='数据最大允许天数（默认：3天）')
+
+    args = parser.parse_args()
+
+    stock_code = args.stock
+
+    # 构建市场数据文件路径
+    market_data_file = os.path.join(DATA_DIR, f"{stock_code.replace('.', '_')}_market_data.json")
+
+    # 检查数据是否需要更新
+    if not args.no_update_check:
+        print("检查市场数据日期...")
+
+        is_fresh, data_date, days_old = check_data_freshness(market_data_file, args.max_data_age)
+
+        if is_fresh:
+            print(f"✅ 市场数据是最新的（{data_date.strftime('%Y年%m月%d日')}，距今{days_old}天）")
+        elif args.force_update:
+            print(f"⚠️ 强制更新数据...")
+            update_success = update_market_data(stock_code)
+            if not update_success:
+                print("⚠️ 数据更新失败，将使用现有数据继续生成报告")
+        else:
+            if data_date:
+                print(f"⚠️ 市场数据已过期（{data_date.strftime('%Y年%m月%d日')}，距今{days_old}天）")
+                print(f"   建议运行以下命令更新数据：")
+                print(f"   python {__file__} --stock {stock_code} --force-update")
+                print()
+
+                # 询问用户是否更新
+                try:
+                    response = input("是否现在更新数据？(y/N): ").strip().lower()
+                    if response in ['y', 'yes']:
+                        update_success = update_market_data(stock_code)
+                        if not update_success:
+                            print("⚠️ 数据更新失败，将使用现有数据继续生成报告")
+                    else:
+                        print("⚠️ 将使用过期数据继续生成报告，结果可能不准确")
+                except (EOFError, KeyboardInterrupt):
+                    print("\n⚠️ 将使用过期数据继续生成报告")
+            else:
+                print(f"❌ 未找到市场数据文件: {market_data_file}")
+                print(f"   正在尝试下载数据...")
+                update_success = update_market_data(stock_code)
+                if not update_success:
+                    print("❌ 数据下载失败，无法生成报告")
+                    sys.exit(1)
+    else:
+        print("⏭️ 跳过数据更新检查")
+
+    print()
+
+    # 生成报告
+    try:
+        report_path = generate_report(stock_code=stock_code, output_file=args.output)
+        print("\n报告生成完成！")
+        print(f"📄 报告路径: {report_path}")
+    except Exception as e:
+        print(f"\n❌ 报告生成失败: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)

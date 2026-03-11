@@ -108,6 +108,30 @@ def calculate_annual_return(df, window):
     return annual_return
 
 
+def calculate_period_return(df, window):
+    """
+    计算区间收益率（期间涨跌幅）
+
+    参数:
+        df: DataFrame，包含收盘价数据
+        window: 时间窗口（交易日）
+
+    返回:
+        float: 区间收益率
+    """
+    if len(df) < window:
+        return np.nan
+
+    # 获取window天前的收盘价和最新收盘价
+    start_price = df['close'].iloc[-window]
+    end_price = df['close'].iloc[-1]
+
+    # 计算期间收益率
+    period_return = (end_price - start_price) / start_price
+
+    return period_return
+
+
 def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技'):
     """
     生成市场数据
@@ -142,6 +166,12 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技'):
     annual_return_120d = calculate_annual_return(df, 120)
     annual_return_180d = calculate_annual_return(df, 180)
 
+    # 计算区间收益率（多窗口）
+    period_return_30d = calculate_period_return(df, 30)
+    period_return_60d = calculate_period_return(df, 60)
+    period_return_120d = calculate_period_return(df, 120)
+    period_return_180d = calculate_period_return(df, 180)
+
     # 计算移动平均线
     ma_30 = df['close'].rolling(window=30).mean().iloc[-1]
     ma_60 = df['close'].rolling(window=60).mean().iloc[-1]
@@ -174,6 +204,10 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技'):
         'annual_return_60d': round(float(annual_return_60d), 4),
         'annual_return_120d': round(float(annual_return_120d), 4),
         'annual_return_180d': round(float(annual_return_180d), 4),
+        'period_return_30d': round(float(period_return_30d), 4),  # 区间收益率
+        'period_return_60d': round(float(period_return_60d), 4),
+        'period_return_120d': round(float(period_return_120d), 4),
+        'period_return_180d': round(float(period_return_180d), 4),
         'drift': round(float(annual_return_60d), 4),  # 默认使用60日年化收益率
         'ma_30': round(float(ma_30), 2),
         'ma_60': round(float(ma_60), 2),
@@ -311,11 +345,15 @@ class TushareFinancialData:
             df = df.sort_values('end_date', ascending=False)
             latest = df.iloc[0]
 
+            # tushare的资产负债表数据单位已经是元，不需要转换
+            print(f"   总资产: {float(latest['total_assets'])/100000000:.2f} 亿元")
+            print(f"   总负债: {float(latest['total_liab'])/100000000:.2f} 亿元")
+
             return {
-                'total_assets': float(latest['total_assets']) if pd.notna(latest['total_assets']) else 0,  # 总资产
-                'total_liabilities': float(latest['total_liab']) if pd.notna(latest['total_liab']) else 0,  # 总负债
-                'total_equity': float(latest['total_hldr_eqy_exc_min_int']) if pd.notna(latest['total_hldr_eqy_exc_min_int']) else 0,  # 股东权益
-                'cash_equivalents': float(latest['money_cap']) if 'money_cap' in latest and pd.notna(latest['money_cap']) else 0,  # 货币资金
+                'total_assets': float(latest['total_assets']) if pd.notna(latest['total_assets']) else 0,  # 总资产（元）
+                'total_liabilities': float(latest['total_liab']) if pd.notna(latest['total_liab']) else 0,  # 总负债（元）
+                'total_equity': float(latest['total_hldr_eqy_exc_min_int']) if pd.notna(latest['total_hldr_eqy_exc_min_int']) else 0,  # 股东权益（元）
+                'cash_equivalents': float(latest['money_cap']) if 'money_cap' in latest and pd.notna(latest['money_cap']) else 0,  # 货币资金（元）
                 'report_date': latest['end_date'],
             }
         except Exception as e:
@@ -338,7 +376,7 @@ class TushareFinancialData:
                 ts_code=self.ts_code,
                 start_date=start_date,
                 end_date=end_date,
-                fields='ts_code,ann_date,f_ann_date,end_date,revenue,operate_profit,total_profit,n_income'
+                fields='ts_code,ann_date,f_ann_date,end_date,revenue,operate_profit,total_profit,n_income_attr_p'
             )
 
             if df.empty:
@@ -349,15 +387,157 @@ class TushareFinancialData:
             df = df.sort_values('end_date', ascending=False)
             latest = df.iloc[0]
 
+            # tushare的利润表数据单位已经是元，不需要转换
+            # n_income_attr_p字段: 归属母公司所有者的净利润（不含少数股东损益）
+            # 这是分析上市公司时最常用的净利润指标
+            net_income_yuan = float(latest['n_income_attr_p']) if pd.notna(latest['n_income_attr_p']) else 0
+
+            print(f"从Tushare获取利润表数据成功，期间: {latest['end_date']}")
+            print(f"   字段说明：n_income_attr_p = 归属母公司所有者的净利润（不含少数股东损益）")
+            print(f"   归母净利润: {net_income_yuan/100000000:.2f} 亿元")
+
+            print(f"   原始净利润（元）: {net_income_yuan:.0f}")
+            print(f"   转换后净利润（亿元）: {net_income_yuan/100000000:.2f}")
+
             return {
-                'revenue': float(latest['revenue']) if pd.notna(latest['revenue']) else 0,  # 营业收入
-                'operate_profit': float(latest['operate_profit']) if pd.notna(latest['operate_profit']) else 0,  # 营业利润
-                'total_profit': float(latest['total_profit']) if pd.notna(latest['total_profit']) else 0,  # 利润总额
-                'net_income': float(latest['n_income']) if pd.notna(latest['n_income']) else 0,  # 净利润
+                'revenue': float(latest['revenue']) if pd.notna(latest['revenue']) else 0,  # 营业收入（元）
+                'operate_profit': float(latest['operate_profit']) if pd.notna(latest['operate_profit']) else 0,  # 营业利润（元）
+                'total_profit': float(latest['total_profit']) if pd.notna(latest['total_profit']) else 0,  # 利润总额（元）
+                'net_income': net_income_yuan,  # 净利润（元）
                 'report_date': latest['end_date'],
             }
         except Exception as e:
             print(f"❌ 获取利润表失败: {e}")
+            return None
+
+    def get_historical_net_income(self, years=5) -> list:
+        """
+        获取历史净利润数据，用于计算CAGR
+        优先使用年度数据，如某年无年度数据则使用最新季度数据年化
+
+        参数:
+            years: 获取最近几年的数据（默认5年）
+
+        返回:
+            历史净利润列表，从最新到最旧排序
+        """
+        try:
+            # 获取最近几年的数据（多取一些以确保有足够数据）
+            end_date = datetime.now().strftime('%Y%m%d')
+            start_date = (datetime.now() - timedelta(days=(years+2)*365)).strftime('%Y%m%d')
+
+            print(f"正在获取历史净利润数据...")
+            print(f"   字段说明：n_income_attr_p = 归属母公司所有者的净利润（不含少数股东损益）")
+            print(f"   查询时间范围: {start_date} 至 {end_date}")
+            print(f"   目标年数: {years}年")
+
+            df = self.pro.income(
+                ts_code=self.ts_code,
+                start_date=start_date,
+                end_date=end_date,
+                fields='ts_code,end_date,n_income_attr_p'
+            )
+
+            if df.empty:
+                print(f"⚠️ 未获取到{self.ts_code}的历史净利润数据")
+                return None
+
+            # tushare的利润表数据单位已经是元，不需要转换
+            print(f"   注意：tushare数据单位已经是元，无需转换")
+            sample = df.iloc[0]['n_income_attr_p'] if len(df) > 0 else 0
+            print(f"   示例：第一条数据净利润 {sample/100000000:.2f}亿元")
+
+            # 按报告期排序
+            df = df.sort_values('end_date', ascending=False)
+            print(f"   获取到数据条数: {len(df)}条")
+
+            # 提取年份
+            df['year'] = df['end_date'].str[:4].astype(int)
+            print(f"   数据年份范围: {df['year'].min()}年 至 {df['year'].max()}年")
+
+            # 按年份分组，每组优先使用年度数据
+            yearly_data = {}
+
+            # 确定年份范围：从最新年份往前推years年
+            max_year = df['year'].max()
+            print(f"   开始按年份处理数据（从{max_year}年往前推{years}年）...")
+
+            for year in range(max_year, max_year - years - 1, -1):
+                year_df = df[df['year'] == year]
+
+                # 优先查找年度数据（1231结尾）
+                annual_data = year_df[year_df['end_date'].str.endswith('1231')]
+
+                if not annual_data.empty:
+                    # 使用年度数据
+                    row = annual_data.iloc[0]
+                    # n_income_attr_p 已经是元，不需要转换
+                    net_income_yuan = float(row['n_income_attr_p'])
+                    yearly_data[year] = {
+                        'end_date': row['end_date'],
+                        'n_income_attr_p': net_income_yuan,
+                        'source': f'{year}年(年度数据)'
+                    }
+                    print(f"   {year}年: 找到年度数据 {row['end_date']}，净利润 {net_income_yuan/100000000:.2f}亿元")
+                else:
+                    # 没有年度数据，使用该年最新的季度数据并年化
+                    latest_quarter = year_df.iloc[0]  # 已经按日期降序排序
+                    end_date_str = latest_quarter['end_date']
+                    month_day = end_date_str[4:]  # 获取MMDD部分
+                    quarterly_income = float(latest_quarter['n_income_attr_p'])  # 已经转换为元
+
+                    print(f"   {year}年: 无年度数据，使用最新季度{end_date_str}，净利润{quarterly_income/100000000:.2f}亿元")
+
+                    if pd.notna(quarterly_income) and quarterly_income > 0:
+                        # 判断季度并年化
+                        if month_day.endswith('0331'):  # Q1 一季度 (3个月)
+                            annualized_income = quarterly_income * 4
+                            source = f'{year}年(Q1年化{quarterly_income/100000000:.2f}亿×4)'
+                        elif month_day.endswith('0630'):  # Q2 二季度 (6个月)
+                            annualized_income = quarterly_income * 2
+                            source = f'{year}年(Q2年化{quarterly_income/100000000:.2f}亿×2)'
+                        elif month_day.endswith('0930'):  # Q3 三季度 (9个月)
+                            annualized_income = quarterly_income * (4/3)
+                            source = f'{year}年(Q3年化{quarterly_income/100000000:.2f}亿×4/3)'
+                        elif month_day.endswith('1231'):  # Q4 四季度 (12个月，年度数据)
+                            annualized_income = quarterly_income
+                            source = f'{year}年(年度数据)'
+                        else:
+                            # 其他日期，保守估计不年化
+                            annualized_income = quarterly_income
+                            source = f'{year}年({month_day}数据)'
+
+                        yearly_data[year] = {
+                            'end_date': end_date_str,
+                            'n_income_attr_p': annualized_income,
+                            'source': source
+                        }
+                        print(f"         → 年化为: {annualized_income/100000000:.2f}亿元 ({source})")
+
+            # 检查是否有足够数据
+            if len(yearly_data) < 2:
+                print(f"⚠️ 有效历史数据不足（需要至少2年，当前{len(yearly_data)}年）")
+                return None
+
+            # 按年份降序提取数据
+            historical_incomes = []
+            sources = []
+            for year in sorted(yearly_data.keys(), reverse=True)[:years]:
+                data = yearly_data[year]
+                historical_incomes.append(data['n_income_attr_p'])
+                sources.append(data['source'])
+
+            print(f"✅ 获取历史净利润数据成功:")
+            print(f"   注：数据已为n_income_attr_p（归属母公司净利润），单位为元")
+            for income, source in zip(historical_incomes, sources):
+                print(f"   {source}: {income/100000000:.2f}亿元")
+
+            return historical_incomes
+
+        except Exception as e:
+            print(f"❌ 获取历史净利润数据失败: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     def get_all_financials(self) -> dict:
