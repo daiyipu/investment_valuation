@@ -173,6 +173,7 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技'):
     period_return_250d = calculate_period_return(df, 250)
 
     # 计算移动平均线
+    ma_20 = df['close'].rolling(window=20).mean().iloc[-1]
     ma_30 = df['close'].rolling(window=30).mean().iloc[-1]
     ma_60 = df['close'].rolling(window=60).mean().iloc[-1]
     ma_120 = df['close'].rolling(window=120).mean().iloc[-1]
@@ -209,6 +210,7 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技'):
         'period_return_120d': round(float(period_return_120d), 4),
         'period_return_250d': round(float(period_return_250d), 4),
         'drift': round(float(annual_return_60d), 4),  # 默认使用60日年化收益率
+        'ma_20': round(float(ma_20), 2),
         'ma_30': round(float(ma_30), 2),
         'ma_60': round(float(ma_60), 2),
         'ma_120': round(float(ma_120), 2),
@@ -249,6 +251,7 @@ def print_market_data_summary(market_data):
     print(f"   250日: {market_data['annual_return_250d']*100:.2f}%")
 
     print(f"\n📊 移动平均线:")
+    print(f"   MA20: {market_data['ma_20']:.2f} 元")
     print(f"   MA30: {market_data['ma_30']:.2f} 元")
     print(f"   MA60: {market_data['ma_60']:.2f} 元")
     print(f"   MA120: {market_data['ma_120']:.2f} 元")
@@ -280,9 +283,9 @@ if __name__ == '__main__':
         # 打印摘要
         print_market_data_summary(market_data)
 
-        # 保存文件到data目录
+        # 保存文件到项目根目录的data目录
         filename = f"{stock_code.replace('.', '_')}_market_data.json"
-        data_dir = 'data'
+        data_dir = os.path.join('..', 'data')
 
         # 确保data目录存在
         os.makedirs(data_dir, exist_ok=True)

@@ -62,20 +62,41 @@ def load_placement_config(
     market_data = None
     if prefer_market_data:
         try:
-            from utils.market_data_loader import load_market_data
+            # 尝试多种导入方式以适应不同的运行上下文
+            try:
+                from utils.market_data_loader import load_market_data
+            except ImportError:
+                from market_data_loader import load_market_data
             market_data = load_market_data(stock_code, data_dir=data_dir)
         except Exception as e:
             print(f"⚠️ 市场数据加载失败: {e}")
             print(f"   将使用定增参数文件中的数据")
 
-    # 3. 构建项目参数
+    # 3. 计算发行数量（根据融资金额和发行价）
+    issue_price = placement_params['issue_price']
+    if 'financing_amount' in placement_params:
+        # 新方式：根据融资金额计算发行数量
+        issue_shares = int(placement_params['financing_amount'] / issue_price)
+        print(f"✅ 计算得出发行数量: {issue_shares:,} 股（融资金额: {placement_params['financing_amount']/100000000:.2f}亿元 ÷ 发行价: {issue_price:.2f}元/股）")
+    elif 'issue_shares' in placement_params:
+        # 旧方式：直接使用JSON中的发行数量（向后兼容）
+        issue_shares = placement_params['issue_shares']
+        print(f"✅ 使用JSON中的发行数量: {issue_shares:,} 股")
+    else:
+        raise ValueError("JSON中必须包含 financing_amount 或 issue_shares 字段")
+
+    # 4. 构建项目参数
     project_params = {
-        'issue_price': placement_params['issue_price'],
-        'issue_shares': placement_params['issue_shares'],
+        'issue_price': issue_price,
+        'issue_shares': issue_shares,
         'lockup_period': placement_params['lockup_period'],
         'current_price': placement_params['current_price'],
         'risk_free_rate': placement_params['risk_free_rate'],
     }
+
+    # 如果有financing_amount，也保存到project_params中
+    if 'financing_amount' in placement_params:
+        project_params['financing_amount'] = placement_params['financing_amount']
 
     # 如果市场数据存在，使用市场数据中的最新价格
     if market_data and 'current_price' in market_data:
