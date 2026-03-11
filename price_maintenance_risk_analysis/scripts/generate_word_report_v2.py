@@ -2149,22 +2149,24 @@ def generate_index_data_charts_split(indices_data, save_dir):
 
     # ====== 250日窗口图表 ======
     # 7. 波动率对比图（250日）
-    fig, ax = plt.subplots(figsize=(18, 8))
+    fig, ax = plt.subplots(figsize=(20, 10))
     colors7 = plt.cm.Reds(np.linspace(0.4, 0.9, len(index_names)))
     bars7 = ax.barh(index_names, volatilities_250d, color=colors7, alpha=0.85, edgecolor='white')
 
-    ax.set_xlabel('年化波动率 (%)', fontproperties=font_prop, fontsize=12)
-    ax.set_title('各指数波动率对比 (250日窗口/年线)', fontproperties=font_prop, fontsize=14, fontweight='bold')
+    ax.set_xlabel('年化波动率 (%)', fontproperties=font_prop, fontsize=14)
+    ax.set_title('各指数波动率对比 (250日窗口/年线)', fontproperties=font_prop, fontsize=16, fontweight='bold')
     ax.grid(True, alpha=0.3, axis='x')
 
     for i, (bar, vol) in enumerate(zip(bars7, volatilities_250d)):
-        ax.text(vol + 0.5, i, f'{vol:.1f}%', va='center', fontsize=10,
+        ax.text(vol + 0.5, i, f'{vol:.1f}%', va='center', fontsize=12,
                fontproperties=font_prop, fontweight='bold')
 
     for label in ax.get_yticklabels():
         label.set_fontproperties(font_prop)
+        label.set_fontsize(13)
     for label in ax.get_xticklabels():
         label.set_fontproperties(font_prop)
+        label.set_fontsize(13)
 
     path7 = os.path.join(save_dir, 'index_volatility_250d.png')
     plt.tight_layout()
@@ -2173,25 +2175,27 @@ def generate_index_data_charts_split(indices_data, save_dir):
     paths.append(path7)
 
     # 8. 年化收益率对比图（250日）
-    fig, ax = plt.subplots(figsize=(18, 8))
+    fig, ax = plt.subplots(figsize=(20, 10))
     colors8 = ['#27ae60' if r > 0 else '#e74c3c' for r in returns_250d]
     bars8 = ax.barh(index_names, returns_250d, color=colors8, alpha=0.85, edgecolor='white')
 
-    ax.set_xlabel('年化收益率 (%)', fontproperties=font_prop, fontsize=12)
-    ax.set_title('各指数年化收益率对比 (250日窗口/年线)', fontproperties=font_prop, fontsize=14, fontweight='bold')
+    ax.set_xlabel('年化收益率 (%)', fontproperties=font_prop, fontsize=14)
+    ax.set_title('各指数年化收益率对比 (250日窗口/年线)', fontproperties=font_prop, fontsize=16, fontweight='bold')
     ax.axvline(x=0, color='black', linestyle='-', linewidth=1.2)
     ax.grid(True, alpha=0.3, axis='x')
 
     for i, (bar, ret) in enumerate(zip(bars8, returns_250d)):
         pos = ret + 1.5 if ret > 0 else ret - 2
         ha = 'left' if ret > 0 else 'right'
-        ax.text(pos, i, f'{ret:+.1f}%', va='center', ha=ha, fontsize=10,
+        ax.text(pos, i, f'{ret:+.1f}%', va='center', ha=ha, fontsize=12,
                fontproperties=font_prop, fontweight='bold', color='white')
 
     for label in ax.get_yticklabels():
         label.set_fontproperties(font_prop)
+        label.set_fontsize(13)
     for label in ax.get_xticklabels():
         label.set_fontproperties(font_prop)
+        label.set_fontsize(13)
 
     path8 = os.path.join(save_dir, 'index_returns_250d.png')
     plt.tight_layout()
@@ -2636,12 +2640,12 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
             add_paragraph(document, '')
             add_paragraph(document, '图表 1.10: 各指数波动率对比 (250日年线窗口)')
             if len(indices_charts_paths) > 6 and os.path.exists(indices_charts_paths[6]):
-                add_image(document, indices_charts_paths[6], width=Inches(7.5))
+                add_image(document, indices_charts_paths[6], width=Inches(6.3), height=Inches(3.15))
                 add_paragraph(document, '')
 
             add_paragraph(document, '图表 1.11: 各指数年化收益率对比 (250日年线窗口)')
             if len(indices_charts_paths) > 7 and os.path.exists(indices_charts_paths[7]):
-                add_image(document, indices_charts_paths[7], width=Inches(7.5))
+                add_image(document, indices_charts_paths[7], width=Inches(6.3), height=Inches(3.15))
                 add_paragraph(document, '')
 
             # 添加分析结论
