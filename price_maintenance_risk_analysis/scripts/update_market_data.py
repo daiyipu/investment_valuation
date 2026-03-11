@@ -153,30 +153,30 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技'):
     vol_30 = calculate_rolling_volatility(df, 30)
     vol_60 = calculate_rolling_volatility(df, 60)
     vol_120 = calculate_rolling_volatility(df, 120)
-    vol_180 = calculate_rolling_volatility(df, 180)
+    vol_250 = calculate_rolling_volatility(df, 250)
 
     volatility_30d = vol_30['latest']
     volatility_60d = vol_60['latest']
     volatility_120d = vol_120['latest']
-    volatility_180d = vol_180['latest']
+    volatility_250d = vol_250['latest']
 
     # 计算年化收益率（多窗口）
     annual_return_30d = calculate_annual_return(df, 30)
     annual_return_60d = calculate_annual_return(df, 60)
     annual_return_120d = calculate_annual_return(df, 120)
-    annual_return_180d = calculate_annual_return(df, 180)
+    annual_return_250d = calculate_annual_return(df, 250)
 
     # 计算区间收益率（多窗口）
     period_return_30d = calculate_period_return(df, 30)
     period_return_60d = calculate_period_return(df, 60)
     period_return_120d = calculate_period_return(df, 120)
-    period_return_180d = calculate_period_return(df, 180)
+    period_return_250d = calculate_period_return(df, 250)
 
     # 计算移动平均线
     ma_30 = df['close'].rolling(window=30).mean().iloc[-1]
     ma_60 = df['close'].rolling(window=60).mean().iloc[-1]
     ma_120 = df['close'].rolling(window=120).mean().iloc[-1]
-    ma_180 = df['close'].rolling(window=180).mean().iloc[-1]
+    ma_250 = df['close'].rolling(window=250).mean().iloc[-1]
 
     # 计算胜率（最近60天上涨天数占比）
     win_rate_60d = (df['pct_chg'].iloc[-60:] > 0).sum() / 60
@@ -198,21 +198,21 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技'):
         'volatility_30d': round(float(volatility_30d), 4),
         'volatility_60d': round(float(volatility_60d), 4),
         'volatility_120d': round(float(volatility_120d), 4),
-        'volatility_180d': round(float(volatility_180d), 4),
+        'volatility_250d': round(float(volatility_250d), 4),
         'volatility': round(float(volatility_60d), 4),  # 默认使用60日波动率
         'annual_return_30d': round(float(annual_return_30d), 4),
         'annual_return_60d': round(float(annual_return_60d), 4),
         'annual_return_120d': round(float(annual_return_120d), 4),
-        'annual_return_180d': round(float(annual_return_180d), 4),
+        'annual_return_250d': round(float(annual_return_250d), 4),
         'period_return_30d': round(float(period_return_30d), 4),  # 区间收益率
         'period_return_60d': round(float(period_return_60d), 4),
         'period_return_120d': round(float(period_return_120d), 4),
-        'period_return_180d': round(float(period_return_180d), 4),
+        'period_return_250d': round(float(period_return_250d), 4),
         'drift': round(float(annual_return_60d), 4),  # 默认使用60日年化收益率
         'ma_30': round(float(ma_30), 2),
         'ma_60': round(float(ma_60), 2),
         'ma_120': round(float(ma_120), 2),
-        'ma_180': round(float(ma_180), 2),
+        'ma_250': round(float(ma_250), 2),
         'win_rate_60d': round(float(win_rate_60d), 4),
         'total_days': len(df),
         'data_source': 'tushare_realtime',
@@ -240,19 +240,19 @@ def print_market_data_summary(market_data):
     print(f"   30日: {market_data['volatility_30d']*100:.2f}%")
     print(f"   60日: {market_data['volatility_60d']*100:.2f}%  ← 推荐")
     print(f"   120日: {market_data['volatility_120d']*100:.2f}%")
-    print(f"   180日: {market_data['volatility_180d']*100:.2f}%")
+    print(f"   250日: {market_data['volatility_250d']*100:.2f}%")
 
     print(f"\n📈 年化收益率:")
     print(f"   30日: {market_data['annual_return_30d']*100:.2f}%")
     print(f"   60日: {market_data['annual_return_60d']*100:.2f}%  ← 推荐")
     print(f"   120日: {market_data['annual_return_120d']*100:.2f}%")
-    print(f"   180日: {market_data['annual_return_180d']*100:.2f}%")
+    print(f"   250日: {market_data['annual_return_250d']*100:.2f}%")
 
     print(f"\n📊 移动平均线:")
     print(f"   MA30: {market_data['ma_30']:.2f} 元")
     print(f"   MA60: {market_data['ma_60']:.2f} 元")
     print(f"   MA120: {market_data['ma_120']:.2f} 元")
-    print(f"   MA180: {market_data['ma_180']:.2f} 元")
+    print(f"   MA250: {market_data['ma_250']:.2f} 元")
 
     print(f"\n📈 其他指标:")
     print(f"   平均价格: {market_data['avg_price_all']:.2f} 元")
