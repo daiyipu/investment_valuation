@@ -1879,8 +1879,8 @@ def generate_stock_market_data_charts_split(market_data, price_data, volatility_
     x_range = range(len(price_data['close']))
     ax.plot(x_range, price_data['close'], label='收盘价', linewidth=1.5, alpha=0.8, color='#2c3e50')
 
-    colors = ['#e67e22', '#3498db', '#27ae60', '#e74c3c']
-    windows = [30, 60, 120, 180]
+    colors = ['#e74c3c', '#e67e22', '#3498db', '#27ae60', '#9b59b6']
+    windows = [20, 30, 60, 120, 250]
     for i, window in enumerate(windows):
         ma_key = f'ma_{window}'
         if ma_key in price_data:
