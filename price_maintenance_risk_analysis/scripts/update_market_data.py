@@ -287,13 +287,13 @@ def update_placement_params_issue_price(stock_code, ma20, data_dir):
         with open(placement_file, 'r', encoding='utf-8') as f:
             placement_params = json.load(f)
 
-        # 计算新的发行价（MA20的8折，即20%折价）
-        new_issue_price = ma20 * 0.8
+        # 计算新的发行价（MA20的9折，即10%折价）
+        new_issue_price = ma20 * 0.9
         old_issue_price = placement_params.get('issue_price')
 
         # 更新issue_price和price_source
         placement_params['issue_price'] = new_issue_price
-        placement_params['price_source'] = 'MA20的8折'
+        placement_params['price_source'] = 'MA20的9折'
 
         # 保存
         with open(placement_file, 'w', encoding='utf-8') as f:
@@ -301,8 +301,8 @@ def update_placement_params_issue_price(stock_code, ma20, data_dir):
 
         print(f"✅ 已更新发行价:")
         print(f"   旧发行价: {old_issue_price:.2f} 元")
-        print(f"   新发行价: {new_issue_price:.2f} 元（MA20: {ma20:.2f} × 0.8）")
-        print(f"   折价率: -20.0%")
+        print(f"   新发行价: {new_issue_price:.2f} 元（MA20: {ma20:.2f} × 0.9）")
+        print(f"   折价率: -10.0%")
         print(f"   文件: {placement_file}")
 
     except Exception as e:
@@ -366,13 +366,13 @@ def update_placement_params_issue_price(stock_code, ma20, data_dir):
         with open(placement_file, 'r', encoding='utf-8') as f:
             placement_params = json.load(f)
 
-        # 计算新的发行价（MA20的8折，即20%折价）
-        new_issue_price = ma20 * 0.8
+        # 计算新的发行价（MA20的9折，即10%折价）
+        new_issue_price = ma20 * 0.9
         old_issue_price = placement_params.get('issue_price')
 
         # 更新issue_price和price_source
         placement_params['issue_price'] = new_issue_price
-        placement_params['price_source'] = 'MA20的8折'
+        placement_params['price_source'] = 'MA20的9折'
 
         # 保存
         with open(placement_file, 'w', encoding='utf-8') as f:
@@ -380,8 +380,8 @@ def update_placement_params_issue_price(stock_code, ma20, data_dir):
 
         print(f"✅ 已更新发行价:")
         print(f"   旧发行价: {old_issue_price:.2f} 元")
-        print(f"   新发行价: {new_issue_price:.2f} 元（MA20: {ma20:.2f} × 0.8）")
-        print(f"   折价率: -20.0%")
+        print(f"   新发行价: {new_issue_price:.2f} 元（MA20: {ma20:.2f} × 0.9）")
+        print(f"   折价率: -10.0%")
         print(f"   文件: {placement_file}")
 
     except Exception as e:
