@@ -12,13 +12,13 @@ import os
 from typing import Dict, Optional
 
 
-def load_market_data(stock_code: str, data_dir: str = '..') -> Optional[Dict]:
+def load_market_data(stock_code: str, data_dir: str = 'data') -> Optional[Dict]:
     """
     加载股票的市场数据（波动率、收益率等）
 
     参数:
         stock_code: 股票代码，如 '300735.SZ' 或 '300735_SZ'
-        data_dir: 数据文件所在目录，默认为上级目录
+        data_dir: 数据文件所在目录，默认为'data'目录
 
     返回:
         包含市场数据的字典，如果文件不存在则返回None

@@ -280,11 +280,18 @@ if __name__ == '__main__':
         # 打印摘要
         print_market_data_summary(market_data)
 
-        # 保存文件
+        # 保存文件到data目录
         filename = f"{stock_code.replace('.', '_')}_market_data.json"
-        with open(filename, 'w', encoding='utf-8') as f:
+        data_dir = 'data'
+
+        # 确保data目录存在
+        os.makedirs(data_dir, exist_ok=True)
+
+        # 保存到data目录
+        filepath = os.path.join(data_dir, filename)
+        with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(market_data, f, ensure_ascii=False, indent=2)
-        print(f"\n✅ 已保存市场数据到: {filename}")
+        print(f"\n✅ 已保存市场数据到: {filepath}")
 
         print("\n📌 使用方法:")
         print(f"   from utils.market_data_loader import load_market_data")
