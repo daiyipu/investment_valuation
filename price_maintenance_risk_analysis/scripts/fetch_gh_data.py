@@ -104,6 +104,7 @@ def get_stock_data(ts_code, token=None):
             )
 
         if not df_daily.empty:
+            df_daily = df_daily.sort_values('trade_date').reset_index(drop=True)
             latest = df_daily.iloc[-1]
             result['current_price'] = float(latest['close'])
             result['trade_date'] = latest['trade_date']
