@@ -221,6 +221,40 @@ def get_real_placement_price(ts_code, pro):
         return None
 
 
+def calculate_ma20_price(ts_code, pro):
+    """
+    计算MA20价格（20日移动平均线）
+
+    参数:
+        ts_code: 股票代码
+        pro: Tushare API对象
+
+    返回:
+        MA20价格
+    """
+    try:
+        # 获取过去60天的数据（确保有20个交易日）
+        end_date = datetime.now().strftime('%Y%m%d')
+        start_date = (datetime.now() - timedelta(days=60)).strftime('%Y%m%d')
+
+        df_history = pro.daily(
+            ts_code=ts_code,
+            start_date=start_date,
+            end_date=end_date,
+            fields='ts_code,trade_date,close'
+        )
+
+        if df_history.empty or len(df_history) < 20:
+            return None
+
+        df_history = df_history.sort_values('trade_date')
+        ma20 = df_history['close'].rolling(window=20).mean().iloc[-1]
+
+        return float(ma20)
+    except Exception as e:
+        return None
+
+
 def calculate_ma30_price(ts_code, pro):
     """
     计算MA30价格（30日移动平均线）
@@ -288,14 +322,22 @@ def generate_private_placement_params(stock_data, custom_params=None):
             price_source = "真实定增价"
             print(f"   ✅ 使用真实定增发行价: {issue_price:.2f} 元")
         else:
-            # 2. 使用MA30的8折
-            print(f"   ⚠️ 未找到真实定增价，尝试使用MA30的8折...")
-            ma30 = calculate_ma30_price(stock_data['ts_code'], pro)
-            if ma30:
-                issue_price = ma30 * 0.8
-                price_source = "MA30的8折"
-                print(f"   MA30: {ma30:.2f} 元")
-                print(f"   发行价 = MA30 × 0.8 = {issue_price:.2f} 元")
+            # 2. 使用MA20的8折（优先从market_data.json读取）
+            print(f"   ⚠️ 未找到真实定增价，尝试使用MA20的8折...")
+
+            # 优先从market_data.json读取MA20
+            ma20 = get_ma20_from_market_data(stock_data['ts_code'])
+
+            # 如果market_data.json中没有，则通过API计算
+            if ma20 is None:
+                print(f"   ⚠️ market_data.json中没有MA20，尝试通过API计算...")
+                ma20 = calculate_ma20_price(stock_data['ts_code'], pro)
+
+            if ma20:
+                issue_price = ma20 * 0.8
+                price_source = "MA20的8折"
+                print(f"   MA20: {ma20:.2f} 元")
+                print(f"   发行价 = MA20 × 0.8 = {issue_price:.2f} 元（折价20%）")
             else:
                 # 3. 回退到当前价的8折
                 issue_price = stock_data.get('current_price', 20) * 0.8

@@ -267,6 +267,48 @@ def print_market_data_summary(market_data):
     print("="*70)
 
 
+def update_placement_params_issue_price(stock_code, ma20, data_dir):
+    """
+    根据MA20更新placement_params.json中的issue_price
+
+    参数:
+        stock_code: 股票代码
+        ma20: MA20价格
+        data_dir: 数据目录
+    """
+    try:
+        placement_file = os.path.join(data_dir, f"{stock_code.replace('.', '_')}_placement_params.json")
+
+        if not os.path.exists(placement_file):
+            print(f"⚠️ 未找到 {placement_file}，跳过发行价更新")
+            return
+
+        # 读取placement_params.json
+        with open(placement_file, 'r', encoding='utf-8') as f:
+            placement_params = json.load(f)
+
+        # 计算新的发行价（MA20的8折，即20%折价）
+        new_issue_price = ma20 * 0.8
+        old_issue_price = placement_params.get('issue_price')
+
+        # 更新issue_price和price_source
+        placement_params['issue_price'] = new_issue_price
+        placement_params['price_source'] = 'MA20的8折'
+
+        # 保存
+        with open(placement_file, 'w', encoding='utf-8') as f:
+            json.dump(placement_params, f, indent=2, ensure_ascii=False)
+
+        print(f"✅ 已更新发行价:")
+        print(f"   旧发行价: {old_issue_price:.2f} 元")
+        print(f"   新发行价: {new_issue_price:.2f} 元（MA20: {ma20:.2f} × 0.8）")
+        print(f"   折价率: -20.0%")
+        print(f"   文件: {placement_file}")
+
+    except Exception as e:
+        print(f"⚠️ 更新发行价失败: {e}")
+
+
 if __name__ == '__main__':
     # 生成市场数据
     stock_code = '300735.SZ'
@@ -296,9 +338,54 @@ if __name__ == '__main__':
             json.dump(market_data, f, ensure_ascii=False, indent=2)
         print(f"\n✅ 已保存市场数据到: {filepath}")
 
+        # 根据MA20更新placement_params.json中的issue_price
+        update_placement_params_issue_price(stock_code, market_data['ma_20'], data_dir)
+
         print("\n📌 使用方法:")
         print(f"   from utils.market_data_loader import load_market_data")
         print(f"   market_data = load_market_data('{stock_code}')")
+
+
+def update_placement_params_issue_price(stock_code, ma20, data_dir):
+    """
+    根据MA20更新placement_params.json中的issue_price
+
+    参数:
+        stock_code: 股票代码
+        ma20: MA20价格
+        data_dir: 数据目录
+    """
+    try:
+        placement_file = os.path.join(data_dir, f"{stock_code.replace('.', '_')}_placement_params.json")
+
+        if not os.path.exists(placement_file):
+            print(f"⚠️ 未找到 {placement_file}，跳过发行价更新")
+            return
+
+        # 读取placement_params.json
+        with open(placement_file, 'r', encoding='utf-8') as f:
+            placement_params = json.load(f)
+
+        # 计算新的发行价（MA20的8折，即20%折价）
+        new_issue_price = ma20 * 0.8
+        old_issue_price = placement_params.get('issue_price')
+
+        # 更新issue_price和price_source
+        placement_params['issue_price'] = new_issue_price
+        placement_params['price_source'] = 'MA20的8折'
+
+        # 保存
+        with open(placement_file, 'w', encoding='utf-8') as f:
+            json.dump(placement_params, f, indent=2, ensure_ascii=False)
+
+        print(f"✅ 已更新发行价:")
+        print(f"   旧发行价: {old_issue_price:.2f} 元")
+        print(f"   新发行价: {new_issue_price:.2f} 元（MA20: {ma20:.2f} × 0.8）")
+        print(f"   折价率: -20.0%")
+        print(f"   文件: {placement_file}")
+
+    except Exception as e:
+        print(f"⚠️ 更新发行价失败: {e}")
 
 
 # ==================== 财务数据获取 ====================
