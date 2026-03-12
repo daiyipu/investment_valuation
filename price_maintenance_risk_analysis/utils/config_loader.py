@@ -109,10 +109,10 @@ def load_placement_config(
         risk_params = {
             'volatility': market_data['volatility'],      # 默认60日波动率
             'drift': market_data['drift'],                # 默认60日收益率
-            'volatility_30d': market_data.get('volatility_30d'),
+            'volatility_20d': market_data.get('volatility_20d'),
             'volatility_60d': market_data.get('volatility_60d'),
             'volatility_120d': market_data.get('volatility_120d'),
-            'volatility_180d': market_data.get('volatility_180d'),
+            'volatility_250d': market_data.get('volatility_250d'),
             'data_source': 'market_data',
         }
         print(f"✅ 使用真实市场数据:")
@@ -182,12 +182,12 @@ def print_config_summary(project_params: Dict, risk_params: Dict, market_data: D
     print(f"   收益率(漂移率): {risk_params['drift']*100:.2f}%")
     print(f"   数据来源: {risk_params.get('data_source', 'unknown')}")
 
-    if risk_params.get('volatility_30d'):
+    if risk_params.get('volatility_20d'):
         print(f"\n📈 波动率详情:")
-        print(f"   30日: {risk_params['volatility_30d']*100:.2f}%")
-        print(f"   60日: {risk_params['volatility_60d']*100:.2f}%")
-        print(f"   120日: {risk_params['volatility_120d']*100:.2f}%")
-        print(f"   180日: {risk_params['volatility_180d']*100:.2f}%")
+        print(f"   月度(20日): {risk_params['volatility_20d']*100:.2f}%")
+        print(f"   季度(60日): {risk_params['volatility_60d']*100:.2f}%")
+        print(f"   半年(120日): {risk_params['volatility_120d']*100:.2f}%")
+        print(f"   年度(250日): {risk_params['volatility_250d']*100:.2f}%")
 
     print("="*70)
 

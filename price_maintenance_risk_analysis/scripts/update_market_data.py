@@ -150,24 +150,24 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技'):
     print(f"   最新收盘价: {current_price:.2f} 元")
 
     # 计算波动率（多窗口）
-    vol_30 = calculate_rolling_volatility(df, 30)
+    vol_20 = calculate_rolling_volatility(df, 20)
     vol_60 = calculate_rolling_volatility(df, 60)
     vol_120 = calculate_rolling_volatility(df, 120)
     vol_250 = calculate_rolling_volatility(df, 250)
 
-    volatility_30d = vol_30['latest']
+    volatility_20d = vol_20['latest']
     volatility_60d = vol_60['latest']
     volatility_120d = vol_120['latest']
     volatility_250d = vol_250['latest']
 
     # 计算年化收益率（多窗口）
-    annual_return_30d = calculate_annual_return(df, 30)
+    annual_return_20d = calculate_annual_return(df, 20)
     annual_return_60d = calculate_annual_return(df, 60)
     annual_return_120d = calculate_annual_return(df, 120)
     annual_return_250d = calculate_annual_return(df, 250)
 
     # 计算区间收益率（多窗口）
-    period_return_30d = calculate_period_return(df, 30)
+    period_return_20d = calculate_period_return(df, 20)
     period_return_60d = calculate_period_return(df, 60)
     period_return_120d = calculate_period_return(df, 120)
     period_return_250d = calculate_period_return(df, 250)
@@ -196,16 +196,16 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技'):
         'avg_price_all': round(float(avg_price_all), 2),
         'median_price': round(float(median_price), 2),
         'price_std': round(float(price_std), 2),
-        'volatility_30d': round(float(volatility_30d), 4),
+        'volatility_20d': round(float(volatility_20d), 4),
         'volatility_60d': round(float(volatility_60d), 4),
         'volatility_120d': round(float(volatility_120d), 4),
         'volatility_250d': round(float(volatility_250d), 4),
         'volatility': round(float(volatility_60d), 4),  # 默认使用60日波动率
-        'annual_return_30d': round(float(annual_return_30d), 4),
+        'annual_return_20d': round(float(annual_return_20d), 4),
         'annual_return_60d': round(float(annual_return_60d), 4),
         'annual_return_120d': round(float(annual_return_120d), 4),
         'annual_return_250d': round(float(annual_return_250d), 4),
-        'period_return_30d': round(float(period_return_30d), 4),  # 区间收益率
+        'period_return_20d': round(float(period_return_20d), 4),
         'period_return_60d': round(float(period_return_60d), 4),
         'period_return_120d': round(float(period_return_120d), 4),
         'period_return_250d': round(float(period_return_250d), 4),
@@ -239,16 +239,16 @@ def print_market_data_summary(market_data):
     print(f"   当前价格: {market_data['current_price']:.2f} 元")
 
     print(f"\n⚠️ 波动率:")
-    print(f"   30日: {market_data['volatility_30d']*100:.2f}%")
-    print(f"   60日: {market_data['volatility_60d']*100:.2f}%  ← 推荐")
-    print(f"   120日: {market_data['volatility_120d']*100:.2f}%")
-    print(f"   250日: {market_data['volatility_250d']*100:.2f}%")
+    print(f"   月度(20日): {market_data['volatility_20d']*100:.2f}%")
+    print(f"   季度(60日): {market_data['volatility_60d']*100:.2f}%  ← 推荐")
+    print(f"   半年(120日): {market_data['volatility_120d']*100:.2f}%")
+    print(f"   年度(250日): {market_data['volatility_250d']*100:.2f}%")
 
     print(f"\n📈 年化收益率:")
-    print(f"   30日: {market_data['annual_return_30d']*100:.2f}%")
-    print(f"   60日: {market_data['annual_return_60d']*100:.2f}%  ← 推荐")
-    print(f"   120日: {market_data['annual_return_120d']*100:.2f}%")
-    print(f"   250日: {market_data['annual_return_250d']*100:.2f}%")
+    print(f"   月度(20日): {market_data['annual_return_20d']*100:.2f}%")
+    print(f"   季度(60日): {market_data['annual_return_60d']*100:.2f}%  ← 推荐")
+    print(f"   半年(120日): {market_data['annual_return_120d']*100:.2f}%")
+    print(f"   年度(250日): {market_data['annual_return_250d']*100:.2f}%")
 
     print(f"\n📊 移动平均线:")
     print(f"   MA20: {market_data['ma_20']:.2f} 元")

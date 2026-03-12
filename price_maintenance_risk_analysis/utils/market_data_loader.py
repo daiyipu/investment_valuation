@@ -99,22 +99,22 @@ def print_market_data_summary(market_data: Dict):
     print(f"   价格中位数: {market_data.get('median_price', 0):.2f} 元")
 
     print(f"\n⚠️ 波动率:")
-    print(f"   30日波动率: {market_data.get('volatility_30d', 0)*100:.2f}%")
-    print(f"   60日波动率: {market_data.get('volatility_60d', 0)*100:.2f}%")
-    print(f"   120日波动率: {market_data.get('volatility_120d', 0)*100:.2f}%")
-    print(f"   180日波动率: {market_data.get('volatility_180d', 0)*100:.2f}%")
+    print(f"   月度(20日): {market_data.get('volatility_20d', 0)*100:.2f}%")
+    print(f"   季度(60日): {market_data.get('volatility_60d', 0)*100:.2f}%")
+    print(f"   半年(120日): {market_data.get('volatility_120d', 0)*100:.2f}%")
+    print(f"   年度(250日): {market_data.get('volatility_250d', 0)*100:.2f}%")
 
     print(f"\n📊 收益率:")
-    print(f"   30日年化收益: {market_data.get('annual_return_30d', 0)*100:.2f}%")
-    print(f"   60日年化收益: {market_data.get('annual_return_60d', 0)*100:.2f}%")
-    print(f"   120日年化收益: {market_data.get('annual_return_120d', 0)*100:.2f}%")
-    print(f"   180日年化收益: {market_data.get('annual_return_180d', 0)*100:.2f}%")
+    print(f"   月度(20日): {market_data.get('annual_return_20d', 0)*100:.2f}%")
+    print(f"   季度(60日): {market_data.get('annual_return_60d', 0)*100:.2f}%")
+    print(f"   半年(120日): {market_data.get('annual_return_120d', 0)*100:.2f}%")
+    print(f"   年度(250日): {market_data.get('annual_return_250d', 0)*100:.2f}%")
 
     print(f"\n📈 移动平均线:")
-    print(f"   MA30: {market_data.get('ma_30', 0):.2f} 元")
+    print(f"   MA20: {market_data.get('ma_20', 0):.2f} 元")
     print(f"   MA60: {market_data.get('ma_60', 0):.2f} 元")
     print(f"   MA120: {market_data.get('ma_120', 0):.2f} 元")
-    print(f"   MA180: {market_data.get('ma_180', 0):.2f} 元")
+    print(f"   MA250: {market_data.get('ma_250', 0):.2f} 元")
 
     print(f"\n📊 其他统计:")
     print(f"   60日胜率: {market_data.get('win_rate_60d', 0)*100:.1f}%")
@@ -245,32 +245,29 @@ def save_market_indices_data(indices_results: Dict, data_dir: str = '..'):
             'current_level': result['current_close'],
 
             # 波动率（多个窗口）
-            'volatility_30d': result['volatility']['30日']['latest'],
+            'volatility_20d': result['volatility']['20日']['latest'],
             'volatility_60d': result['volatility']['60日']['latest'],
             'volatility_120d': result['volatility']['120日']['latest'],
-            'volatility_180d': result['volatility']['180日']['latest'],
-            'volatility_250d': result['volatility'].get('250日', {}).get('latest', result['volatility']['180日']['latest']),
+            'volatility_250d': result['volatility'].get('250日', {}).get('latest', result['volatility']['120日']['latest']),
             'volatility': result['volatility']['60日']['latest'],  # 默认60日
 
             # 收益率（多个窗口）
-            'return_30d': result['returns']['30日']['annualized_return'],
+            'return_20d': result['returns']['20日']['annualized_return'],
             'return_60d': result['returns']['60日']['annualized_return'],
             'return_120d': result['returns']['120日']['annualized_return'],
-            'return_180d': result['returns']['180日']['annualized_return'],
-            'return_250d': result['returns'].get('250日', {}).get('annualized_return', result['returns']['180日']['annualized_return']),
+            'return_250d': result['returns'].get('250日', {}).get('annualized_return', result['returns']['120日']['annualized_return']),
             'drift': result['returns']['60日']['annualized_return'],  # 默认60日
 
             # 技术指标
-            'ma_30': result['price']['30日']['latest_ma'],
+            'ma_20': result['price']['20日']['latest_ma'],
             'ma_60': result['price']['60日']['latest_ma'],
             'ma_120': result['price']['120日']['latest_ma'],
-            'ma_180': result['price']['180日']['latest_ma'],
-            'ma_250': result['price'].get('250日', {}).get('latest_ma', result['price']['180日']['latest_ma']),
+            'ma_250': result['price'].get('250日', {}).get('latest_ma', result['price']['120日']['latest_ma']),
 
             # 胜率（多个窗口）
             'win_rate_60d': result['returns']['60日']['win_rate'],
             'win_rate_120d': result['returns']['120日']['win_rate'],
-            'win_rate_250d': result['returns'].get('250日', {}).get('win_rate', result['returns']['180日']['win_rate']),
+            'win_rate_250d': result['returns'].get('250日', {}).get('win_rate', result['returns']['120日']['win_rate']),
         }
 
     # 保存为JSON文件
