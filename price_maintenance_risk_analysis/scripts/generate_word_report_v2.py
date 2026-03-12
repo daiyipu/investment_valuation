@@ -1881,7 +1881,7 @@ def generate_stock_market_data_charts_split(market_data, price_data, volatility_
     ax.plot(x_range, price_data['close'], label='收盘价', linewidth=1.5, alpha=0.8, color='#2c3e50')
 
     colors = ['#e74c3c', '#e67e22', '#3498db', '#27ae60', '#9b59b6']
-    windows = [20, 30, 60, 120, 250]
+    windows = [20, 60, 120, 250]  # 与调用者提供的数据一致
     for i, window in enumerate(windows):
         ma_key = f'ma_{window}'
         if ma_key in price_data:
@@ -1906,7 +1906,8 @@ def generate_stock_market_data_charts_split(market_data, price_data, volatility_
     # 2. 滚动波动率图
     fig, ax = plt.subplots(figsize=(14, 5))
 
-    colors = ['#e67e22', '#3498db', '#27ae60', '#e74c3c']
+    colors = ['#e67e22', '#3498db', '#27ae60', '#9b59b6']
+    windows = [20, 60, 120, 250]  # 与调用者提供的数据一致
     for i, window in enumerate(windows):
         vol_key = f'volatility_{window}d_series'
         if vol_key in volatility_data:
