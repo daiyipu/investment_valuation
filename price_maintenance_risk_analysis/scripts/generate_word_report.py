@@ -1158,8 +1158,8 @@ def generate_stock_market_data_charts_split(market_data, price_data, volatility_
     x_range = range(len(price_data['close']))
     ax.plot(x_range, price_data['close'], label='收盘价', linewidth=1.5, alpha=0.8, color='#2c3e50')
 
-    colors = ['#e67e22', '#3498db', '#27ae60', '#e74c3c']
-    windows = [30, 60, 120, 180]
+    colors = ['#e67e22', '#3498db', '#27ae60', '#9b59b6']
+    windows = [20, 60, 120, 250]
     for i, window in enumerate(windows):
         ma_key = f'ma_{window}'
         if ma_key in price_data:
@@ -1554,13 +1554,13 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
 
                 # 准备价格数据
                 price_data = {'close': df_daily['close'].values, 'pct_chg': df_daily['pct_chg'].values}
-                for window in [30, 60, 120, 180]:
+                for window in [20, 60, 120, 250]:
                     ma = df_daily['close'].rolling(window=window).mean()
                     price_data[f'ma_{window}'] = ma.values
 
                 # 准备波动率数据
                 volatility_data = {}
-                for window in [30, 60, 120, 180]:
+                for window in [20, 60, 120, 250]:
                     pct_decimal = df_daily['pct_chg'] / 100.0
                     rolling_std = pct_decimal.rolling(window=window).std()
                     rolling_vol = rolling_std * np.sqrt(252)
