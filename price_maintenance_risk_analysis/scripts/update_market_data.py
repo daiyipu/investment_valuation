@@ -711,6 +711,177 @@ class TushareFinancialData:
 
         return result
 
+    def get_historical_fcf_for_dcf(self, max_years: int = 15) -> dict:
+        """
+        获取从上市以来的历史财务数据，用于DCF估值
+
+        参数:
+            max_years: 最多获取多少年的数据
+
+        返回:
+            包含历史FCF数据的字典
+        """
+        print(f"\n📊 获取 {self.ts_code} 的历史财务数据（用于DCF估值）...")
+
+        try:
+            # 获取上市日期（简化处理：从最早的交易日推算）
+            end_date = datetime.now().strftime('%Y%m%d')
+            start_date = (datetime.now() - timedelta(days=max_years*365)).strftime('%Y%m%d')
+
+            print(f"   查询范围: {start_date} ~ {end_date}")
+
+            # 获取利润表数据
+            income_df = self.pro.income(
+                ts_code=self.ts_code,
+                start_date=start_date,
+                end_date=end_date,
+                fields='ts_code,end_date,ann_date,revenue,operate_profit,total_profit,n_income_attr_p,'
+                       'income_tax_exp,fin_exp,int_exp'
+            )
+
+            # 获取资产负债表数据
+            balance_df = self.pro.balancesheet(
+                ts_code=self.ts_code,
+                start_date=start_date,
+                end_date=end_date,
+                fields='ts_code,end_date,total_assets,total_liab,total_hldr_eqy_exc_min_int,'
+                       'money_cap,fix_assets,total_nca'
+            )
+
+            # 获取现金流量表数据
+            cashflow_df = self.pro.cashflow(
+                ts_code=self.ts_code,
+                start_date=start_date,
+                end_date=end_date,
+                fields='ts_code,end_date,n_cashflow_act,n_cash_flows_fva,n_cash_flows_inv_act,'
+                       'n_cash_paid_to_workers,n_cash_paid_taxes'
+            )
+
+            if income_df.empty:
+                print(f"⚠️ 未获取到利润表数据")
+                return None
+
+            if balance_df.empty:
+                print(f"⚠️ 未获取到资产负债表数据")
+                return None
+
+            # 按年度汇总（保留每年最后一份报告，通常是年报）
+            income_df['year'] = income_df['end_date'].str[:4].astype(int)
+            balance_df['year'] = balance_df['end_date'].str[:4].astype(int)
+
+            # 对每个指标，取每年最后一期（年报）
+            income_annual = income_df.sort_values('end_date').groupby('year').last().reset_index()
+            balance_annual = balance_df.sort_values('end_date').groupby('year').last().reset_index()
+
+            # 合并数据
+            financial_data = income_annual.merge(
+                balance_annual,
+                on=['ts_code', 'year', 'end_date'],
+                how='outer',
+                suffixes=('', '_balance')
+            )
+
+            # 如果有现金流量表，也合并
+            if not cashflow_df.empty:
+                cashflow_df['year'] = cashflow_df['end_date'].str[:4].astype(int)
+                cashflow_annual = cashflow_df.sort_values('end_date').groupby('year').last().reset_index()
+                financial_data = financial_data.merge(
+                    cashflow_annual,
+                    on=['ts_code', 'year', 'end_date'],
+                    how='outer',
+                    suffixes=('', '_cashflow')
+                )
+
+            # 计算自由现金流
+            financial_data = self._calculate_fcf(financial_data)
+
+            # 转换为字典格式返回
+            historical_fcf = {
+                'years': int(len(financial_data)),
+                'year_range': [int(financial_data['year'].min()), int(financial_data['year'].max())],
+                'data': []
+            }
+
+            for _, row in financial_data.iterrows():
+                year_data = {
+                    'year': int(row['year']),
+                    'revenue': float(row.get('revenue', 0)) / 100000000,  # 转为亿元
+                    'operate_profit': float(row.get('operate_profit', 0)) / 100000000,
+                    'net_income': float(row.get('n_income_attr_p', 0)) / 100000000,
+                    'nopat': float(row.get('nopat', 0)) / 100000000,
+                    'depreciation': float(row.get('depreciation', 0)) / 100000000,
+                    'capex': float(row.get('capex', 0)) / 100000000,
+                    'wc_change': float(row.get('wc_change', 0)) / 100000000,
+                    'fcf': float(row.get('fcf', 0)) / 100000000,
+                }
+                historical_fcf['data'].append(year_data)
+
+            print(f"✅ 获取到 {len(financial_data)} 年的财务数据")
+            print(f"   年份范围: {financial_data['year'].min()} ~ {financial_data['year'].max()}")
+
+            # 显示最近几年数据
+            print(f"\n📋 最近5年FCF数据:")
+            print(f"{'年份':<6} {'营收(亿)':<12} {'NOPAT(亿)':<12} {'FCF(亿)':<12}")
+            print("-"*50)
+            for year_data in historical_fcf['data'][-5:]:
+                print(f"{year_data['year']:<6} {year_data['revenue']:>10.2f}     "
+                      f"{year_data['nopat']:>10.2f}     {year_data['fcf']:>10.2f}")
+
+            return historical_fcf
+
+        except Exception as e:
+            print(f"❌ 获取历史财务数据失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    def _calculate_fcf(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        计算自由现金流（内部方法）
+
+        FCF = NOPAT + 折旧摊销 - 资本支出 - 营运资本增加
+        """
+        # NOPAT (税后营业利润)
+        if 'operate_profit' in df.columns:
+            # 估算税率：假设15%（高新技术企业通常税率较低）
+            tax_rate = 0.15
+            df['nopat'] = df['operate_profit'] * (1 - tax_rate)
+        else:
+            # 使用净利润 + 利息支出估算
+            df['nopat'] = df['n_income_attr_p'].fillna(0) + df.get('int_exp', 0).fillna(0)
+
+        # 折旧摊销（简化处理）
+        # 如果有固定资产，按8%估算折旧
+        if 'fix_assets' in df.columns:
+            df['depreciation'] = df['fix_assets'] * 0.08
+        else:
+            df['depreciation'] = 0
+
+        # 资本支出（CapEx）
+        if 'n_cash_flows_inv_act' in df.columns:
+            # 投资现金流（负数表示流出），假设50%是资本支出
+            df['capex'] = -df['n_cash_flows_inv_act'].fillna(0) * 0.5
+        else:
+            # 用固定资产变化估算
+            df['fix_assets_lag'] = df['fix_assets'].shift(1)
+            df['capex'] = df['fix_assets'] - df['fix_assets_lag']
+            df['capex'] = df['capex'].fillna(0)
+
+        # 营运资本变化
+        # Working Capital ≈ 总资产 - 固定资产
+        if 'total_assets' in df.columns and 'fix_assets' in df.columns:
+            df['working_capital'] = df['total_assets'] - df['fix_assets']
+            df['wc_lag'] = df['working_capital'].shift(1)
+            df['wc_change'] = df['working_capital'] - df['wc_lag']
+            df['wc_change'] = df['wc_change'].fillna(0)
+        else:
+            df['wc_change'] = 0
+
+        # 计算FCF
+        df['fcf'] = df['nopat'] + df['depreciation'] - df['capex'] - df['wc_change']
+
+        return df
+
 
 def generate_financial_data_json(stock_code='300735.SZ', output_file=None):
     """
