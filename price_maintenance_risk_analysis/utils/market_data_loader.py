@@ -12,13 +12,13 @@ import os
 from typing import Dict, Optional
 
 
-def load_market_data(stock_code: str, data_dir: str = 'data', data_type: str = 'stock') -> Optional[Dict]:
+def load_market_data(stock_code: str, data_dir: str = None, data_type: str = 'stock') -> Optional[Dict]:
     """
     加载股票的市场数据（波动率、收益率等）或行业指数数据
 
     参数:
         stock_code: 股票代码，如 '300735.SZ' 或 '300735_SZ'
-        data_dir: 数据文件所在目录，默认为'data'目录
+        data_dir: 数据文件所在目录，默认为None时自动检测
         data_type: 数据类型 ('stock' 或 'industry')
 
     返回:
@@ -34,6 +34,30 @@ def load_market_data(stock_code: str, data_dir: str = 'data', data_type: str = '
 
         >>> industry_data = load_market_data('300735.SZ', data_type='industry')
     """
+    # 自动检测数据目录
+    if data_dir is None:
+        # 尝试多个可能的路径
+        possible_dirs = [
+            'data',           # 当在项目根目录时
+            '../data',        # 当在scripts目录时
+            '.',              # 当前目录
+            '..'              # 父目录
+        ]
+        for test_dir in possible_dirs:
+            # 统一文件名格式（将点替换为下划线）
+            if data_type == 'industry':
+                filename = stock_code.replace('.', '_') + '_industry_data.json'
+            else:
+                filename = stock_code.replace('.', '_') + '_market_data.json'
+
+            test_file = os.path.join(test_dir, filename)
+            if os.path.exists(test_file):
+                data_dir = test_dir
+                break
+
+        if data_dir is None:
+            data_dir = '../data'  # 默认值
+
     # 统一文件名格式（将点替换为下划线）
     if data_type == 'industry':
         filename = stock_code.replace('.', '_') + '_industry_data.json'

@@ -35,8 +35,14 @@ def load_placement_config(
     """
     # 自动检测数据目录
     if data_dir is None:
-        # 尝试多个可能的路径
-        possible_dirs = ['.', '..', 'data', '../data']
+        # 优先使用统一的data目录（price_maintenance_risk_analysis/data）
+        # 尝试多个可能的路径，优先级从高到低
+        possible_dirs = [
+            'data',           # price_maintenance_risk_analysis/data (当在项目根目录时)
+            '../data',        # price_maintenance_risk_analysis/data (当在scripts目录时)
+            '.',              # 当前目录
+            '..'              # 父目录（兼容性）
+        ]
         for test_dir in possible_dirs:
             test_file = os.path.join(test_dir, f"{stock_code.replace('.', '_')}_placement_params.json")
             if os.path.exists(test_file):
@@ -44,7 +50,7 @@ def load_placement_config(
                 break
 
         if data_dir is None:
-            data_dir = '.'  # 默认当前目录
+            data_dir = '../data'  # 默认使用../data目录（适合从scripts目录运行）
 
     # 统一文件名格式
     placement_file = os.path.join(data_dir, f"{stock_code.replace('.', '_')}_placement_params.json")

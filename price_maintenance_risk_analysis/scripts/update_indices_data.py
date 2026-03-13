@@ -12,7 +12,11 @@ def update_indices_data():
     更新market_indices_scenario_data.json，添加20日和250日指标
     使用30日作为20日的近似值，180日作为250日的近似值
     """
-    data_file = '../data/market_indices_scenario_data.json'
+    # 获取脚本所在目录的绝对路径
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # data目录在项目根目录下（scripts的父目录）
+    data_dir = os.path.join(os.path.dirname(script_dir), 'data')
+    data_file = os.path.join(data_dir, 'market_indices_scenario_data.json')
 
     if not os.path.exists(data_file):
         print(f"❌ 文件不存在: {data_file}")
