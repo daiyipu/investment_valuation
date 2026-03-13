@@ -299,7 +299,10 @@ def update_placement_params_issue_price(stock_code, ma20, data_dir):
         placement_file = os.path.join(data_dir, f"{stock_code.replace('.', '_')}_placement_params.json")
 
         if not os.path.exists(placement_file):
-            print(f"⚠️ 未找到 {placement_file}，跳过发行价更新")
+            print(f"⚠️ 未找到 {placement_file}")
+            print(f"   路径说明: placement_params.json文件不存在")
+            print(f"   建议: 运行一次报告生成脚本，会自动创建该文件")
+            print(f"   跳过发行价更新")
             return
 
         # 读取placement_params.json
@@ -1199,7 +1202,11 @@ if __name__ == '__main__':
 
         # 保存文件到项目根目录的data目录
         filename = f"{stock_code.replace('.', '_')}_market_data.json"
-        data_dir = os.path.join('..', 'data')
+
+        # 获取脚本所在目录的绝对路径
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        # data目录是项目根目录下的data文件夹
+        data_dir = os.path.join(os.path.dirname(script_dir), 'data')
 
         # 确保data目录存在
         os.makedirs(data_dir, exist_ok=True)
@@ -1219,7 +1226,32 @@ if __name__ == '__main__':
         print("="*70)
 
         placement_file = os.path.join(data_dir, f"{stock_code.replace('.', '_')}_placement_params.json")
-        if os.path.exists(placement_file):
+
+        # 如果文件不存在，创建默认配置
+        if not os.path.exists(placement_file):
+            print(f"⚠️ {placement_file} 不存在，创建默认配置文件")
+
+            # 创建默认配置
+            placement_params = {
+                "stock_code": stock_code,
+                "stock_name": "光弘科技",
+                "issue_price": market_data.get('ma_20', 25) * 0.9,  # 默认为MA20的9折
+                "current_price": market_data.get('current_price', 25),
+                "lockup_period": 6,  # 默认6个月
+                "financing_amount": 7.0,  # 默认7亿元
+                "price_source": "update_market_data.py自动创建",
+                "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                "updated_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+
+            # 保存默认配置
+            with open(placement_file, 'w', encoding='utf-8') as f:
+                json.dump(placement_params, f, indent=2, ensure_ascii=False)
+
+            print(f"✅ 已创建默认配置文件: {placement_file}")
+            print(f"   发行价: {placement_params['issue_price']:.2f} 元（MA20的9折）")
+        else:
+            # 读取现有配置
             with open(placement_file, 'r', encoding='utf-8') as f:
                 placement_params = json.load(f)
 

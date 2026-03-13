@@ -84,8 +84,10 @@ class PEHistoryAnalyzer:
                 end_date=end_date
             )
 
-            if df.empty:
+            if df is None or df.empty:
                 print(f"⚠️ 未获取到{stock_code}的历史PE数据")
+                print(f"   可能原因：该股票上市时间不足5年，或API接口返回空数据")
+                print(f"   建议：减少历史天数参数（如days=730获取2年数据）")
                 return None
 
             # 过滤掉PE为空或异常的数据
@@ -164,14 +166,22 @@ class PEHistoryAnalyzer:
             industry_name = industry_info.iloc[0]['industry_name'] if not industry_info.empty else index_code
 
             # 2. 获取行业指数历史PE数据
-            df_index = self.pro.index_dailybasic(
-                ts_code=index_code,
-                start_date=start_date,
-                end_date=end_date
-            )
+            try:
+                df_index = self.pro.index_dailybasic(
+                    ts_code=index_code,
+                    start_date=start_date,
+                    end_date=end_date
+                )
+            except Exception as api_error:
+                print(f"⚠️ 调用tushare index_dailybasic接口失败: {api_error}")
+                print(f"   可能原因：行业指数代码{index_code}不支持或需要高级权限")
+                print(f"   建议：使用个股PE历史数据进行相对估值分析")
+                return industry_name, index_code, None
 
-            if df_index.empty:
+            if df_index is None or df_index.empty:
                 print(f"⚠️ 未获取到{industry_name}({index_code})的历史PE数据")
+                print(f"   可能原因：该行业指数历史数据不可用")
+                print(f"   建议：仅使用个股PE历史数据进行分析")
                 return industry_name, index_code, None
 
             # 过滤掉PE为空或异常的数据
