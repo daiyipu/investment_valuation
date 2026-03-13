@@ -166,22 +166,31 @@ class PEHistoryAnalyzer:
             industry_name = industry_info.iloc[0]['industry_name'] if not industry_info.empty else index_code
 
             # 2. 获取行业指数历史PE数据
+            # 使用sw_daily接口获取申万行业日线行情（包含PE、PB等估值指标）
             try:
-                df_index = self.pro.index_dailybasic(
+                df_index = self.pro.sw_daily(
                     ts_code=index_code,
                     start_date=start_date,
                     end_date=end_date
                 )
-            except Exception as api_error:
-                print(f"⚠️ 调用tushare index_dailybasic接口失败: {api_error}")
-                print(f"   可能原因：行业指数代码{index_code}不支持或需要高级权限")
-                print(f"   建议：使用个股PE历史数据进行相对估值分析")
-                return industry_name, index_code, None
 
-            if df_index is None or df_index.empty:
-                print(f"⚠️ 未获取到{industry_name}({index_code})的历史PE数据")
-                print(f"   可能原因：该行业指数历史数据不可用")
-                print(f"   建议：仅使用个股PE历史数据进行分析")
+                if df_index is None or df_index.empty:
+                    print(f"⚠️ {industry_name}({index_code})的历史PE数据不可用")
+                    print(f"   原因：sw_daily接口返回空数据")
+                    print(f"   解决方案：将使用个股PE历史数据生成趋势图")
+                    return industry_name, index_code, None
+
+                # sw_daily返回的是pe列（不是pe_ttm），需要重命名以保持一致性
+                if 'pe' in df_index.columns:
+                    df_index = df_index.rename(columns={'pe': 'pe_ttm'})
+                else:
+                    print(f"⚠️ {industry_name}({index_code})数据中不包含PE列")
+                    return industry_name, index_code, None
+
+            except Exception as api_error:
+                print(f"⚠️ 调用tushare sw_daily接口失败")
+                print(f"   原因：{api_error}")
+                print(f"   解决方案：将使用个股PE历史数据生成趋势图")
                 return industry_name, index_code, None
 
             # 过滤掉PE为空或异常的数据
