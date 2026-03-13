@@ -317,7 +317,8 @@ class PEHistoryAnalyzer:
         ax3.tick_params(axis='x', rotation=45)
 
         # 添加统计信息
-        ax3.text(0.02, 0.95, f'当前PE: {stock_data.iloc[-1][\"pe_ttm\"]:.2f}',
+        current_pe_value = stock_data.iloc[-1]['pe_ttm']
+        ax3.text(0.02, 0.95, f'当前PE: {current_pe_value:.2f}',
                 transform=ax3.transAxes, verticalalignment='top',
                 bbox=dict(boxstyle='round', facecolor='#C73E1D', alpha=0.2),
                 fontsize=10, fontproperties=self.font_prop)
@@ -347,7 +348,8 @@ class PEHistoryAnalyzer:
         ax4.tick_params(axis='x', rotation=45)
 
         # 添加统计信息
-        ax4.text(0.02, 0.95, f'当前PE: {industry_data.iloc[-1][\"pe_ttm\"]:.2f}',
+        industry_pe_value = industry_data.iloc[-1]['pe_ttm']
+        ax4.text(0.02, 0.95, f'当前PE: {industry_pe_value:.2f}',
                 transform=ax4.transAxes, verticalalignment='top',
                 bbox=dict(boxstyle='round', facecolor='#6A994E', alpha=0.2),
                 fontsize=10, fontproperties=self.font_prop)
