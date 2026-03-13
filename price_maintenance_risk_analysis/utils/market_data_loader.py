@@ -12,13 +12,14 @@ import os
 from typing import Dict, Optional
 
 
-def load_market_data(stock_code: str, data_dir: str = 'data') -> Optional[Dict]:
+def load_market_data(stock_code: str, data_dir: str = 'data', data_type: str = 'stock') -> Optional[Dict]:
     """
-    加载股票的市场数据（波动率、收益率等）
+    加载股票的市场数据（波动率、收益率等）或行业指数数据
 
     参数:
         stock_code: 股票代码，如 '300735.SZ' 或 '300735_SZ'
         data_dir: 数据文件所在目录，默认为'data'目录
+        data_type: 数据类型 ('stock' 或 'industry')
 
     返回:
         包含市场数据的字典，如果文件不存在则返回None
@@ -30,24 +31,43 @@ def load_market_data(stock_code: str, data_dir: str = 'data') -> Optional[Dict]:
         ...     drift = market_data['drift']
         ...     print(f"波动率: {volatility*100:.2f}%")
         ...     print(f"收益率: {drift*100:.2f}%")
+
+        >>> industry_data = load_market_data('300735.SZ', data_type='industry')
     """
     # 统一文件名格式（将点替换为下划线）
-    filename = stock_code.replace('.', '_') + '_market_data.json'
+    if data_type == 'industry':
+        filename = stock_code.replace('.', '_') + '_industry_data.json'
+    else:
+        filename = stock_code.replace('.', '_') + '_market_data.json'
+
     filepath = os.path.join(data_dir, filename)
 
     if not os.path.exists(filepath):
         print(f"⚠️ 市场数据文件不存在: {filepath}")
-        print(f"   提示: 请先运行 07_market_data_analysis.ipynb 生成数据")
+        if data_type == 'stock':
+            print(f"   提示: 请先运行 07_market_data_analysis.ipynb 生成数据")
+        else:
+            print(f"   提示: 请先运行 update_market_data.py 生成行业数据")
         return None
 
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
             market_data = json.load(f)
 
-        print(f"✅ 已加载市场数据: {filepath}")
-        print(f"   股票: {market_data.get('stock_name', 'N/A')} ({market_data.get('stock_code', 'N/A')})")
-        print(f"   分析日期: {market_data.get('analysis_date', 'N/A')}")
-        print(f"   当前价格: {market_data.get('current_price', 0):.2f} 元")
+        if data_type == 'industry':
+            print(f"✅ 已加载行业数据: {filepath}")
+            print(f"   行业: {market_data.get('sw_l1_name', 'N/A')}", end='')
+            if market_data.get('sw_l2_name'):
+                print(f" -> {market_data.get('sw_l2_name', 'N/A')}")
+            else:
+                print()
+            print(f"   指数代码: {market_data.get('index_code', 'N/A')}")
+            print(f"   当前点位: {market_data.get('current_level', 0):.2f}")
+        else:
+            print(f"✅ 已加载市场数据: {filepath}")
+            print(f"   股票: {market_data.get('stock_name', 'N/A')} ({market_data.get('stock_code', 'N/A')})")
+            print(f"   分析日期: {market_data.get('analysis_date', 'N/A')}")
+            print(f"   当前价格: {market_data.get('current_price', 0):.2f} 元")
 
         return market_data
 

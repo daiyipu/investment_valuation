@@ -52,27 +52,30 @@ def fetch_latest_data(stock_code='300735.SZ', days=500):
 def calculate_rolling_volatility(df, window, annualize=True):
     """
     计算滚动波动率
-    
+
     参数:
-        df: 包含pct_chg列的DataFrame（pct_chg为百分比形式，如2.5表示2.5%）
+        df: 包含pct_chg或pct_change列的DataFrame（涨跌幅为百分比形式，如2.5表示2.5%）
         window: 窗口大小（交易日）
         annualize: 是否年化
-    
+
     返回:
         波动率序列和统计值（小数形式，如0.23表示23%）
     """
-    # Tushare的pct_chg是百分比形式（如2.5表示2.5%），需要先转换为小数
-    pct_decimal = df['pct_chg'] / 100.0
-    
+    # 兼容不同的字段名：pct_chg（daily接口）或 pct_change（sw_daily接口）
+    pct_col = 'pct_chg' if 'pct_chg' in df.columns else 'pct_change'
+
+    # Tushare的涨跌幅是百分比形式（如2.5表示2.5%），需要先转换为小数
+    pct_decimal = df[pct_col] / 100.0
+
     # 计算滚动标准差
     rolling_std = pct_decimal.rolling(window=window).std()
-    
+
     # 年化波动率 (假设一年252个交易日)
     if annualize:
         rolling_vol = rolling_std * np.sqrt(252)
     else:
         rolling_vol = rolling_std
-    
+
     # 返回最新值和平均值
     return {
         'latest': rolling_std.iloc[-1] * np.sqrt(252),  # 最新波动率
@@ -87,6 +90,11 @@ def calculate_rolling_volatility(df, window, annualize=True):
 def calculate_annual_return(df, window):
     """
     计算年化收益率（窗口期）
+
+    年化方法：
+    - 60日（季度）：期间收益率 × 4
+    - 120日（半年度）：期间收益率 × 2
+    - 250日（年度）：期间收益率 × 1
     """
     if len(df) < window:
         return np.nan
@@ -98,12 +106,23 @@ def calculate_annual_return(df, window):
     # 计算期间收益率
     period_return = (end_price - start_price) / start_price
 
-    # 年化收益率（假设一年252个交易日）
-    years = window / 252.0
-    if years > 0:
-        annual_return = (1 + period_return) ** (1 / years) - 1
+    # 根据窗口期计算年化倍数
+    if window == 60:
+        # 季度：一年4个季度
+        annual_return = period_return * 4
+    elif window == 120:
+        # 半年度：一年2个半年度
+        annual_return = period_return * 2
+    elif window == 250:
+        # 年度：直接使用期间收益率
+        annual_return = period_return
     else:
-        annual_return = 0
+        # 其他窗口：按交易日比例年化（252个交易日/年）
+        years = window / 252.0
+        if years > 0:
+            annual_return = period_return / years
+        else:
+            annual_return = 0
 
     return annual_return
 
@@ -265,85 +284,6 @@ def print_market_data_summary(market_data):
 
     print(f"\n⏰ 数据生成时间: {market_data['generated_at']}")
     print("="*70)
-
-
-def update_placement_params_issue_price(stock_code, ma20, data_dir):
-    """
-    根据MA20更新placement_params.json中的issue_price
-
-    参数:
-        stock_code: 股票代码
-        ma20: MA20价格
-        data_dir: 数据目录
-    """
-    try:
-        placement_file = os.path.join(data_dir, f"{stock_code.replace('.', '_')}_placement_params.json")
-
-        if not os.path.exists(placement_file):
-            print(f"⚠️ 未找到 {placement_file}，跳过发行价更新")
-            return
-
-        # 读取placement_params.json
-        with open(placement_file, 'r', encoding='utf-8') as f:
-            placement_params = json.load(f)
-
-        # 计算新的发行价（MA20的9折，即10%折价）
-        new_issue_price = ma20 * 0.9
-        old_issue_price = placement_params.get('issue_price')
-
-        # 更新issue_price和price_source
-        placement_params['issue_price'] = new_issue_price
-        placement_params['price_source'] = 'MA20的9折'
-
-        # 保存
-        with open(placement_file, 'w', encoding='utf-8') as f:
-            json.dump(placement_params, f, indent=2, ensure_ascii=False)
-
-        print(f"✅ 已更新发行价:")
-        print(f"   旧发行价: {old_issue_price:.2f} 元")
-        print(f"   新发行价: {new_issue_price:.2f} 元（MA20: {ma20:.2f} × 0.9）")
-        print(f"   折价率: -10.0%")
-        print(f"   文件: {placement_file}")
-
-    except Exception as e:
-        print(f"⚠️ 更新发行价失败: {e}")
-
-
-if __name__ == '__main__':
-    # 生成市场数据
-    stock_code = '300735.SZ'
-    stock_name = '光弘科技'
-
-    print("="*70)
-    print("🚀 生成最新市场数据（使用当前日期回溯）")
-    print("="*70)
-
-    # 生成数据
-    market_data = generate_market_data(stock_code, stock_name)
-
-    if market_data:
-        # 打印摘要
-        print_market_data_summary(market_data)
-
-        # 保存文件到项目根目录的data目录
-        filename = f"{stock_code.replace('.', '_')}_market_data.json"
-        data_dir = os.path.join('..', 'data')
-
-        # 确保data目录存在
-        os.makedirs(data_dir, exist_ok=True)
-
-        # 保存到data目录
-        filepath = os.path.join(data_dir, filename)
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(market_data, f, ensure_ascii=False, indent=2)
-        print(f"\n✅ 已保存市场数据到: {filepath}")
-
-        # 根据MA20更新placement_params.json中的issue_price
-        update_placement_params_issue_price(stock_code, market_data['ma_20'], data_dir)
-
-        print("\n📌 使用方法:")
-        print(f"   from utils.market_data_loader import load_market_data")
-        print(f"   market_data = load_market_data('{stock_code}')")
 
 
 def update_placement_params_issue_price(stock_code, ma20, data_dir):
@@ -749,12 +689,13 @@ class TushareFinancialData:
             )
 
             # 获取现金流量表数据
+            # n_cashflow_act: 经营活动现金流
+            # n_cash_flows_inv_act: 投资活动现金流
             cashflow_df = self.pro.cashflow(
                 ts_code=self.ts_code,
                 start_date=start_date,
                 end_date=end_date,
-                fields='ts_code,end_date,n_cashflow_act,n_cash_flows_fva,n_cash_flows_inv_act,'
-                       'n_cash_paid_to_workers,n_cash_paid_taxes'
+                fields='ts_code,end_date,n_cashflow_act,n_cash_flows_inv_act'
             )
 
             if income_df.empty:
@@ -839,46 +780,75 @@ class TushareFinancialData:
         """
         计算自由现金流（内部方法）
 
-        FCF = NOPAT + 折旧摊销 - 资本支出 - 营运资本增加
+        使用简化方法：FCF ≈ 经营活动现金流 - 资本支出
+        或者：FCF = 净利润 + 折旧摊销 - 资本支出 - 营运资本增加
         """
-        # NOPAT (税后营业利润)
-        if 'operate_profit' in df.columns:
-            # 估算税率：假设15%（高新技术企业通常税率较低）
-            tax_rate = 0.15
-            df['nopat'] = df['operate_profit'] * (1 - tax_rate)
-        else:
-            # 使用净利润 + 利息支出估算
-            df['nopat'] = df['n_income_attr_p'].fillna(0) + df.get('int_exp', 0).fillna(0)
+        # 方法1：优先使用现金流量表数据（最准确）
+        if 'n_cashflow_act' in df.columns:
+            # 经营活动现金流
+            df['ocf'] = df['n_cashflow_act'].fillna(0)
 
-        # 折旧摊销（简化处理）
-        # 如果有固定资产，按8%估算折旧
-        if 'fix_assets' in df.columns:
-            df['depreciation'] = df['fix_assets'] * 0.08
-        else:
-            df['depreciation'] = 0
+            # 资本支出：使用投资活动现金流的估计值（保守估计：假设30%是资本支出）
+            # 对于成长型企业，投资现金流流出主要是扩产，但不全是资本支出
+            if 'n_cash_flows_inv_act' in df.columns:
+                df['capex'] = -df['n_cash_flows_inv_act'].fillna(0) * 0.3
+            else:
+                df['capex'] = 0
 
-        # 资本支出（CapEx）
-        if 'n_cash_flows_inv_act' in df.columns:
-            # 投资现金流（负数表示流出），假设50%是资本支出
-            df['capex'] = -df['n_cash_flows_inv_act'].fillna(0) * 0.5
-        else:
-            # 用固定资产变化估算
-            df['fix_assets_lag'] = df['fix_assets'].shift(1)
-            df['capex'] = df['fix_assets'] - df['fix_assets_lag']
-            df['capex'] = df['capex'].fillna(0)
+            # FCF = 经营活动现金流 - 资本支出
+            df['fcf'] = df['ocf'] - df['capex']
 
-        # 营运资本变化
-        # Working Capital ≈ 总资产 - 固定资产
-        if 'total_assets' in df.columns and 'fix_assets' in df.columns:
-            df['working_capital'] = df['total_assets'] - df['fix_assets']
-            df['wc_lag'] = df['working_capital'].shift(1)
-            df['wc_change'] = df['working_capital'] - df['wc_lag']
-            df['wc_change'] = df['wc_change'].fillna(0)
-        else:
+            # 同时计算NOPAT用于对比分析
+            if 'operate_profit' in df.columns:
+                tax_rate = 0.15
+                df['nopat'] = df['operate_profit'] * (1 - tax_rate)
+            else:
+                df['nopat'] = df['n_income_attr_p'].fillna(0)
+
+            if 'fix_assets' in df.columns:
+                df['depreciation'] = df['fix_assets'] * 0.08
+            else:
+                df['depreciation'] = 0
+
+            # wc_change设为0（因为使用OCF方法时不需要计算营运资本变化）
             df['wc_change'] = 0
 
-        # 计算FCF
-        df['fcf'] = df['nopat'] + df['depreciation'] - df['capex'] - df['wc_change']
+        else:
+            # 方法2：如果没有现金流数据，使用损益表和资产负债表估算
+            # NOPAT (税后营业利润)
+            if 'operate_profit' in df.columns:
+                tax_rate = 0.15
+                df['nopat'] = df['operate_profit'] * (1 - tax_rate)
+            else:
+                df['nopat'] = df['n_income_attr_p'].fillna(0)
+
+            # 折旧摊销（简化处理）
+            if 'fix_assets' in df.columns:
+                df['depreciation'] = df['fix_assets'] * 0.08
+            else:
+                df['depreciation'] = 0
+
+            # 资本支出（用固定资产变化估算）
+            if 'fix_assets' in df.columns:
+                df['fix_assets_lag'] = df['fix_assets'].shift(1)
+                df['capex'] = (df['fix_assets'] - df['fix_assets_lag']).fillna(0)
+                # 资本支出不能为负（至少为0）
+                df['capex'] = df['capex'].apply(lambda x: max(x, 0))
+            else:
+                df['capex'] = 0
+
+            # 营运资本变化（使用正确定义：流动资产 - 流动负债）
+            if 'total_current_assets' in df.columns and 'total_current_liab' in df.columns:
+                df['working_capital'] = df['total_current_assets'] - df['total_current_liab']
+                df['wc_lag'] = df['working_capital'].shift(1)
+                df['wc_change'] = df['working_capital'] - df['wc_lag']
+                df['wc_change'] = df['wc_change'].fillna(0)
+            else:
+                df['wc_change'] = 0
+
+            # FCF = NOPAT + 折旧摊销 - 资本支出 - 营运资本增加
+            df['fcf'] = df['nopat'] + df['depreciation'] - df['capex'] - df['wc_change']
+            df['ocf'] = df['fcf']  # 用于后续处理
 
         return df
 
@@ -918,3 +888,397 @@ def generate_financial_data_json(stock_code='300735.SZ', output_file=None):
     except Exception as e:
         print(f"❌ 生成财务数据JSON失败: {e}")
         return None
+
+
+def get_stock_industry_classification(stock_code):
+    """
+    获取股票的申万行业分类（使用与第二章相对估值相同的方法）
+
+    参数:
+        stock_code: 股票代码，如 '300735.SZ'
+
+    返回:
+        包含行业信息和行业指数代码的字典
+    """
+    try:
+        pro = ts.pro_api()
+
+        # 获取申万三级行业分类（与第二章相对估值一致）
+        df_industry = pro.index_member_all(ts_code=stock_code)
+
+        if df_industry.empty:
+            print(f"⚠️ 未获取到{stock_code}的行业分类信息")
+            return None
+
+        df_industry = df_industry.sort_values('in_date', ascending=False)
+        latest_industry = df_industry.iloc[0]
+
+        sw_l1_code = latest_industry['l1_code']  # 申万一级行业代码
+        sw_l1_name = latest_industry['l1_name']  # 申万一级行业名称
+        sw_l2_code = latest_industry['l2_code']  # 申万二级行业代码
+        sw_l2_name = latest_industry['l2_name']  # 申万二级行业名称
+        sw_l3_code = latest_industry['l3_code']  # 申万三级行业代码
+        sw_l3_name = latest_industry['l3_name']  # 申万三级行业名称
+
+        print(f"✅ 获取到申万行业分类:")
+        print(f"   一级: {sw_l1_name} ({sw_l1_code})")
+        if sw_l2_name:
+            print(f"   二级: {sw_l2_name} ({sw_l2_code})")
+        if sw_l3_name:
+            print(f"   三级: {sw_l3_name} ({sw_l3_code})")
+
+        # 将申万三级行业代码转换为行业指数代码
+        # 申万三级行业指数代码格式: 850531.SI (消费电子零部件及组装)
+        # 注意：index_member_all返回的l3_code可能已经包含.SI后缀
+
+        # 申万三级行业指数代码（检查是否已有.SI后缀）
+        if sw_l3_code:
+            sw_l3_index_code = sw_l3_code if sw_l3_code.endswith('.SI') else f"{sw_l3_code}.SI"
+        else:
+            sw_l3_index_code = sw_l1_code if sw_l1_code.endswith('.SI') else f"{sw_l1_code}.SI"
+
+        result = {
+            'sw_l1_code': sw_l1_code,
+            'sw_l1_name': sw_l1_name,
+            'sw_l2_code': sw_l2_code,
+            'sw_l2_name': sw_l2_name,
+            'sw_l3_code': sw_l3_code,
+            'sw_l3_name': sw_l3_name,
+            'sw_l3_index_code': sw_l3_index_code,  # 申万三级行业指数代码(用于获取历史数据)
+        }
+
+        print(f"   申万三级行业指数代码: {sw_l3_index_code}")
+
+        return result
+
+    except Exception as e:
+        print(f"⚠️ 获取行业分类失败: {e}")
+        import traceback
+        traceback.print_exc()
+        # 返回默认值（电子行业）
+        return {
+            'sw_l1_code': '801010',
+            'sw_l1_name': '电子',
+            'sw_l2_code': '',
+            'sw_l2_name': '',
+            'sw_l3_code': '',
+            'sw_l3_name': '',
+            'sw_l3_index_code': '801010.SI',  # 默认申万电子指数
+        }
+
+
+def fetch_industry_index_data(index_code, days=500):
+    """
+    获取申万行业指数历史数据（使用sw_daily接口）
+
+    参数:
+        index_code: 行业指数代码，如 '801010.SI' (申万电子指数) 或 '850531.SI' (三级行业指数)
+        days: 获取天数
+
+    返回:
+        DataFrame或None
+    """
+    try:
+        pro = ts.pro_api()
+
+        # 计算日期范围
+        end_date = datetime.now().strftime('%Y%m%d')
+        start_date = (datetime.now() - timedelta(days=days*2)).strftime('%Y%m%d')
+
+        print(f"   查询时间范围: {start_date} ~ {end_date}")
+
+        # 使用申万行业日线行情接口（sw_daily）
+        df = pro.sw_daily(ts_code=index_code, start_date=start_date, end_date=end_date)
+
+        if df is None or df.empty:
+            print(f"   ⚠️ 未获取到数据")
+            return None
+
+        # 按日期排序
+        df = df.sort_values('trade_date')
+        df.reset_index(drop=True, inplace=True)
+
+        print(f"   ✅ 获取到 {len(df)} 条数据")
+        print(f"   数据范围: {df['trade_date'].iloc[0]} ~ {df['trade_date'].iloc[-1]}")
+
+        # sw_daily接口返回的字段名与index_daily相同，无需转换
+
+        return df
+
+    except Exception as e:
+        print(f"   ❌ 获取{index_code}数据失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def generate_industry_data(stock_code, days=500):
+    """
+    生成行业指数数据（用于对比分析）
+
+    参数:
+        stock_code: 股票代码
+        days: 获取天数
+
+    返回:
+        包含行业指数数据的字典
+    """
+    print("\n" + "="*70)
+    print("📊 生成行业指数数据（申万行业分类）")
+    print("="*70)
+
+    # 获取行业分类
+    industry_info = get_stock_industry_classification(stock_code)
+
+    if not industry_info:
+        print("⚠️ 无法获取行业分类，跳过行业数据生成")
+        return None
+
+    # 使用申万三级行业指数代码
+    index_code = industry_info.get('sw_l3_index_code')
+
+    # 行业名称显示（使用三级行业名称，如果没有则使用一级或二级）
+    sw_l3_name = industry_info.get('sw_l3_name', '')
+    sw_l2_name = industry_info.get('sw_l2_name', '')
+    sw_l1_name = industry_info.get('sw_l1_name', '')
+
+    if sw_l3_name:
+        industry_display_name = sw_l3_name
+    elif sw_l2_name:
+        industry_display_name = f"{sw_l1_name}-{sw_l2_name}"
+    else:
+        industry_display_name = sw_l1_name
+
+    if not index_code:
+        print("⚠️ 未找到行业指数代码")
+        return None
+
+    print(f"📡 正在获取 {industry_display_name}（{index_code}）的行业指数数据...")
+
+    # 获取行业指数历史数据
+    df = fetch_industry_index_data(index_code, days=days)
+
+    if df is None or len(df) < 250:
+        print(f"⚠️ 行业指数数据不足，跳过")
+        return None
+
+    # 计算行业指数指标（使用与个股相同的计算方法）
+    latest_date = df['trade_date'].iloc[-1]
+    current_level = df['close'].iloc[-1]
+
+    # 波动率
+    vol_20 = calculate_rolling_volatility(df, 20)
+    vol_60 = calculate_rolling_volatility(df, 60)
+    vol_120 = calculate_rolling_volatility(df, 120)
+    vol_250 = calculate_rolling_volatility(df, 250)
+
+    # 年化收益率
+    annual_return_20d = calculate_annual_return(df, 20)
+    annual_return_60d = calculate_annual_return(df, 60)
+    annual_return_120d = calculate_annual_return(df, 120)
+    annual_return_250d = calculate_annual_return(df, 250)
+
+    # 区间收益率
+    period_return_20d = calculate_period_return(df, 20)
+    period_return_60d = calculate_period_return(df, 60)
+    period_return_120d = calculate_period_return(df, 120)
+    period_return_250d = calculate_period_return(df, 250)
+
+    # 移动平均线
+    ma_20 = df['close'].rolling(window=20).mean().iloc[-1]
+    ma_60 = df['close'].rolling(window=60).mean().iloc[-1]
+    ma_120 = df['close'].rolling(window=120).mean().iloc[-1]
+    ma_250 = df['close'].rolling(window=250).mean().iloc[-1]
+
+    # 胜率（兼容pct_chg和pct_change字段）
+    pct_col = 'pct_chg' if 'pct_chg' in df.columns else 'pct_change'
+    win_rate_60d = (df[pct_col].iloc[-60:] > 0).sum() / 60
+
+    # 构建行业数据字典
+    industry_data = {
+        'index_code': index_code,
+        'industry_name': industry_display_name,
+        'sw_l1_code': industry_info.get('sw_l1_code', ''),
+        'sw_l1_name': sw_l1_name,
+        'sw_l2_code': industry_info.get('sw_l2_code', ''),
+        'sw_l2_name': sw_l2_name,
+        'sw_l3_code': industry_info.get('sw_l3_code', ''),
+        'sw_l3_name': sw_l3_name,
+        'analysis_date': latest_date,
+        'current_level': round(float(current_level), 2),
+        'volatility_20d': round(float(vol_20['latest']), 4),
+        'volatility_60d': round(float(vol_60['latest']), 4),
+        'volatility_120d': round(float(vol_120['latest']), 4),
+        'volatility_250d': round(float(vol_250['latest']), 4),
+        'volatility': round(float(vol_60['latest']), 4),  # 默认60日
+        'annual_return_20d': round(float(annual_return_20d), 4),
+        'annual_return_60d': round(float(annual_return_60d), 4),
+        'annual_return_120d': round(float(annual_return_120d), 4),
+        'annual_return_250d': round(float(annual_return_250d), 4),
+        'period_return_20d': round(float(period_return_20d), 4),
+        'period_return_60d': round(float(period_return_60d), 4),
+        'period_return_120d': round(float(period_return_120d), 4),
+        'period_return_250d': round(float(period_return_250d), 4),
+        'drift': round(float(annual_return_60d), 4),
+        'ma_20': round(float(ma_20), 2),
+        'ma_60': round(float(ma_60), 2),
+        'ma_120': round(float(ma_120), 2),
+        'ma_250': round(float(ma_250), 2),
+        'win_rate_60d': round(float(win_rate_60d), 4),
+        'total_days': len(df),
+        'data_source': 'tushare_sw_index',
+        'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
+
+    return industry_data
+
+
+def update_placement_params_with_fcf(stock_code, ma20, data_dir):
+    """
+    更新placement_params.json，添加历史FCF数据
+
+    参数:
+        stock_code: 股票代码
+        ma20: MA20价格
+        data_dir: 数据目录
+    """
+    try:
+        placement_file = os.path.join(data_dir, f"{stock_code.replace('.', '_')}_placement_params.json")
+
+        if not os.path.exists(placement_file):
+            print(f"⚠️ 未找到 {placement_file}，跳过FCF数据更新")
+            return
+
+        # 读取placement_params.json
+        with open(placement_file, 'r', encoding='utf-8') as f:
+            placement_params = json.load(f)
+
+        # 添加历史FCF数据（使用修复后的FCF计算方法）
+        print(f"📊 获取历史FCF数据...")
+        financial = TushareFinancialData(stock_code)
+        historical_fcf = financial.get_historical_fcf_for_dcf(max_years=15)
+
+        if historical_fcf and historical_fcf.get('data'):
+            placement_params['historical_fcf_data'] = historical_fcf
+            print(f"✅ 已添加 {len(historical_fcf['data'])} 年历史FCF数据")
+
+            # 显示最近几年的FCF
+            print(f"   最近几年FCF（亿元）:")
+            for item in historical_fcf['data'][-5:]:
+                print(f"   {item['year']}: {item['fcf']:.2f}")
+        else:
+            print(f"⚠️ 未获取到历史FCF数据")
+
+        # 保存
+        with open(placement_file, 'w', encoding='utf-8') as f:
+            json.dump(placement_params, f, indent=2, ensure_ascii=False)
+
+        print(f"✅ 已更新FCF数据到: {placement_file}")
+
+    except Exception as e:
+        print(f"⚠️ 更新FCF数据失败: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+if __name__ == '__main__':
+    # 生成市场数据
+    stock_code = '300735.SZ'
+    stock_name = '光弘科技'
+
+    print("="*70)
+    print("🚀 生成最新市场数据（使用当前日期回溯）")
+    print("="*70)
+
+    # 生成数据
+    market_data = generate_market_data(stock_code, stock_name)
+
+    if market_data:
+        # 打印摘要
+        print_market_data_summary(market_data)
+
+        # 保存文件到项目根目录的data目录
+        filename = f"{stock_code.replace('.', '_')}_market_data.json"
+        data_dir = os.path.join('..', 'data')
+
+        # 确保data目录存在
+        os.makedirs(data_dir, exist_ok=True)
+
+        # 保存到data目录
+        filepath = os.path.join(data_dir, filename)
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(market_data, f, ensure_ascii=False, indent=2)
+        print(f"\n✅ 已保存市场数据到: {filepath}")
+
+        # 根据MA20更新placement_params.json中的issue_price
+        update_placement_params_issue_price(stock_code, market_data['ma_20'], data_dir)
+
+        # 添加历史FCF数据到placement_params.json
+        print("\n" + "="*70)
+        print("📊 添加历史FCF数据到 placement_params.json")
+        print("="*70)
+
+        placement_file = os.path.join(data_dir, f"{stock_code.replace('.', '_')}_placement_params.json")
+        if os.path.exists(placement_file):
+            with open(placement_file, 'r', encoding='utf-8') as f:
+                placement_params = json.load(f)
+
+            # 获取历史FCF数据
+            print(f"正在获取历史FCF数据...")
+            financial = TushareFinancialData(stock_code)
+            historical_fcf = financial.get_historical_fcf_for_dcf(max_years=15)
+
+            if historical_fcf and historical_fcf.get('data'):
+                placement_params['historical_fcf_data'] = historical_fcf
+                print(f"✅ 已添加 {len(historical_fcf['data'])} 年历史FCF数据")
+
+                # 显示最近几年的FCF
+                print(f"   最近几年FCF（亿元）:")
+                for item in historical_fcf['data'][-5:]:
+                    print(f"   {item['year']}: {item['fcf']:.2f}")
+
+                # 保存更新后的文件
+                with open(placement_file, 'w', encoding='utf-8') as f:
+                    json.dump(placement_params, f, indent=2, ensure_ascii=False)
+                print(f"✅ 已更新FCF数据到: {placement_file}")
+            else:
+                print(f"⚠️ 未获取到历史FCF数据")
+
+        # 生成行业指数数据
+        print("\n" + "="*70)
+        print("📊 生成行业指数数据")
+        print("="*70)
+
+        industry_data = generate_industry_data(stock_code)
+
+        if industry_data:
+            # 保存行业数据
+            industry_filename = f"{stock_code.replace('.', '_')}_industry_data.json"
+            industry_filepath = os.path.join(data_dir, industry_filename)
+
+            with open(industry_filepath, 'w', encoding='utf-8') as f:
+                json.dump(industry_data, f, ensure_ascii=False, indent=2)
+
+            print(f"\n✅ 已保存行业指数数据到: {industry_filepath}")
+
+            # 打印行业数据摘要
+            print("\n📊 行业指数数据摘要:")
+            print(f"   行业: {industry_data['sw_l1_name']}", end='')
+            if industry_data.get('sw_l2_name'):
+                print(f" -> {industry_data['sw_l2_name']}", end='')
+            if industry_data.get('sw_l3_name'):
+                print(f" -> {industry_data['sw_l3_name']}")
+            else:
+                print()
+            print(f"   指数代码: {industry_data['index_code']}")
+            print(f"   当前点位: {industry_data['current_level']:.2f}")
+            print(f"   波动率(60日): {industry_data['volatility_60d']*100:.2f}%")
+            print(f"   年化收益率(60日): {industry_data['annual_return_60d']*100:+.2f}%")
+            print(f"   区间收益率(60日): {industry_data['period_return_60d']*100:+.2f}%")
+            print(f"   年化收益率(250日): {industry_data['annual_return_250d']*100:+.2f}%")
+            print(f"   区间收益率(250日): {industry_data['period_return_250d']*100:+.2f}%")
+
+        print("\n📌 使用方法:")
+        print(f"   from utils.market_data_loader import load_market_data")
+        print(f"   market_data = load_market_data('{stock_code}')")
+        print(f"   industry_data = load_market_data('{stock_code}', data_type='industry')")

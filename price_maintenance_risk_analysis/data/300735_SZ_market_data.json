@@ -11,15 +11,15 @@
   "volatility_120d": 0.3657,
   "volatility_250d": 0.4264,
   "volatility": 0.3058,
-  "annual_return_20d": -0.5071,
-  "annual_return_60d": -0.218,
-  "annual_return_120d": -0.3961,
-  "annual_return_250d": -0.3173,
+  "annual_return_20d": -0.688,
+  "annual_return_60d": -0.2274,
+  "annual_return_120d": -0.4271,
+  "annual_return_250d": -0.3152,
   "period_return_20d": -0.0546,
   "period_return_60d": -0.0569,
   "period_return_120d": -0.2135,
   "period_return_250d": -0.3152,
-  "drift": -0.218,
+  "drift": -0.2274,
   "ma_20": 24.88,
   "ma_30": 25.09,
   "ma_60": 25.1,
@@ -28,5 +28,5 @@
   "win_rate_60d": 0.5667,
   "total_days": 660,
   "data_source": "tushare_realtime",
-  "generated_at": "2026-03-12 08:07:15"
+  "generated_at": "2026-03-12 14:20:44"
 }

@@ -11,5 +11,157 @@
   "revenue_growth": 0.25,
   "operating_margin": 0.2,
   "volatility": 0.3088745648133423,
-  "beta": 1.2
+  "beta": 1.2,
+  "historical_fcf_data": {
+    "years": 13,
+    "year_range": [
+      2013,
+      2025
+    ],
+    "data": [
+      {
+        "year": 2013,
+        "revenue": 6.539324,
+        "operate_profit": 0.479739,
+        "net_income": 0.37499,
+        "nopat": 0.40777815,
+        "depreciation": 0.22548592,
+        "capex": 0.0,
+        "wc_change": 0.0,
+        "fcf": 2.061558
+      },
+      {
+        "year": 2014,
+        "revenue": 7.3795710867999995,
+        "operate_profit": 0.9515118165,
+        "net_income": 0.6898995576000001,
+        "nopat": 0.8087850440250001,
+        "depreciation": 0.236237137448,
+        "capex": 0.0,
+        "wc_change": 0.0,
+        "fcf": 1.0487712206
+      },
+      {
+        "year": 2015,
+        "revenue": 9.1749379592,
+        "operate_profit": 1.2140521996,
+        "net_income": 0.9517442804,
+        "nopat": 1.03194436966,
+        "depreciation": 0.240668254816,
+        "capex": 0.0,
+        "wc_change": 0.0,
+        "fcf": 1.0587807691
+      },
+      {
+        "year": 2016,
+        "revenue": 12.2697829166,
+        "operate_profit": 1.871998534,
+        "net_income": 1.5419465551,
+        "nopat": 1.5911987539,
+        "depreciation": 0.306802236032,
+        "capex": 0.0,
+        "wc_change": 0.0,
+        "fcf": 1.4745722030000001
+      },
+      {
+        "year": 2017,
+        "revenue": 12.741123557,
+        "operate_profit": 1.9323930484,
+        "net_income": 1.7356158899,
+        "nopat": 1.64253409114,
+        "depreciation": 0.39784243558400006,
+        "capex": 0.0,
+        "wc_change": 0.0,
+        "fcf": 2.8445701923000004
+      },
+      {
+        "year": 2018,
+        "revenue": 15.9808754074,
+        "operate_profit": 3.1238780268,
+        "net_income": 2.7331828338,
+        "nopat": 2.65529632278,
+        "depreciation": 0.562560427536,
+        "capex": 0.0,
+        "wc_change": 0.0,
+        "fcf": 2.1694139607
+      },
+      {
+        "year": 2019,
+        "revenue": 21.904410205900003,
+        "operate_profit": 4.4668644124000005,
+        "net_income": 4.2912500804,
+        "nopat": 3.7968347505400004,
+        "depreciation": 0.7943330324719999,
+        "capex": 0.0,
+        "wc_change": 0.0,
+        "fcf": 5.4359610092
+      },
+      {
+        "year": 2020,
+        "revenue": 22.8541334546,
+        "operate_profit": 3.5548927805,
+        "net_income": 3.1869305044,
+        "nopat": 3.0216588634250003,
+        "depreciation": 0.9332554591520001,
+        "capex": 0.0,
+        "wc_change": 0.0,
+        "fcf": 5.4346260844000005
+      },
+      {
+        "year": 2021,
+        "revenue": 36.0361837528,
+        "operate_profit": 4.4053904472,
+        "net_income": 3.5253823541000004,
+        "nopat": 3.74458188012,
+        "depreciation": 1.4664220087600002,
+        "capex": 0.0,
+        "wc_change": 0.0,
+        "fcf": -0.2626730604
+      },
+      {
+        "year": 2022,
+        "revenue": 41.7978023798,
+        "operate_profit": 4.0168297616,
+        "net_income": 3.0113616202999998,
+        "nopat": 3.41430529736,
+        "depreciation": 1.4703870514000001,
+        "capex": 0.0,
+        "wc_change": 0.0,
+        "fcf": 12.024294409400001
+      },
+      {
+        "year": 2023,
+        "revenue": 54.0244897114,
+        "operate_profit": 5.2150117874,
+        "net_income": 3.9673861116,
+        "nopat": 4.43276001929,
+        "depreciation": 1.5970722227760001,
+        "capex": 0.0,
+        "wc_change": 0.0,
+        "fcf": 9.2637308758
+      },
+      {
+        "year": 2024,
+        "revenue": 68.8141219292,
+        "operate_profit": 4.1085338001,
+        "net_income": 2.7567181863999997,
+        "nopat": 3.492253730085,
+        "depreciation": 1.8522685339759999,
+        "capex": 0.0,
+        "wc_change": 0.0,
+        "fcf": 14.437656348800001
+      },
+      {
+        "year": 2025,
+        "revenue": 62.555532326000005,
+        "operate_profit": 2.9071274795999997,
+        "net_income": 1.9894976929,
+        "nopat": 2.4710583576599996,
+        "depreciation": 2.738714971576,
+        "capex": 0.0,
+        "wc_change": 0.0,
+        "fcf": 8.353440840900001
+      }
+    ]
+  }
 }
