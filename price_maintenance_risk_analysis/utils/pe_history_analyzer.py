@@ -62,13 +62,14 @@ class PEHistoryAnalyzer:
                 return font_path
         return None
 
-    def get_stock_pe_history(self, stock_code, days=730):
+    def get_stock_pe_history(self, stock_code, days=1825):
         """
         获取个股历史PE数据
 
         参数:
             stock_code: 股票代码，如 '300735.SZ'
-            days: 历史天数，默认730天（2年）
+            days: 历史自然日天数，默认1825天（5年）
+                  实际交易日数据会少于自然日（约60-65%）
 
         返回:
             DataFrame: 包含trade_date, pe_ttm, pb, ps_ttm等列
@@ -96,13 +97,14 @@ class PEHistoryAnalyzer:
             print(f"❌ 获取{stock_code}历史PE数据失败: {e}")
             return None
 
-    def get_industry_pe_history(self, stock_code, days=730):
+    def get_industry_pe_history(self, stock_code, days=1825):
         """
         获取申万行业历史PE数据
 
         参数:
             stock_code: 股票代码，如 '300735.SZ'
-            days: 历史天数，默认730天（2年）
+            days: 历史自然日天数，默认1825天（5年）
+                  实际交易日数据会少于自然日（约60-65%）
 
         返回:
             tuple: (行业名称, 行业代码, DataFrame)
