@@ -1,0 +1,108 @@
+{
+  "financing_amount": 100000000,
+  "lockup_period": 6,
+  "pricing_method": "ma20_discount_90",
+  "premium_rate": -0.1,
+  "risk_free_rate": 0.03,
+  "net_assets": 0.0,
+  "total_debt": 0.0,
+  "net_income": 0.0,
+  "revenue_growth": 0.15,
+  "operating_margin": 0.15,
+  "beta": 1.0,
+  "historical_fcf_data": {
+    "years": 7,
+    "year_range": [
+      2019,
+      2025
+    ],
+    "data": [
+      {
+        "year": 2019,
+        "revenue": 353.0009770854,
+        "operate_profit": 5.5131831189,
+        "net_income": 5.0542066902,
+        "nopat": 4.686205651064999,
+        "depreciation": 1.0086804460160002,
+        "capex": 0.0,
+        "wc_change": 0.0,
+        "fcf": 11.0719797432
+      },
+      {
+        "year": 2020,
+        "revenue": 598.6574327745,
+        "operate_profit": 24.7024301799,
+        "net_income": 21.914954663000003,
+        "nopat": 20.997065652914998,
+        "depreciation": 2.128754624512,
+        "capex": 0.0,
+        "wc_change": 0.0,
+        "fcf": 26.2566357648
+      },
+      {
+        "year": 2021,
+        "revenue": 837.5852433708001,
+        "operate_profit": 20.4373479446,
+        "net_income": 18.9284038688,
+        "nopat": 17.371745752909998,
+        "depreciation": 2.9265006718880002,
+        "capex": 0.0,
+        "wc_change": 0.0,
+        "fcf": 24.8994850964
+      },
+      {
+        "year": 2022,
+        "revenue": 926.4570160139999,
+        "operate_profit": 28.0397137496,
+        "net_income": 25.6367675043,
+        "nopat": 23.83375668716,
+        "depreciation": 4.281636161728,
+        "capex": 0.0,
+        "wc_change": 0.0,
+        "fcf": 25.6726601085
+      },
+      {
+        "year": 2023,
+        "revenue": 853.3848421369,
+        "operate_profit": 28.3126604958,
+        "net_income": 27.0687461461,
+        "nopat": 24.065761421429997,
+        "depreciation": 5.324657153887999,
+        "capex": 0.0,
+        "wc_change": 0.0,
+        "fcf": 38.497797485
+      },
+      {
+        "year": 2024,
+        "revenue": 1098.7798719116001,
+        "operate_profit": 30.223215039499998,
+        "net_income": 29.262232745,
+        "nopat": 25.689732783574996,
+        "depreciation": 6.240266953632001,
+        "capex": 0.0,
+        "wc_change": 0.0,
+        "fcf": 13.757536997599999
+      },
+      {
+        "year": 2025,
+        "revenue": 1288.8188735729,
+        "operate_profit": 34.4803962877,
+        "net_income": 30.9856279467,
+        "nopat": 29.308336844544996,
+        "depreciation": 7.81394240112,
+        "capex": 0.0,
+        "wc_change": 0.0,
+        "fcf": -8.268262656000001
+      }
+    ]
+  },
+  "_notes": {
+    "financing_amount": "投资金额（元）- 固定1亿元，用于风险评估（与实际投资规模无关）",
+    "lockup_period": "锁定期（月）- 默认6个月",
+    "pricing_method": "定价方式：ma20_discount_90(MA20九折), ma20_discount_85(MA20八五折), ma20_par(MA20平价), custom_premium(自定义溢价率)",
+    "premium_rate": "溢价率（负数为折价，正数为溢价）- 默认-0.10表示九折",
+    "_auto_generated": "以下参数自动计算，无需手动填写",
+    "issue_price": "自动计算：MA20 × (1 + premium_rate)",
+    "current_price": "自动从API获取最新股价"
+  }
+}

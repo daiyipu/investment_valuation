@@ -9,6 +9,58 @@ import os
 from typing import Dict, Optional, Tuple
 
 
+def create_default_config(stock_code: str, placement_file: str) -> Dict:
+    """
+    自动生成默认配置文件
+
+    参数:
+        stock_code: 股票代码
+        placement_file: 配置文件路径
+
+    返回:
+        默认配置字典
+    """
+    default_config = {
+        "financing_amount": 100000000,  # 固定1亿元，用于风险评估
+        "lockup_period": 6,
+        "pricing_method": "ma20_discount_90",
+        "premium_rate": -0.10,
+        "risk_free_rate": 0.03,
+        "net_assets": 0.0,
+        "total_debt": 0.0,
+        "net_income": 0.0,
+        "revenue_growth": 0.15,
+        "operating_margin": 0.15,
+        "beta": 1.0,
+        "historical_fcf_data": {
+            "years": 5,
+            "year_range": [2020, 2024],
+            "data": []
+        },
+        "_notes": {
+            "financing_amount": "投资金额（元）- 固定1亿元，用于风险评估（与实际投资规模无关）",
+            "lockup_period": "锁定期（月）- 默认6个月",
+            "pricing_method": "定价方式：ma20_discount_90(MA20九折), ma20_discount_85(MA20八五折), ma20_par(MA20平价), custom_premium(自定义溢价率)",
+            "premium_rate": "溢价率（负数为折价，正数为溢价）- 默认-0.10表示九折",
+            "_auto_generated": "以下参数自动计算，无需手动填写：",
+            "issue_price": "自动计算：MA20 × (1 + premium_rate)",
+            "current_price": "自动从API获取最新股价"
+        }
+    }
+
+    # 确保目录存在
+    os.makedirs(os.path.dirname(placement_file), exist_ok=True)
+
+    # 保存默认配置
+    with open(placement_file, 'w', encoding='utf-8') as f:
+        json.dump(default_config, f, indent=2, ensure_ascii=False)
+
+    print(f"✅ 自动生成默认配置: {placement_file}")
+    print(f"⚠️  配置说明：投资金额已固定为1亿元（用于风险评估），无需手动修改")
+
+    return default_config
+
+
 def load_placement_config(
     stock_code: str,
     data_dir: str = None,
@@ -50,19 +102,18 @@ def load_placement_config(
                 break
 
         if data_dir is None:
-            data_dir = '../data'  # 默认使用../data目录（适合从scripts目录运行）
+            data_dir = 'data'  # 默认使用data目录
 
     # 统一文件名格式
     placement_file = os.path.join(data_dir, f"{stock_code.replace('.', '_')}_placement_params.json")
 
-    # 1. 加载定增参数
+    # 1. 加载定增参数（如果不存在，自动创建默认配置）
     if not os.path.exists(placement_file):
-        raise FileNotFoundError(f"定增参数文件不存在: {placement_file}")
-
-    with open(placement_file, 'r', encoding='utf-8') as f:
-        placement_params = json.load(f)
-
-    print(f"✅ 已加载定增参数: {placement_file}")
+        placement_params = create_default_config(stock_code, placement_file)
+    else:
+        with open(placement_file, 'r', encoding='utf-8') as f:
+            placement_params = json.load(f)
+        print(f"✅ 已加载定增参数: {placement_file}")
 
     # 2. 尝试加载市场数据（如果启用）
     market_data = None
@@ -76,38 +127,69 @@ def load_placement_config(
             market_data = load_market_data(stock_code, data_dir=data_dir)
         except Exception as e:
             print(f"⚠️ 市场数据加载失败: {e}")
-            print(f"   将使用定增参数文件中的数据")
+            print(f"   将使用默认值")
 
-    # 3. 计算发行数量（根据融资金额和发行价）
-    issue_price = placement_params['issue_price']
-    if 'financing_amount' in placement_params:
-        # 新方式：根据融资金额计算发行数量
-        issue_shares = int(placement_params['financing_amount'] / issue_price)
-        print(f"✅ 计算得出发行数量: {issue_shares:,} 股（融资金额: {placement_params['financing_amount']/100000000:.2f}亿元 ÷ 发行价: {issue_price:.2f}元/股）")
-    elif 'issue_shares' in placement_params:
-        # 旧方式：直接使用JSON中的发行数量（向后兼容）
-        issue_shares = placement_params['issue_shares']
-        print(f"✅ 使用JSON中的发行数量: {issue_shares:,} 股")
+    # 3. 计算或获取发行价
+    if market_data and 'ma_20' in market_data:
+        # 根据定价方式和溢价率计算发行价
+        pricing_method = placement_params.get('pricing_method', 'ma20_discount_90')
+        premium_rate = placement_params.get('premium_rate', -0.10)
+
+        if pricing_method == 'ma20_discount_90':
+            premium_rate = -0.10
+            price_source = "MA20的九折"
+        elif pricing_method == 'ma20_discount_85':
+            premium_rate = -0.15
+            price_source = "MA20的八五折"
+        elif pricing_method == 'ma20_discount_80':
+            premium_rate = -0.20
+            price_source = "MA20的八折"
+        elif pricing_method == 'ma20_par':
+            premium_rate = 0.0
+            price_source = "MA20平价"
+        elif pricing_method == 'custom_premium':
+            price_source = f"自定义溢价率({premium_rate*100:.1f}%)"
+        else:
+            # 默认使用MA20的九折
+            premium_rate = -0.10
+            price_source = "MA20的九折"
+
+        issue_price = market_data['ma_20'] * (1 + premium_rate)
+        print(f"✅ 自动计算发行价: {issue_price:.2f} 元/股 ({price_source}, MA20: {market_data['ma_20']:.2f}元)")
+    elif 'issue_price' in placement_params and placement_params['issue_price'] > 0:
+        # 兼容旧配置：如果配置文件中有issue_price且大于0，使用配置值
+        issue_price = placement_params['issue_price']
+        print(f"✅ 使用配置文件中的发行价: {issue_price:.2f} 元/股")
     else:
-        raise ValueError("JSON中必须包含 financing_amount 或 issue_shares 字段")
+        # 没有市场数据且配置文件中没有发行价，抛出错误
+        raise ValueError("无法获取发行价：请确保已获取市场数据（运行 --force-update）或在配置文件中提供 issue_price")
 
-    # 4. 构建项目参数
+    # 4. 计算发行数量（固定使用1亿元投资金额）
+    # 固定投资金额为1亿元，与实际融资金额无关，仅用于风险评估
+    financing_amount = 100000000  # 固定1亿元
+    issue_shares = int(financing_amount / issue_price)
+    print(f"✅ 使用固定投资金额计算发行数量: {issue_shares:,} 股（投资金额: 1亿元 ÷ 发行价: {issue_price:.2f}元/股）")
+    print(f"   注：风险分析基于1亿元投资金额，实际投资规模可根据需要调整")
+
+    # 5. 获取当前价格
+    if market_data and 'current_price' in market_data:
+        current_price = market_data['current_price']
+        print(f"✅ 使用市场数据中的最新价格: {current_price:.2f} 元")
+    elif 'current_price' in placement_params and placement_params['current_price'] > 0:
+        current_price = placement_params['current_price']
+        print(f"✅ 使用配置文件中的当前价格: {current_price:.2f} 元")
+    else:
+        raise ValueError("无法获取当前价格：请确保已获取市场数据（运行 --force-update）或在配置文件中提供 current_price")
+
+    # 6. 构建项目参数
     project_params = {
         'issue_price': issue_price,
         'issue_shares': issue_shares,
         'lockup_period': placement_params['lockup_period'],
-        'current_price': placement_params['current_price'],
-        'risk_free_rate': placement_params['risk_free_rate'],
+        'current_price': current_price,
+        'risk_free_rate': placement_params.get('risk_free_rate', 0.03),
+        'financing_amount': 100000000,  # 固定1亿元，用于风险评估
     }
-
-    # 如果有financing_amount，也保存到project_params中
-    if 'financing_amount' in placement_params:
-        project_params['financing_amount'] = placement_params['financing_amount']
-
-    # 如果市场数据存在，使用市场数据中的最新价格
-    if market_data and 'current_price' in market_data:
-        project_params['current_price'] = market_data['current_price']
-        print(f"✅ 使用市场数据中的最新价格: {market_data['current_price']:.2f} 元")
 
     # 4. 构建风险参数
     if market_data:

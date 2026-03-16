@@ -321,8 +321,8 @@ class PrivatePlacementRiskAnalyzer:
         if risk_free_rate is None:
             risk_free_rate = self.risk_free_rate
 
-        excess_returns = returns - risk_free_rate / 252
-        sharpe = excess_returns.mean() / excess_returns.std() * np.sqrt(252)
+        excess_returns = returns - risk_free_rate / 250
+        sharpe = excess_returns.mean() / excess_returns.std() * np.sqrt(250)
         return sharpe
 
     def generate_summary_report(self) -> Dict:
@@ -387,7 +387,7 @@ def calculate_volatility(returns: pd.Series, annualize: bool = True) -> float:
     """
     vol = returns.std()
     if annualize:
-        vol = vol * np.sqrt(252)
+        vol = vol * np.sqrt(250)
     return vol
 
 

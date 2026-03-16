@@ -306,7 +306,7 @@ def generate_multi_dimension_scenario_charts(current_price, base_price, volatili
                     threshold = max(base_price, issue_price * 1.02)
 
                 # 计算该时间窗口下的参数
-                window_years = window / 252
+                window_years = window / 250.0
                 window_vol = vol * np.sqrt(window_years)
                 window_drift = drift * window_years
 
@@ -1563,7 +1563,7 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
                 for window in [20, 60, 120, 250]:
                     pct_decimal = df_daily['pct_chg'] / 100.0
                     rolling_std = pct_decimal.rolling(window=window).std()
-                    rolling_vol = rolling_std * np.sqrt(252)
+                    rolling_vol = rolling_std * np.sqrt(250)
                     volatility_data[f'volatility_{window}d_series'] = rolling_vol.values
 
                 # 生成图表

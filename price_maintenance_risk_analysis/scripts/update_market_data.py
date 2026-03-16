@@ -11,6 +11,7 @@ import numpy as np
 from datetime import datetime, timedelta
 import sys
 import os
+import argparse
 
 try:
     import tushare as ts
@@ -70,19 +71,19 @@ def calculate_rolling_volatility(df, window, annualize=True):
     # 计算滚动标准差
     rolling_std = pct_decimal.rolling(window=window).std()
 
-    # 年化波动率 (假设一年252个交易日)
+    # 年化波动率 (假设一年250个交易日，与收益率年化一致)
     if annualize:
-        rolling_vol = rolling_std * np.sqrt(252)
+        rolling_vol = rolling_std * np.sqrt(250)
     else:
         rolling_vol = rolling_std
 
     # 返回最新值和平均值
     return {
-        'latest': rolling_std.iloc[-1] * np.sqrt(252),  # 最新波动率
-        'mean': rolling_std.mean() * np.sqrt(252),      # 平均波动率
-        'median': rolling_std.median() * np.sqrt(252),   # 中位数波动率
-        'max': rolling_std.max() * np.sqrt(252),        # 最大波动率
-        'min': rolling_std.min() * np.sqrt(252),        # 最小波动率
+        'latest': rolling_std.iloc[-1] * np.sqrt(250),  # 最新波动率
+        'mean': rolling_std.mean() * np.sqrt(250),      # 平均波动率
+        'median': rolling_std.median() * np.sqrt(250),   # 中位数波动率
+        'max': rolling_std.max() * np.sqrt(250),        # 最大波动率
+        'min': rolling_std.min() * np.sqrt(250),        # 最小波动率
         'series': rolling_vol                           # 完整序列（用于绘图）
     }
 
@@ -91,10 +92,7 @@ def calculate_annual_return(df, window):
     """
     计算年化收益率（窗口期）
 
-    年化方法：
-    - 60日（季度）：期间收益率 × 4
-    - 120日（半年度）：期间收益率 × 2
-    - 250日（年度）：期间收益率 × 1
+    年化方法（单利）：年化收益率 = 期间收益率 × (250 / 窗口期天数)
     """
     if len(df) < window:
         return np.nan
@@ -106,23 +104,8 @@ def calculate_annual_return(df, window):
     # 计算期间收益率
     period_return = (end_price - start_price) / start_price
 
-    # 根据窗口期计算年化倍数
-    if window == 60:
-        # 季度：一年4个季度
-        annual_return = period_return * 4
-    elif window == 120:
-        # 半年度：一年2个半年度
-        annual_return = period_return * 2
-    elif window == 250:
-        # 年度：直接使用期间收益率
-        annual_return = period_return
-    else:
-        # 其他窗口：按交易日比例年化（252个交易日/年）
-        years = window / 252.0
-        if years > 0:
-            annual_return = period_return / years
-        else:
-            annual_return = 0
+    # 按交易日比例年化（250个交易日/年）
+    annual_return = period_return * (250.0 / window)
 
     return annual_return
 
@@ -198,8 +181,11 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技'):
     ma_120 = df['close'].rolling(window=120).mean().iloc[-1]
     ma_250 = df['close'].rolling(window=250).mean().iloc[-1]
 
-    # 计算胜率（最近60天上涨天数占比）
-    win_rate_60d = (df['pct_chg'].iloc[-60:] > 0).sum() / 60
+    # 计算胜率（多个时间窗口的上涨天数占比）
+    win_rate_20d = (df['pct_chg'].iloc[-20:] > 0).sum() / 20 if len(df) >= 20 else 0
+    win_rate_60d = (df['pct_chg'].iloc[-60:] > 0).sum() / 60 if len(df) >= 60 else 0
+    win_rate_120d = (df['pct_chg'].iloc[-120:] > 0).sum() / 120 if len(df) >= 120 else 0
+    win_rate_250d = (df['pct_chg'].iloc[-250:] > 0).sum() / 250 if len(df) >= 250 else 0
 
     # 计算平均价格等统计量
     avg_price_all = df['close'].mean()
@@ -234,7 +220,10 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技'):
         'ma_60': round(float(ma_60), 2),
         'ma_120': round(float(ma_120), 2),
         'ma_250': round(float(ma_250), 2),
+        'win_rate_20d': round(float(win_rate_20d), 4),
         'win_rate_60d': round(float(win_rate_60d), 4),
+        'win_rate_120d': round(float(win_rate_120d), 4),
+        'win_rate_250d': round(float(win_rate_250d), 4),
         'total_days': len(df),
         'data_source': 'tushare_realtime',
         'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -280,7 +269,12 @@ def print_market_data_summary(market_data):
     print(f"   平均价格: {market_data['avg_price_all']:.2f} 元")
     print(f"   中位数价格: {market_data['median_price']:.2f} 元")
     print(f"   价格标准差: {market_data['price_std']:.2f} 元")
-    print(f"   60日胜率: {market_data['win_rate_60d']*100:.2f}%")
+
+    print(f"\n🎯 胜率（上涨天数占比）:")
+    print(f"   月度(20日): {market_data.get('win_rate_20d', 0)*100:.1f}%")
+    print(f"   季度(60日): {market_data.get('win_rate_60d', 0)*100:.1f}%")
+    print(f"   半年(120日): {market_data.get('win_rate_120d', 0)*100:.1f}%")
+    print(f"   年度(250日): {market_data.get('win_rate_250d', 0)*100:.1f}%")
 
     print(f"\n⏰ 数据生成时间: {market_data['generated_at']}")
     print("="*70)
@@ -1093,9 +1087,12 @@ def generate_industry_data(stock_code, days=500):
     ma_120 = df['close'].rolling(window=120).mean().iloc[-1]
     ma_250 = df['close'].rolling(window=250).mean().iloc[-1]
 
-    # 胜率（兼容pct_chg和pct_change字段）
+    # 胜率（兼容pct_chg和pct_change字段，多个时间窗口）
     pct_col = 'pct_chg' if 'pct_chg' in df.columns else 'pct_change'
-    win_rate_60d = (df[pct_col].iloc[-60:] > 0).sum() / 60
+    win_rate_20d = (df[pct_col].iloc[-20:] > 0).sum() / 20 if len(df) >= 20 else 0
+    win_rate_60d = (df[pct_col].iloc[-60:] > 0).sum() / 60 if len(df) >= 60 else 0
+    win_rate_120d = (df[pct_col].iloc[-120:] > 0).sum() / 120 if len(df) >= 120 else 0
+    win_rate_250d = (df[pct_col].iloc[-250:] > 0).sum() / 250 if len(df) >= 250 else 0
 
     # 构建行业数据字典
     industry_data = {
@@ -1127,7 +1124,10 @@ def generate_industry_data(stock_code, days=500):
         'ma_60': round(float(ma_60), 2),
         'ma_120': round(float(ma_120), 2),
         'ma_250': round(float(ma_250), 2),
+        'win_rate_20d': round(float(win_rate_20d), 4),
         'win_rate_60d': round(float(win_rate_60d), 4),
+        'win_rate_120d': round(float(win_rate_120d), 4),
+        'win_rate_250d': round(float(win_rate_250d), 4),
         'total_days': len(df),
         'data_source': 'tushare_sw_index',
         'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -1185,9 +1185,14 @@ def update_placement_params_with_fcf(stock_code, ma20, data_dir):
 
 
 if __name__ == '__main__':
-    # 生成市场数据
-    stock_code = '300735.SZ'
-    stock_name = '光弘科技'
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description='生成最新市场数据')
+    parser.add_argument('--stock', type=str, default='300735.SZ', help='股票代码（默认：300735.SZ）')
+    parser.add_argument('--name', type=str, default=None, help='股票名称（可选）')
+    args = parser.parse_args()
+
+    stock_code = args.stock
+    stock_name = args.name if args.name else stock_code  # 如果没有提供名称，使用股票代码
 
     print("="*70)
     print("🚀 生成最新市场数据（使用当前日期回溯）")
@@ -1217,8 +1222,9 @@ if __name__ == '__main__':
             json.dump(market_data, f, ensure_ascii=False, indent=2)
         print(f"\n✅ 已保存市场数据到: {filepath}")
 
-        # 根据MA20更新placement_params.json中的issue_price
-        update_placement_params_issue_price(stock_code, market_data['ma_20'], data_dir)
+        # 注意：不再更新placement_params.json中的issue_price
+        # 因为新系统会根据MA20和premium_rate自动计算issue_price
+        # update_placement_params_issue_price(stock_code, market_data['ma_20'], data_dir)
 
         # 添加历史FCF数据到placement_params.json
         print("\n" + "="*70)
@@ -1231,15 +1237,35 @@ if __name__ == '__main__':
         if not os.path.exists(placement_file):
             print(f"⚠️ {placement_file} 不存在，创建默认配置文件")
 
-            # 创建默认配置
+            # 创建默认配置（新格式，不包含issue_price和current_price）
             placement_params = {
                 "stock_code": stock_code,
-                "stock_name": "光弘科技",
-                "issue_price": market_data.get('ma_20', 25) * 0.9,  # 默认为MA20的9折
-                "current_price": market_data.get('current_price', 25),
-                "lockup_period": 6,  # 默认6个月
-                "financing_amount": 7.0,  # 默认7亿元
-                "price_source": "update_market_data.py自动创建",
+                "stock_name": stock_name,
+                "financing_amount": 0.0,
+                "lockup_period": 6,
+                "pricing_method": "ma20_discount_90",
+                "premium_rate": -0.10,
+                "risk_free_rate": 0.03,
+                "net_assets": 0.0,
+                "total_debt": 0.0,
+                "net_income": 0.0,
+                "revenue_growth": 0.15,
+                "operating_margin": 0.15,
+                "beta": 1.0,
+                "historical_fcf_data": {
+                    "years": 5,
+                    "year_range": [2020, 2024],
+                    "data": []
+                },
+                "_notes": {
+                    "financing_amount": "融资金额（元）- 必填，请在定增公告中查找",
+                    "lockup_period": "锁定期（月）- 默认6个月",
+                    "pricing_method": "定价方式：ma20_discount_90(MA20九折), ma20_discount_85(MA20八五折), ma20_par(MA20平价), custom_premium(自定义溢价率)",
+                    "premium_rate": "溢价率（负数为折价，正数为溢价）- 默认-0.10表示九折",
+                    "_auto_generated": "以下参数自动计算，无需手动填写",
+                    "issue_price": f"自动计算：MA20({market_data.get('ma_20', 0):.2f}) × (1 + premium_rate)",
+                    "current_price": f"自动从API获取最新股价: {market_data.get('current_price', 0):.2f}元"
+                },
                 "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 "updated_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
@@ -1249,7 +1275,8 @@ if __name__ == '__main__':
                 json.dump(placement_params, f, indent=2, ensure_ascii=False)
 
             print(f"✅ 已创建默认配置文件: {placement_file}")
-            print(f"   发行价: {placement_params['issue_price']:.2f} 元（MA20的9折）")
+            print(f"   MA20: {market_data.get('ma_20', 0):.2f} 元")
+            print(f"   当前价: {market_data.get('current_price', 0):.2f} 元")
         else:
             # 读取现有配置
             with open(placement_file, 'r', encoding='utf-8') as f:

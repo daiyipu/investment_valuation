@@ -13,10 +13,7 @@ def calculate_annual_return_v2(df, window):
     """
     计算年化收益率（修复后的公式）
 
-    年化方法：
-    - 60日（季度）：期间收益率 × 4
-    - 120日（半年度）：期间收益率 × 2
-    - 250日（年度）：期间收益率 × 1
+    年化方法（单利）：年化收益率 = 期间收益率 × (250 / 窗口期天数)
     """
     if len(df) < window:
         return np.nan, np.nan
@@ -28,27 +25,9 @@ def calculate_annual_return_v2(df, window):
     # 计算期间收益率
     period_return = (end_price - start_price) / start_price
 
-    # 根据窗口期计算年化倍数
-    if window == 60:
-        # 季度：一年4个季度
-        annual_return = period_return * 4
-        period_return_for_table = period_return
-    elif window == 120:
-        # 半年度：一年2个半年度
-        annual_return = period_return * 2
-        period_return_for_table = period_return
-    elif window == 250:
-        # 年度：直接使用期间收益率
-        annual_return = period_return
-        period_return_for_table = period_return
-    else:
-        # 其他窗口：按交易日比例年化（252个交易日/年）
-        years = window / 252.0
-        if years > 0:
-            annual_return = period_return / years
-        else:
-            annual_return = 0
-        period_return_for_table = period_return
+    # 按交易日比例年化（250个交易日/年）
+    annual_return = period_return * (250.0 / window)
+    period_return_for_table = period_return
 
     return annual_return, period_return_for_table
 
@@ -63,7 +42,7 @@ def calculate_volatility(df, window):
     log_returns = np.diff(np.log(close_prices))
 
     # 年化波动率（252个交易日）
-    volatility = log_returns.std() * np.sqrt(252)
+    volatility = log_returns.std() * np.sqrt(250)
 
     return volatility
 
@@ -167,10 +146,24 @@ def rebuild_indices_data():
             ma_120 = df['close'].iloc[-120:].mean()
             ma_250 = df['close'].iloc[-250:].mean()
 
-            # 计算胜率（60日）
+            # 计算胜率（多个时间窗口）
+            # 注意：使用.diff()会得到n-1个变化，但我们关注的是"n天中有多少天上涨"
+            # 所以应该用实际周期天数（20/60/120/250）作为分母
+            recent_20 = df['close'].iloc[-20:]
+            win_days_20 = (recent_20.diff() > 0).sum()
+            win_rate_20d = win_days_20 / 20 if len(recent_20) >= 2 else 0.5
+
             recent_60 = df['close'].iloc[-60:]
-            win_days = (recent_60.diff() > 0).sum()
-            win_rate_60d = win_days / 59 if len(recent_60) > 1 else 0.5
+            win_days_60 = (recent_60.diff() > 0).sum()
+            win_rate_60d = win_days_60 / 60 if len(recent_60) >= 2 else 0.5
+
+            recent_120 = df['close'].iloc[-120:]
+            win_days_120 = (recent_120.diff() > 0).sum()
+            win_rate_120d = win_days_120 / 120 if len(recent_120) >= 2 else 0.5
+
+            recent_250 = df['close'].iloc[-250:]
+            win_days_250 = (recent_250.diff() > 0).sum()
+            win_rate_250d = win_days_250 / 250 if len(recent_250) >= 2 else 0.5
 
             # 构建结果
             results[name] = {
@@ -187,7 +180,10 @@ def rebuild_indices_data():
                 'ma_60': ma_60,
                 'ma_120': ma_120,
                 'ma_250': ma_250,
+                'win_rate_20d': win_rate_20d,
                 'win_rate_60d': win_rate_60d,
+                'win_rate_120d': win_rate_120d,
+                'win_rate_250d': win_rate_250d,
             }
 
             print(f"  ✅ 完成: 年化收益率(250日)={ann_250d*100:+.2f}%")
