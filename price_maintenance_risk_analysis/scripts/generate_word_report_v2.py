@@ -5757,7 +5757,6 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
         price_paths[:, t] = price_paths[:, t-1] * np.exp(path_returns[:, t-1])
 
     # 生成路径可视化图表
-    import matplotlib.pyplot as plt
     import random
 
     fig, ax = plt.subplots(figsize=(14, 6))
