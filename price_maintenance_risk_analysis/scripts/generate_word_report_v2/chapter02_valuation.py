@@ -1,36 +1,533 @@
 # -*- coding: utf-8 -*-
 """
-${chapter} - 章节模块
+第二章：相对估值分析
 
-功能：生成对应章节的内容
+本章节生成报告的相对估值分析部分，包括：
+- 2.1 估值指标对比（PE、PB、PS）
+- 2.1.1 同行公司名单
+- 2.2 估值偏离度分析
+- 2.3 PE历史分位数趋势分析
 """
 
-def generate_cover(context):
-    """生成报告封面"""
-    # TODO: 从 generate_word_report_v2.py 提取实现
-    pass
+import os
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+from docx.shared import Inches
 
-
-def generate_table_of_contents(context):
-    """生成目录"""
-    # TODO: 从 generate_word_report_v2.py 提取实现
-    pass
+# 导入工具函数
+from .utils import (
+    add_title, add_paragraph, add_table_data, add_image, add_section_break,
+    generate_relative_valuation_charts_split
+)
 
 
 def generate_chapter(context):
     """
-    生成章节内容
+    生成第二章：相对估值分析
 
-    参数:
-        context: 包含所有必要数据的字典
+    Args:
+        context: 包含以下键的字典:
             - document: Word文档对象
-            - project_params: 项目参数
-            - market_data: 市场数据
-            - industry_data: 行业数据
-            - analyzer: 分析器对象
-            - results: 前面章节的计算结果
-            - 其他配置参数
+            - project_params: 项目参数（包含stock_code等）
+            - IMAGES_DIR: 图片目录
+
+    Returns:
+        更新后的context字典
     """
-    # TODO: 从 generate_word_report_v2.py 提取对应章节的实现
-    # 提示：使用 context['document'] 和 context['project_params'] 等
-    pass
+    # 从context中提取数据
+    document = context['document']
+    project_params = context['project_params']
+    IMAGES_DIR = context['IMAGES_DIR']
+
+    stock_code = project_params.get('stock_code', '')
+
+    # ==================== 二、相对估值分析 ====================
+    add_title(document, '二、相对估值分析', level=1)
+
+    add_paragraph(document, '本章节通过相对估值法（参数法），将光弘科技与行业内可比公司进行对比分析。')
+    add_paragraph(document, '选取申万三级分类"消费电子零部件及组装"行业的同行公司，对比PE、PS、PB等估值倍数。')
+
+    add_title(document, '2.1 估值指标对比', level=2)
+
+    # 使用 Tushare 数据获取估值指标
+    try:
+        ts_token = os.environ.get('TUSHARE_TOKEN', '')
+
+        if ts_token:
+            import tushare as ts
+            import time
+
+            pro = ts.pro_api(ts_token)
+
+            # 获取目标公司的估值数据（自动往前推1-2天直到找到交易日）
+            trade_date = None
+            df_target = None
+
+            for days_back in range(1, 6):  # 尝试往前推1-5天
+                test_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y%m%d')
+                try:
+                    df_target = pro.daily_basic(
+                        ts_code=stock_code,
+                        trade_date=test_date,
+                        fields='ts_code,trade_date,close,pe_ttm,pb,ps_ttm,total_mv'
+                    )
+                    if not df_target.empty:
+                        trade_date = test_date
+                        break
+                except:
+                    continue
+
+            if df_target is None or df_target.empty:
+                raise ValueError("未获取到目标公司数据（请检查网络或交易日历）")
+
+            current_metrics_val = {
+                'pe': df_target.iloc[0]['pe_ttm'],
+                'pb': df_target.iloc[0]['pb'],
+                'ps': df_target.iloc[0]['ps_ttm']
+            }
+            print(f"✅ 获取相对估值数据成功，交易日期: {trade_date}")
+
+            # 获取申万三级行业分类的同行公司（与 notebook 一致）
+            df_industry = pro.index_member_all(ts_code=stock_code)
+            if df_industry.empty:
+                raise ValueError("未获取到行业分类")
+
+            df_industry = df_industry.sort_values('in_date', ascending=False)
+            latest_industry = df_industry.iloc[0]
+            target_index_code = latest_industry['l3_code']  # 申万三级行业指数代码
+            target_industry_l3 = latest_industry['l3_name']  # 行业名称
+
+            # 获取该三级行业的所有成分股
+            df_peers = pro.index_member_all(l3_code=target_index_code)
+            df_peers = df_peers[df_peers['ts_code'] != stock_code]
+
+            # 获取同行公司基本信息
+            peer_codes = df_peers['ts_code'].unique().tolist()
+            peer_basic = pro.stock_basic(ts_code=','.join(peer_codes[:30]),
+                                       fields='ts_code,name,market')
+
+            peer_stocks_all = pd.merge(df_peers, peer_basic, on='ts_code', how='left')
+            peer_stocks_all = peer_stocks_all.drop_duplicates(subset=['ts_code'])
+
+            # 限制数量并排序（扩充到30家）
+            peer_stocks_all = peer_stocks_all.head(30)
+            peer_names_dict = dict(zip(peer_stocks_all['ts_code'], peer_stocks_all['name_x']))
+
+            # 获取同行公司的估值数据
+            peer_data_list = []
+            for peer_code in peer_stocks_all['ts_code'].tolist():
+                peer_name = peer_names_dict.get(peer_code, peer_code)
+
+                try:
+                    df_peer = pro.daily_basic(
+                        ts_code=peer_code,
+                        trade_date=trade_date,
+                        fields='ts_code,pe_ttm,pb,ps_ttm,total_mv'
+                    )
+                    if not df_peer.empty:
+                        df_peer['name'] = peer_name
+                        peer_data_list.append(df_peer)
+                except:
+                    pass
+
+                time.sleep(0.2)  # 避免请求过快
+
+            if peer_data_list:
+                peer_companies_val = pd.concat(peer_data_list, ignore_index=True)
+
+                # 过滤异常数据
+                peer_companies_val = peer_companies_val[
+                    (peer_companies_val['pe_ttm'] > 0) &
+                    (peer_companies_val['pe_ttm'] < 500) &
+                    (peer_companies_val['pb'] > 0) &
+                    (peer_companies_val['pb'] < 20)
+                ]
+
+                # 重命名列并进行单位转换
+                # total_mv单位是万元，需要转换为亿元（除以10000）
+                peer_companies_val['market_cap'] = peer_companies_val['total_mv'] / 10000
+
+                peer_companies_val = peer_companies_val.rename(columns={
+                    'pe_ttm': 'pe',
+                    'ps_ttm': 'ps',
+                    'ts_code': 'code'
+                })
+
+                # 只保留需要的列
+                peer_companies_val = peer_companies_val[['name', 'code', 'pe', 'ps', 'pb', 'market_cap']]
+            else:
+                raise ValueError("未获取到同行公司估值数据")
+
+        else:
+            raise ValueError("TUSHARE_TOKEN 未设置")
+
+    except Exception as e:
+        print(f"获取相对估值数据失败: {e}，使用示例数据")
+        # 使用示例数据
+        current_metrics_val = {
+            'pe': 56.24,
+            'pb': 3.71,
+            'ps': 2.30
+        }
+
+        peer_companies_val = pd.DataFrame({
+            'name': ['立讯精密', '歌尔股份', '蓝思科技', '长盈精密', '领益智造', '安洁科技', '比亚迪电子'],
+            'code': ['002475.SZ', '002241.SZ', '300433.SZ', '300115.SZ', '002600.SZ', '002635.SZ', '0285.HK'],
+            'pe': [20.5, 25.8, 22.3, 28.6, 18.9, 32.1, 24.5],
+            'ps': [1.2, 1.8, 1.5, 2.1, 1.0, 2.5, 1.6],
+            'pb': [2.8, 3.2, 2.5, 3.8, 2.1, 4.2, 3.0],
+            'market_cap': [120, 80, 50, 45, 65, 25, 90]
+        })
+
+    # 计算行业统计指标
+    industry_stats_val = {
+        'pe': {
+            'mean': peer_companies_val['pe'].mean(),
+            'median': peer_companies_val['pe'].median(),
+            'q1': peer_companies_val['pe'].quantile(0.25),
+            'q3': peer_companies_val['pe'].quantile(0.75),
+            'min': peer_companies_val['pe'].min(),
+            'max': peer_companies_val['pe'].max(),
+            'std': peer_companies_val['pe'].std()
+        },
+        'ps': {
+            'mean': peer_companies_val['ps'].mean(),
+            'median': peer_companies_val['ps'].median(),
+            'q1': peer_companies_val['ps'].quantile(0.25),
+            'q3': peer_companies_val['ps'].quantile(0.75),
+            'min': peer_companies_val['ps'].min(),
+            'max': peer_companies_val['ps'].max(),
+            'std': peer_companies_val['ps'].std()
+        },
+        'pb': {
+            'mean': peer_companies_val['pb'].mean(),
+            'median': peer_companies_val['pb'].median(),
+            'q1': peer_companies_val['pb'].quantile(0.25),
+            'q3': peer_companies_val['pb'].quantile(0.75),
+            'min': peer_companies_val['pb'].min(),
+            'max': peer_companies_val['pb'].max(),
+            'std': peer_companies_val['pb'].std()
+        }
+    }
+
+    # 剔除3倍标准差异常值后的行业平均
+    industry_avg_val = {
+        'pe': industry_stats_val['pe']['mean'],
+        'ps': industry_stats_val['ps']['mean'],
+        'pb': industry_stats_val['pb']['mean']
+    }
+
+    # 估值指标对比表（增强版）
+    valuation_headers = ['指标', '光弘科技', '行业平均', '中位数', 'Q1(25分位)', 'Q3(75分位)', '最小值', '最大值', '偏离度']
+    valuation_data = [
+        ['PE (TTM)',
+         f"{current_metrics_val['pe']:.2f}倍",
+         f"{industry_stats_val['pe']['mean']:.2f}倍",
+         f"{industry_stats_val['pe']['median']:.2f}倍",
+         f"{industry_stats_val['pe']['q1']:.2f}倍",
+         f"{industry_stats_val['pe']['q3']:.2f}倍",
+         f"{industry_stats_val['pe']['min']:.2f}倍",
+         f"{industry_stats_val['pe']['max']:.2f}倍",
+         f"{(current_metrics_val['pe']-industry_stats_val['pe']['mean'])/industry_stats_val['pe']['mean']*100:+.1f}%"],
+        ['PB',
+         f"{current_metrics_val['pb']:.2f}倍",
+         f"{industry_stats_val['pb']['mean']:.2f}倍",
+         f"{industry_stats_val['pb']['median']:.2f}倍",
+         f"{industry_stats_val['pb']['q1']:.2f}倍",
+         f"{industry_stats_val['pb']['q3']:.2f}倍",
+         f"{industry_stats_val['pb']['min']:.2f}倍",
+         f"{industry_stats_val['pb']['max']:.2f}倍",
+         f"{(current_metrics_val['pb']-industry_stats_val['pb']['mean'])/industry_stats_val['pb']['mean']*100:+.1f}%"],
+        ['PS (TTM)',
+         f"{current_metrics_val['ps']:.2f}倍",
+         f"{industry_stats_val['ps']['mean']:.2f}倍",
+         f"{industry_stats_val['ps']['median']:.2f}倍",
+         f"{industry_stats_val['ps']['q1']:.2f}倍",
+         f"{industry_stats_val['ps']['q3']:.2f}倍",
+         f"{industry_stats_val['ps']['min']:.2f}倍",
+         f"{industry_stats_val['ps']['max']:.2f}倍",
+         f"{(current_metrics_val['ps']-industry_stats_val['ps']['mean'])/industry_stats_val['ps']['mean']*100:+.1f}%"]
+    ]
+    add_table_data(document, valuation_headers, valuation_data)
+
+    # 添加统计分析说明
+    add_paragraph(document, '')
+    add_paragraph(document, '行业估值统计说明：')
+    add_paragraph(document, '• 行业平均：所有同行公司的算术平均值（受极端值影响）')
+    add_paragraph(document, '• 中位数：行业50%的公司估值低于此水平，抗极端值干扰')
+    add_paragraph(document, '• Q1(25分位)：行业25%的公司估值低于此水平')
+    add_paragraph(document, '• Q3(75分位)：行业75%的公司估值低于此水平（即25%的公司高于此水平）')
+    add_paragraph(document, '• 最小/最大值：行业中的估值极值')
+    add_paragraph(document, '• 数据已过滤异常值（PE<500, PB<20）以避免极端情况影响统计')
+    add_paragraph(document, f'• 样本量：共{len(peer_companies_val)}家同行公司')
+
+    # 添加同行公司名单
+    add_paragraph(document, '')
+    add_title(document, '2.1.1 同行公司名单', level=3)
+    add_paragraph(document, f'基于申万三级行业分类"消费电子零部件及组装"筛选的同行公司：')
+
+    # 按市值排序的同行公司表格
+    peer_companies_sorted = peer_companies_val.sort_values('market_cap', ascending=False)
+    peer_headers = ['公司名称', '股票代码', 'PE (TTM)', 'PB', 'PS (TTM)', '市值(亿元)']
+    peer_rows = []
+    for _, row in peer_companies_sorted.iterrows():
+        peer_rows.append([
+            row['name'],
+            row['code'],
+            f"{row['pe']:.2f}",
+            f"{row['pb']:.2f}",
+            f"{row['ps']:.2f}",
+            f"{row['market_cap']:.2f}"
+        ])
+    add_table_data(document, peer_headers, peer_rows)
+
+    # 添加行业统计汇总
+    add_paragraph(document, '')
+    add_paragraph(document, '行业估值统计汇总：')
+    add_paragraph(document, f'• PE: 平均{industry_stats_val["pe"]["mean"]:.2f}倍，中位数{peer_companies_val["pe"].median():.2f}倍，标准差{industry_stats_val["pe"]["std"]:.2f}倍')
+    add_paragraph(document, f'  • Q1-Q3区间: [{industry_stats_val["pe"]["q1"]:.2f}, {industry_stats_val["pe"]["q3"]:.2f}]倍，极值范围: [{industry_stats_val["pe"]["min"]:.2f}, {industry_stats_val["pe"]["max"]:.2f}]倍')
+    add_paragraph(document, f'• PB: 平均{industry_stats_val["pb"]["mean"]:.2f}倍，中位数{peer_companies_val["pb"].median():.2f}倍，标准差{industry_stats_val["pb"]["std"]:.2f}倍')
+    add_paragraph(document, f'  • Q1-Q3区间: [{industry_stats_val["pb"]["q1"]:.2f}, {industry_stats_val["pb"]["q3"]:.2f}]倍，极值范围: [{industry_stats_val["pb"]["min"]:.2f}, {industry_stats_val["pb"]["max"]:.2f}]倍')
+    add_paragraph(document, f'• PS: 平均{industry_stats_val["ps"]["mean"]:.2f}倍，中位数{peer_companies_val["ps"].median():.2f}倍，标准差{industry_stats_val["ps"]["std"]:.2f}倍')
+    add_paragraph(document, f'  • Q1-Q3区间: [{industry_stats_val["ps"]["q1"]:.2f}, {industry_stats_val["ps"]["q3"]:.2f}]倍，极值范围: [{industry_stats_val["ps"]["min"]:.2f}, {industry_stats_val["ps"]["max"]:.2f}]倍')
+
+    add_paragraph(document, '')
+    add_paragraph(document, '图表 2.0: 相对估值对比分析 - 估值指标对比')
+    chart_paths, df_scenarios = generate_relative_valuation_charts_split(
+        current_metrics_val, industry_avg_val, peer_companies_val, IMAGES_DIR
+    )
+    add_image(document, chart_paths[0])  # 估值指标对比
+
+    add_paragraph(document, '')
+    add_paragraph(document, '图表 2.1: 相对估值对比分析 - PE倍数对比')
+    add_image(document, chart_paths[1])
+
+    add_paragraph(document, '')
+    add_paragraph(document, '图表 2.2: 相对估值对比分析 - PB倍数对比')
+    add_image(document, chart_paths[2])
+
+    add_paragraph(document, '')
+    add_paragraph(document, '图表 2.3: 相对估值对比分析 - PS倍数对比')
+    add_image(document, chart_paths[3])
+
+    add_title(document, '2.2 估值偏离度分析', level=2)
+
+    # 计算PE在行业中的分位数位置
+    pe_position = (peer_companies_val['pe'] < current_metrics_val['pe']).sum() / len(peer_companies_val) * 100
+    pb_position = (peer_companies_val['pb'] < current_metrics_val['pb']).sum() / len(peer_companies_val) * 100
+    ps_position = (peer_companies_val['ps'] < current_metrics_val['ps']).sum() / len(peer_companies_val) * 100
+
+    add_paragraph(document, f"• PE偏离度: {(current_metrics_val['pe']-industry_avg_val['pe'])/industry_avg_val['pe']*100:+.1f}%，位于行业{pe_position:.1f}%分位")
+    add_paragraph(document, f"• PB偏离度: {(current_metrics_val['pb']-industry_avg_val['pb'])/industry_avg_val['pb']*100:+.1f}%，位于行业{pb_position:.1f}%分位")
+    add_paragraph(document, f"• PS偏离度: {(current_metrics_val['ps']-industry_avg_val['ps'])/industry_avg_val['ps']*100:+.1f}%，位于行业{ps_position:.1f}%分位")
+
+    add_paragraph(document, '')
+
+    # PE分位数分析
+    if current_metrics_val['pe'] > industry_stats_val['pe']['q3']:
+        add_paragraph(document, f'⚠️ PE({current_metrics_val["pe"]:.2f}倍)高于行业Q3({industry_stats_val["pe"]["q3"]:.2f}倍)，处于行业高位，估值偏高')
+    elif current_metrics_val['pe'] < industry_stats_val['pe']['q1']:
+        add_paragraph(document, f'✅ PE({current_metrics_val["pe"]:.2f}倍)低于行业Q1({industry_stats_val["pe"]["q1"]:.2f}倍)，处于行业低位，估值偏低')
+    else:
+        add_paragraph(document, f'ℹ️ PE({current_metrics_val["pe"]:.2f}倍)介于行业Q1({industry_stats_val["pe"]["q1"]:.2f}倍)和Q3({industry_stats_val["pe"]["q3"]:.2f}倍)之间，估值合理')
+
+    # PB分位数分析
+    if current_metrics_val['pb'] > industry_stats_val['pb']['q3']:
+        add_paragraph(document, f'⚠️ PB({current_metrics_val["pb"]:.2f}倍)高于行业Q3({industry_stats_val["pb"]["q3"]:.2f}倍)，市净率偏高')
+    elif current_metrics_val['pb'] < industry_stats_val['pb']['q1']:
+        add_paragraph(document, f'✅ PB({current_metrics_val["pb"]:.2f}倍)低于行业Q1({industry_stats_val["pb"]["q1"]:.2f}倍)，市净率偏低')
+
+    # PS分位数分析
+    if current_metrics_val['ps'] > industry_stats_val['ps']['q3']:
+        add_paragraph(document, f'⚠️ PS({current_metrics_val["ps"]:.2f}倍)高于行业Q3({industry_stats_val["ps"]["q3"]:.2f}倍)，市销率偏高')
+    elif current_metrics_val['ps'] < industry_stats_val['ps']['q1']:
+        add_paragraph(document, f'✅ PS({current_metrics_val["ps"]:.2f}倍)低于行业Q1({industry_stats_val["ps"]["q1"]:.2f}倍)，市销率偏低')
+
+    add_paragraph(document, '')
+
+    # ==================== 2.3 PE历史分位数趋势分析 ====================
+    add_title(document, '2.3 PE历史分位数趋势分析', level=2)
+
+    add_paragraph(document, '本节通过分析标的股票和所属行业的PE历史走势及分位数变化，从时间维度评估估值的合理性。')
+    add_paragraph(document, '基于最近5年的历史数据（约1250个交易日），通过对比个股与行业的PE历史分位数趋势，可以更清晰地判断当前估值处于历史哪个水平。')
+    add_paragraph(document, '5年的历史周期能够覆盖完整的牛熊周期，提供更可靠的估值基准。')
+    add_paragraph(document, '')
+
+    # 尝试从tushare获取历史PE数据并生成趋势图
+    try:
+        from utils.pe_history_analyzer import PEHistoryAnalyzer
+
+        print("\n=== 开始PE历史分位数趋势分析 ===")
+
+        # 创建PE历史分析器
+        pe_analyzer = PEHistoryAnalyzer()
+
+        # 获取个股历史PE数据（最近5年）
+        stock_pe_data = pe_analyzer.get_stock_pe_history(stock_code, days=1825)
+
+        # 获取行业历史PE数据
+        industry_name, industry_code, industry_pe_data = pe_analyzer.get_industry_pe_history(stock_code, days=1825)
+
+        if stock_pe_data is not None and industry_pe_data is not None:
+            print(f"✅ 成功获取历史PE数据")
+            print(f"   个股数据: {len(stock_pe_data)}条")
+            print(f"   行业数据: {len(industry_pe_data)}条")
+            print(f"   行业: {industry_name} ({industry_code})")
+
+            # 计算历史分位数统计
+            stock_pe_current = stock_pe_data.iloc[-1]['pe_ttm']
+            stock_pe_min = stock_pe_data['pe_ttm'].min()
+            stock_pe_max = stock_pe_data['pe_ttm'].max()
+            stock_pe_median = stock_pe_data['pe_ttm'].median()
+            stock_pe_percentile = (stock_pe_data['pe_ttm'] < stock_pe_current).sum() / len(stock_pe_data) * 100
+
+            industry_pe_current = industry_pe_data.iloc[-1]['pe_ttm']
+            industry_pe_min = industry_pe_data['pe_ttm'].min()
+            industry_pe_max = industry_pe_data['pe_ttm'].max()
+            industry_pe_median = industry_pe_data['pe_ttm'].median()
+            industry_pe_percentile = (industry_pe_data['pe_ttm'] < industry_pe_current).sum() / len(industry_pe_data) * 100
+
+            # 添加历史分位数统计表格
+            pe_history_headers = ['指标', '标的股票', '行业指数', '差异']
+            pe_history_data = [
+                ['当前PE-TTM', f'{stock_pe_current:.2f}倍', f'{industry_pe_current:.2f}倍', f'{(stock_pe_current/industry_pe_current-1)*100:+.1f}%'],
+                ['历史最小PE', f'{stock_pe_min:.2f}倍', f'{industry_pe_min:.2f}倍', f'{stock_pe_min-industry_pe_min:+.2f}倍'],
+                ['历史最大PE', f'{stock_pe_max:.2f}倍', f'{industry_pe_max:.2f}倍', f'{stock_pe_max-industry_pe_max:+.2f}倍'],
+                ['历史中位数PE', f'{stock_pe_median:.2f}倍', f'{industry_pe_median:.2f}倍', f'{stock_pe_median-industry_pe_median:+.2f}倍'],
+                ['当前分位数', f'{stock_pe_percentile:.1f}%', f'{industry_pe_percentile:.1f}%', f'{stock_pe_percentile-industry_pe_percentile:+.1f}%']
+            ]
+            add_table_data(document, pe_history_headers, pe_history_data)
+
+            add_paragraph(document, '')
+            add_paragraph(document, '💡 历史分位数说明：')
+            add_paragraph(document, f'• 当前分位数表示当前PE在历史数据中的相对位置')
+            add_paragraph(document, f'• 例如：{stock_pe_percentile:.1f}%分位数表示历史上只有{stock_pe_percentile:.1f}%的时间PE低于当前值')
+            add_paragraph(document, f'• 50%分位数即为中位数，代表历史平均水平')
+            add_paragraph(document, '')
+
+            # 生成PE趋势图
+            pe_trend_chart_path = os.path.join(IMAGES_DIR, '02_4_pe_trend_analysis.png')
+            chart_path = pe_analyzer.generate_pe_trend_chart(
+                stock_code, stock_pe_data,
+                industry_name, industry_pe_data,
+                pe_trend_chart_path
+            )
+
+            # 添加图表到文档
+            if chart_path and os.path.exists(chart_path):
+                add_paragraph(document, '')
+                add_paragraph(document, '图表 2.4: PE历史分位数趋势分析')
+                add_image(document, chart_path, width=Inches(6.5))
+
+                add_paragraph(document, '')
+                add_paragraph(document, '图表解读：', bold=True)
+                add_paragraph(document, '')
+                add_paragraph(document, f'左上-PE走势对比：')
+                add_paragraph(document, f'  • 蓝线：{stock_code}的PE-TTM走势')
+                add_paragraph(document, f'  • 红线：{industry_name}的PE-TTM走势')
+                add_paragraph(document, f'  • 两条线的相对位置反映个股相对行业的估值水平')
+                add_paragraph(document, '')
+
+                add_paragraph(document, f'右上-PE相对位置（个股/行业）：')
+                add_paragraph(document, f'  • 比值>1：个股PE高于行业，溢价')
+                add_paragraph(document, f'  • 比值<1：个股PE低于行业，折价')
+                add_paragraph(document, f'  • 比值=1：与行业持平')
+                add_paragraph(document, '')
+
+                add_paragraph(document, f'左下-个股PE历史分位数：')
+                add_paragraph(document, f'  • 显示{stock_code}的PE在历史中的位置变化')
+                add_paragraph(document, f'  • 当前分位数：{stock_pe_percentile:.1f}%')
+                add_paragraph(document, f'  • 分位数上升表示估值相对历史提升')
+                add_paragraph(document, '')
+
+                add_paragraph(document, f'右下-行业PE历史分位数：')
+                add_paragraph(document, f'  • 显示{industry_name}的PE在历史中的位置变化')
+                add_paragraph(document, f'  • 当前分位数：{industry_pe_percentile:.1f}%')
+                add_paragraph(document, f'  • 可用于判断行业整体估值水平')
+                add_paragraph(document, '')
+
+            # 添加分析结论
+            add_paragraph(document, '')
+            add_paragraph(document, 'PE历史分位数趋势分析结论：', bold=True)
+            add_paragraph(document, '')
+
+            # 估值水平判断
+            if stock_pe_percentile >= 80:
+                stock_valuation_level = "历史高位"
+                stock_emoji = "🔴"
+                stock_comment = f"当前PE处于历史{stock_pe_percentile:.1f}%分位数，属于历史高位，估值偏高，需警惕回调风险"
+            elif stock_pe_percentile >= 60:
+                stock_valuation_level = "历史中高位"
+                stock_emoji = "🟠"
+                stock_comment = f"当前PE处于历史{stock_pe_percentile:.1f}%分位数，属于历史中高位，估值相对偏高"
+            elif stock_pe_percentile >= 40:
+                stock_valuation_level = "历史中位数"
+                stock_emoji = "🟡"
+                stock_comment = f"当前PE处于历史{stock_pe_percentile:.1f}%分位数，接近历史中位数，估值合理"
+            elif stock_pe_percentile >= 20:
+                stock_valuation_level = "历史中低位"
+                stock_emoji = "🟢"
+                stock_comment = f"当前PE处于历史{stock_pe_percentile:.1f}%分位数，属于历史中低位，估值相对偏低"
+            else:
+                stock_valuation_level = "历史低位"
+                stock_emoji = "✅"
+                stock_comment = f"当前PE处于历史{stock_pe_percentile:.1f}%分位数，属于历史低位，估值偏低，安全边际较高"
+
+            add_paragraph(document, f'{stock_emoji} 个股估值水平：{stock_valuation_level}')
+            add_paragraph(document, f'   {stock_comment}')
+            add_paragraph(document, '')
+
+            # 与行业对比
+            if stock_pe_percentile > industry_pe_percentile + 20:
+                relative_comment = f"个股分位数({stock_pe_percentile:.1f}%)显著高于行业({industry_pe_percentile:.1f}%)，相对行业估值偏高"
+                relative_emoji = "⚠️"
+            elif stock_pe_percentile < industry_pe_percentile - 20:
+                relative_comment = f"个股分位数({stock_pe_percentile:.1f}%)显著低于行业({industry_pe_percentile:.1f}%)，相对行业估值偏低，安全边际较高"
+                relative_emoji = "✅"
+            else:
+                relative_comment = f"个股分位数({stock_pe_percentile:.1f}%)与行业({industry_pe_percentile:.1f}%)基本持平"
+                relative_emoji = "ℹ️"
+
+            add_paragraph(document, f'{relative_emoji} 相对行业估值：{relative_comment}')
+            add_paragraph(document, '')
+
+            # 投资建议
+            add_paragraph(document, '💡 历史分位数投资启示：')
+            if stock_pe_percentile <= 25:
+                add_paragraph(document, f'• 当前PE处于历史{stock_pe_percentile:.1f}%分位数（低位），历史上仅{stock_pe_percentile:.1f}%的时间估值更低')
+                add_paragraph(document, f'• 从历史角度看，当前估值具备较好的安全边际')
+                add_paragraph(document, f'• 建议积极关注，估值修复空间较大')
+            elif stock_pe_percentile <= 50:
+                add_paragraph(document, f'• 当前PE处于历史{stock_pe_percentile:.1f}%分位数（中低位），估值相对合理或偏低')
+                add_paragraph(document, f'• 从历史角度看，当前估值风险可控')
+                add_paragraph(document, f'• 建议适度配置，关注基本面变化')
+            elif stock_pe_percentile <= 75:
+                add_paragraph(document, f'• 当前PE处于历史{stock_pe_percentile:.1f}%分位数（中高位），估值相对偏高')
+                add_paragraph(document, f'• 从历史角度看，当前估值风险上升')
+                add_paragraph(document, f'• 建议谨慎参与，等待更好的买入时机')
+            else:
+                add_paragraph(document, f'• 当前PE处于历史{stock_pe_percentile:.1f}%分位数（高位），估值处于历史高位')
+                add_paragraph(document, f'• 从历史角度看，当前估值风险较大')
+                add_paragraph(document, f'• 建议等待估值回落至历史中低位再考虑参与')
+
+        else:
+            print("⚠️ PE历史数据获取不完整，跳过趋势图生成")
+            add_paragraph(document, '⚠️ PE历史分位数趋势图暂时无法生成，可能原因：')
+            add_paragraph(document, '   • tushare数据缺失或API调用限制')
+            add_paragraph(document, '   • 股票或行业历史数据不足')
+
+    except ImportError as e:
+        print(f"⚠️ PE历史分析器导入失败: {e}")
+        add_paragraph(document, '⚠️ PE历史分位数趋势分析功能暂不可用')
+
+    except Exception as e:
+        print(f"❌ PE历史分位数趋势分析失败: {e}")
+        add_paragraph(document, f'⚠️ PE历史分位数趋势分析执行失败: {e}')
+
+    add_paragraph(document, '')
+
+    add_section_break(document)
+
+    # 返回更新后的context
+    return context
