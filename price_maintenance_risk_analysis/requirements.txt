@@ -1,0 +1,16 @@
+# 定增风险分析报告生成器 - Python依赖包
+
+# 核心依赖
+python-docx>=0.8.11
+matplotlib>=3.7.0
+numpy>=1.24.0
+pandas>=2.0.0
+scipy>=1.10.0
+
+# 数据源
+tushare>=1.2.60
+akshare>=1.12.0
+
+# 时间序列预测（新增）
+statsmodels>=0.14.0  # ARIMA模型
+arch>=6.0.0          # GARCH模型

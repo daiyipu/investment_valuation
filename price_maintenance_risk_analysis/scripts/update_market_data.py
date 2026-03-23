@@ -192,6 +192,10 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技'):
     median_price = df['close'].median()
     price_std = df['close'].std()
 
+    # 保存价格序列（用于时间序列预测模型，如ARIMA/GARCH）
+    # 保存最近500个交易日的收盘价
+    price_series = df['close'].iloc[-500:].tolist() if len(df) >= 500 else df['close'].tolist()
+
     # 构建市场数据字典
     market_data = {
         'stock_code': stock_code,
@@ -225,6 +229,7 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技'):
         'win_rate_120d': round(float(win_rate_120d), 4),
         'win_rate_250d': round(float(win_rate_250d), 4),
         'total_days': len(df),
+        'price_series': price_series,  # 新增：完整价格序列，用于时间序列预测
         'data_source': 'tushare_realtime',
         'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     }
