@@ -1,0 +1,205 @@
+# 模块化重构结构图
+
+## 重构前后对比
+
+### 重构前 ❌
+```
+generate_word_report_v2.py (9368行)
+├── 导入和设置
+├── 工具函数定义
+├── 图表生成函数（分散）
+├── 第一章：项目概况（455行）
+├── 第二章：相对估值分析（487行）
+├── 第三章：DCF估值分析（668行）
+├── 第四章：敏感性分析（1208行）
+├── 第五章：蒙特卡洛模拟（943行）
+├── 第六章：情景分析（939行）
+├── 第七章：压力测试（540行）
+├── 第八章：VaR风险度量（473行）
+├── 第九章：风控建议（368行）
+└── 附件：情景数据表（155行）
+
+问题：
+❌ 文件过大，难以维护
+❌ 章节耦合，难以并行开发
+❌ 工具函数分散，难以复用
+❌ 修改风险高，影响范围大
+```
+
+### 重构后 ✅
+```
+scripts/generate_word_report_v2/
+│
+├── utils.py (1992行)                    # 工具函数库
+│   ├── Word文档格式化函数
+│   │   ├── setup_chinese_font()
+│   │   ├── add_title()
+│   │   ├── add_paragraph()
+│   │   ├── add_table_data()
+│   │   ├── add_image()
+│   │   └── add_section_break()
+│   │
+│   └── 图表生成函数（15个）
+│       ├── generate_break_even_chart()
+│       ├── generate_lockup_sensitivity_charts_split()
+│       ├── generate_time_window_analysis_chart()
+│       ├── generate_tornado_chart_split()
+│       ├── generate_sensitivity_charts_split()
+│       ├── generate_discount_scenario_charts_split()
+│       ├── generate_multi_dimension_scenario_charts_split()
+│       ├── generate_stress_test_charts_split()
+│       ├── generate_monte_carlo_charts_split()
+│       ├── generate_var_chart()
+│       ├── generate_relative_valuation_charts_split()
+│       ├── generate_stock_market_data_charts_split()
+│       ├── generate_industry_index_charts()
+│       ├── generate_index_data_charts_split()
+│       └── generate_radar_chart()
+│
+├── main.py (225行)                       # 统一入口
+│   └── generate_report(stock_code, stock_name)
+│       ├── 初始化context
+│       ├── 调用各章节模块
+│       └── 返回Word文档
+│
+├── chapter01_overview.py (578行)         # 第一章：项目概况
+│   └── generate_chapter(context)
+│       ├── 报告封面
+│       ├── 目录生成
+│       ├── 1.1 基本信息
+│       ├── 1.2 个股数据分析
+│       └── 1.3 行业数据分析
+│
+├── chapter02_valuation.py (533行)        # 第二章：相对估值分析
+│   └── generate_chapter(context)
+│       ├── 2.1 估值指标对比
+│       ├── 2.2 估值偏离度分析
+│       └── 2.3 PE历史分位数趋势分析
+│
+├── chapter03_dcf.py                      # 第三章：DCF估值分析
+│   └── generate_chapter(context)
+│       ├── 3.1 DCF估值方法说明
+│       ├── 3.2 估值敏感性分析
+│       ├── 3.3 估值参数与过程
+│       └── 3.4 估值结论
+│
+├── chapter04_sensitivity.py (1406行)     # 第四章：敏感性分析
+│   └── generate_chapter(context)
+│       ├── 4.1 不同时间窗口风险指标分析
+│       ├── 4.2 发行价折扣敏感性分析
+│       ├── 4.3 漂移率敏感性分析
+│       ├── 4.4 波动率敏感性分析
+│       ├── 4.5 参数敏感性排序（龙卷风图）
+│       └── 4.6 复合敏感性分析
+│
+├── chapter05_montecarlo.py (1167行)      # 第五章：蒙特卡洛模拟
+│   └── generate_chapter(context)
+│       ├── 5.1 蒙特卡洛模拟基础分析
+│       ├── 5.2 多窗口期对比分析
+│       ├── 5.3 ARIMA时间序列预测漂移率 ⭐
+│       ├── 5.4 GARCH模型预测波动率 ⭐
+│       └── 5.5 基于预测参数的蒙特卡洛模拟 ⭐
+│
+├── chapter06_scenario.py (1198行)        # 第六章：情景分析
+│   └── generate_chapter(context)
+│       ├── 6.1 多参数情景分析（585种情景）
+│       ├── 6.2 基于市场指数与行业的情景分析
+│       ├── 6.3 基于行业PE分位数的情景分析
+│       ├── 6.4 基于个股PE分位数的情景分析
+│       ├── 6.5 基于DCF估值的情景分析
+│       └── 6.6 情景综合分析汇总表
+│
+├── chapter07_stress.py (690行)           # 第七章：压力测试
+│   └── generate_chapter(context)
+│       ├── 7.1 PE回归压力测试
+│       ├── 7.2 经济面极端情况压力测试
+│       ├── 7.3 多重敏感性指标极端情况
+│       └── 7.4 压力测试综合结论
+│
+├── chapter08_var.py                      # 第八章：VaR风险度量
+│   └── generate_chapter(context)
+│       ├── 8.1 VaR计算参数说明
+│       ├── 8.2 多窗口期VaR对比
+│       ├── 8.3 不同置信水平下的VaR
+│       ├── 8.4 CVaR（条件风险价值）分析
+│       └── 8.5 VaR风险测算综合结论
+│
+├── chapter09_advice.py (406行)           # 第九章：风控建议
+│   └── generate_chapter(context)
+│       ├── 9.1 核心风险指标汇总
+│       ├── 9.2 盈亏平衡分析
+│       ├── 9.3 报价方案建议
+│       ├── 9.4 当前发行价评估
+│       ├── 9.5 主要风险提示
+│       └── 9.6 风控策略建议
+│
+└── appendix_scenarios.py (102行)         # 附件：情景数据表
+    └── generate_chapter(context)
+        └── 585种情景完整数据表
+
+总计：13个文件，6576行代码
+```
+
+## 数据流设计
+
+```
+用户请求
+    │
+    ▼
+main.py: generate_report()
+    │
+    ├─► 初始化 context
+    │   {
+    │     'document': Word(),
+    │     'project_params': {...},
+    │     'market_data': {...},
+    │     ...
+    │   }
+    │
+    ├─► chapter01_overview.generate_chapter(context)
+    │   ├─► 从context读取数据
+    │   ├─► 使用utils工具函数
+    │   ├─► 生成第一章内容
+    │   └─► 更新context
+    │
+    ├─► chapter02_valuation.generate_chapter(context)
+    │   ├─► 从context读取数据
+    │   ├─► 使用utils工具函数
+    │   ├─► 生成第二章内容
+    │   └─► 更新context
+    │
+    ├─► ... (其他章节)
+    │
+    └─► 返回 Word文档
+        │
+        ▼
+    保存为 .docx 文件
+```
+
+## 核心优势
+
+✅ **可维护性提升**
+   • 单文件从9368行降至最大1406行（↓85%）
+   • 每个章节职责清晰，修改影响范围小
+
+✅ **可读性提升**
+   • 章节结构一目了然
+   • 代码逻辑易于理解
+
+✅ **可扩展性提升**
+   • 新增章节只需添加新模块
+   • 不影响现有章节
+
+✅ **可复用性提升**
+   • 工具函数集中在utils.py
+   • 可在其他项目中复用
+
+✅ **并行开发友好**
+   • 不同章节可独立开发
+   • 减少代码冲突
+
+✅ **团队协作友好**
+   • 可按章节分配任务
+   • 代码审查更高效
+```
+
