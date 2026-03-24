@@ -19,7 +19,7 @@ from docx.shared import Inches
 from docx.oxml.ns import qn
 
 # 导入工具函数
-from .utils import (
+from module_utils import (
     add_title, add_paragraph, add_table_data, add_image, add_section_break,
     generate_stock_market_data_charts_split, generate_industry_index_charts,
     generate_index_data_charts_split

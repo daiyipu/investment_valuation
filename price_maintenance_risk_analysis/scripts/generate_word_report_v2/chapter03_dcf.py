@@ -19,19 +19,22 @@ import sys
 from datetime import datetime, timedelta
 from docx.shared import Inches
 
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')  # 使用非交互式后端
+
 # 添加父目录到路径以导入工具模块
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 sys.path.insert(0, PROJECT_DIR)
 
-from scripts.utils.font_manager import get_font_prop
-from scripts.generate_word_report_v2 import (
+from utils.font_manager import get_font_prop
+from module_utils import (
     add_title,
     add_paragraph,
     add_table_data,
     add_image,
-    add_section_break,
-    generate_dcf_valuation_heatmap
+    add_section_break
 )
 
 # 获取中文字体
@@ -625,3 +628,84 @@ if __name__ == '__main__':
     # 测试代码
     print("第三章：DCF估值分析模块")
     print("本模块需要通过 generate_chapter(context) 函数调用")
+def generate_dcf_valuation_heatmap(save_path, current_price, net_income, total_shares, net_debt=20.0):
+    """生成DCF估值热力图
+
+    参数:
+        save_path: 保存路径
+        current_price: 当前股价
+        net_income: 净利润（元）
+        total_shares: 总股数
+        net_debt: 净债务（亿元），默认20亿元
+    """
+    fig, ax = plt.subplots(figsize=(14, 9))
+
+    # WACC 和永续增长率范围
+    wacc_range = np.linspace(0.08, 0.13, 7)   # 8%-13%
+    growth_range = np.linspace(0.15, 0.30, 7) # 15%-30% 增长率
+
+    # 估值参数
+    # FCF = 净利润 × 100%
+    base_fcf = net_income / 100000000  # 转换为亿元
+    # 股数（亿股）
+    shares_billion = total_shares / 100000000
+
+    # 计算每股价值矩阵
+    pivot_data = []
+    for g in growth_range:
+        row = []
+        for w in wacc_range:
+            # DCF计算：FCF按g增长
+            fcfs = [base_fcf * ((1 + g) ** i) for i in range(10)]
+            pv_fcfs = sum([fcf / ((1 + w) ** (i+1)) for i, fcf in enumerate(fcfs)])
+
+            # 终值：永续增长率设为3%
+            terminal_growth = 0.03
+            terminal_fcf = fcfs[-1] * (1 + terminal_growth)
+            terminal_value = terminal_fcf / (w - terminal_growth) if w > terminal_growth else 0
+            pv_terminal = terminal_value / ((1 + w) ** 10)
+
+            enterprise_value = pv_fcfs + pv_terminal  # 亿元
+            equity_value = enterprise_value - net_debt  # 减净债务（亿元）
+            value_per_share = equity_value / shares_billion  # 每股价值（元）
+            row.append(value_per_share)
+        pivot_data.append(row)
+
+    pivot_table = pd.DataFrame(
+        pivot_data,
+        index=[f'{g*100:.1f}%' for g in growth_range],
+        columns=[f'{w*100:.1f}%' for w in wacc_range]
+    )
+
+    # 绘制热力图
+    heatmap = sns.heatmap(pivot_table, annot=True, fmt='.2f', cmap='RdYlGn',
+                          center=current_price, vmin=current_price*0.5, vmax=current_price*1.5,
+                          cbar_kws={'label': '每股价值（元）'}, ax=ax)
+
+    # 修复 colorbar 中文
+    cbar = heatmap.collections[0].colorbar
+    cbar.set_label('每股价值（元）', fontproperties=font_prop, fontsize=12)
+
+    # 设置轴标签
+    ax.set_xlabel('WACC（加权平均资本成本）', fontproperties=font_prop, fontsize=12)
+    ax.set_ylabel('预测期FCF增长率', fontproperties=font_prop, fontsize=12)
+    ax.set_title('DCF估值敏感性分析矩阵（每股价值：元）',
+                fontproperties=font_prop, fontsize=14, fontweight='bold', pad=15)
+
+    # 设置刻度标签字体
+    for label in ax.get_xticklabels():
+        label.set_fontproperties(font_prop)
+        label.set_fontsize(10)
+    for label in ax.get_yticklabels():
+        label.set_fontproperties(font_prop)
+        label.set_fontsize(10)
+
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
+
+def generate_var_chart(var_95, var_99, cvar_95, save_path):
+    """生成VaR风险度量图表"""
+    plt.figure(figsize=(10, 6))
+    metrics = ['95% VaR', '99% VaR', '95% CVaR']

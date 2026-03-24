@@ -23,22 +23,26 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 sys.path.insert(0, PROJECT_DIR)
 
+# 切换到项目根目录（确保数据文件路径正确）
+os.chdir(PROJECT_DIR)
+
+# 导入项目根目录的utils模块
 from utils.config_loader import load_placement_config
 from utils.analysis_tools import PrivatePlacementRiskAnalyzer
 from utils.font_manager import get_font_prop
 
 # 导入本模块的工具函数和章节模块
-from . import utils
-from . import chapter01_overview
-from . import chapter02_valuation
-from . import chapter03_dcf
-from . import chapter04_sensitivity
-from . import chapter05_montecarlo
-from . import chapter06_scenario
-from . import chapter07_stress
-from . import chapter08_var
-from . import chapter09_advice
-from . import appendix_scenarios
+import module_utils as utils
+import chapter01_overview
+import chapter02_valuation
+import chapter03_dcf
+import chapter04_sensitivity
+import chapter05_montecarlo
+import chapter06_scenario
+import chapter07_stress
+import chapter08_var
+import chapter09_advice
+import appendix_scenarios
 
 # 配置路径
 DATA_DIR = os.path.join(PROJECT_DIR, 'data')
@@ -79,8 +83,7 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技'):
 
     # 加载配置数据
     print("\n📊 加载配置数据...")
-    project_params = load_placement_config(stock_code)
-    market_data = _load_market_data(stock_code)
+    project_params, risk_params, market_data = load_placement_config(stock_code)
     industry_data = _load_industry_data(stock_code)
 
     # 创建分析器
@@ -96,6 +99,7 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技'):
         'stock_code': stock_code,
         'stock_name': stock_name,
         'project_params': project_params,
+        'risk_params': risk_params,  # 添加risk_params
         'market_data': market_data,
         'industry_data': industry_data,
         'analyzer': analyzer,
@@ -154,20 +158,6 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技'):
     print("="*70)
 
     return document
-
-
-def _load_market_data(stock_code):
-    """加载市场数据"""
-    import json
-    market_data_file = os.path.join(DATA_DIR, f"{stock_code.replace('.', '_')}_market_data.json")
-
-    if os.path.exists(market_data_file):
-        with open(market_data_file, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    else:
-        print(f"⚠️ 未找到市场数据文件: {market_data_file}")
-        print(f"   请先运行: python scripts/update_market_data.py --stock {stock_code}")
-        return None
 
 
 def _load_industry_data(stock_code):

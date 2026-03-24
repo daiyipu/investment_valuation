@@ -1,0 +1,30 @@
+{
+  "financing_amount": 100000000,
+  "lockup_period": 6,
+  "pricing_method": "ma20_discount_90",
+  "premium_rate": -0.1,
+  "risk_free_rate": 0.03,
+  "net_assets": 0.0,
+  "total_debt": 0.0,
+  "net_income": 0.0,
+  "revenue_growth": 0.15,
+  "operating_margin": 0.15,
+  "beta": 1.0,
+  "historical_fcf_data": {
+    "years": 5,
+    "year_range": [
+      2020,
+      2024
+    ],
+    "data": []
+  },
+  "_notes": {
+    "financing_amount": "投资金额（元）- 固定1亿元，用于风险评估（与实际投资规模无关）",
+    "lockup_period": "锁定期（月）- 默认6个月",
+    "pricing_method": "定价方式：ma20_discount_90(MA20九折), ma20_discount_85(MA20八五折), ma20_par(MA20平价), custom_premium(自定义溢价率)",
+    "premium_rate": "溢价率（负数为折价，正数为溢价）- 默认-0.10表示九折",
+    "_auto_generated": "以下参数自动计算，无需手动填写：",
+    "issue_price": "自动计算：MA20 × (1 + premium_rate)",
+    "current_price": "自动从API获取最新股价"
+  }
+}

@@ -1,11 +1,11 @@
 {
   "stock_code": "300735.SZ",
-  "stock_name": "光弘科技",
+  "stock_name": "300735.SZ",
   "analysis_date": "20260323",
   "current_price": 20.54,
-  "avg_price_all": 24.31,
-  "median_price": 25.02,
-  "price_std": 6.56,
+  "avg_price_all": 24.33,
+  "median_price": 25.03,
+  "price_std": 6.54,
   "volatility_20d": 0.389,
   "volatility_60d": 0.326,
   "volatility_120d": 0.3569,
@@ -29,7 +29,7 @@
   "win_rate_60d": 0.5333,
   "win_rate_120d": 0.5,
   "win_rate_250d": 0.5,
-  "total_days": 663,
+  "total_days": 662,
   "price_series": [
     17.31,
     20.77,
@@ -533,5 +533,5 @@
     20.54
   ],
   "data_source": "tushare_realtime",
-  "generated_at": "2026-03-23 17:30:51"
+  "generated_at": "2026-03-24 09:11:34"
 }

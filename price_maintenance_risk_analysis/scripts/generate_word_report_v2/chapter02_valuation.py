@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from docx.shared import Inches
 
 # 导入工具函数
-from .utils import (
+from module_utils import (
     add_title, add_paragraph, add_table_data, add_image, add_section_break,
     generate_relative_valuation_charts_split
 )

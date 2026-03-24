@@ -27,8 +27,8 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 sys.path.insert(0, PROJECT_DIR)
 
-from scripts.utils.font_manager import get_font_prop
-from scripts.generate_word_report_v2 import (
+from utils.font_manager import get_font_prop
+from module_utils import (
     add_title,
     add_paragraph,
     add_table_data,

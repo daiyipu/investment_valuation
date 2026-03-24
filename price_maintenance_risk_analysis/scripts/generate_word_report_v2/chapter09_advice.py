@@ -28,7 +28,7 @@ def generate_chapter09(document, project_params, market_data, all_scenarios_for_
     - ma20_mc: MA20价格
     """
     from docx.shared import Inches
-    from .utils import add_title, add_paragraph, add_table_data, add_image, add_section_break
+    from module_utils import add_title, add_paragraph, add_table_data, add_image, add_section_break
     from .charts import generate_break_even_chart
     import os
     from datetime import datetime

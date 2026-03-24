@@ -22,7 +22,7 @@ def generate_appendix_scenarios(document, all_scenarios_for_appendix):
         - var_5: 5% VaR
         - var_95: 95% VaR
     """
-    from .utils import add_title, add_paragraph, add_table_data, add_section_break
+    from module_utils import add_title, add_paragraph, add_table_data, add_section_break
 
     # ==================== 附件：585种情景完整数据表 ====================
     add_section_break(document)
