@@ -24,6 +24,8 @@ import matplotlib
 matplotlib.use('Agg')  # 使用非交互式后端
 
 import numpy as np
+import pandas as pd
+import seaborn as sns
 
 # 添加父目录到路径以导入工具模块
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
