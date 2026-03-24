@@ -412,11 +412,17 @@ def generate_chapter(context):
     add_paragraph(document, '')
 
     add_title(document, '2.2 估值偏离度分析', level=2)
+    add_paragraph(document, '本节分析标的公司与同行公司和申万行业指数的估值偏离情况，评估估值相对位置。')
+    add_paragraph(document, '')
 
     # 计算PE在行业中的分位数位置
     pe_position = (peer_companies_val['pe'] < current_metrics_val['pe']).sum() / len(peer_companies_val) * 100
     pb_position = (peer_companies_val['pb'] < current_metrics_val['pb']).sum() / len(peer_companies_val) * 100
     ps_position = (peer_companies_val['ps'] < current_metrics_val['ps']).sum() / len(peer_companies_val) * 100
+
+    # 2.2.1 与同行公司对比
+    add_title(document, '2.2.1 与同行公司对比', level=3)
+    add_paragraph(document, '')
 
     add_paragraph(document, f"• PE偏离度: {(current_metrics_val['pe']-industry_avg_val['pe'])/industry_avg_val['pe']*100:+.1f}%，位于行业{pe_position:.1f}%分位")
     add_paragraph(document, f"• PB偏离度: {(current_metrics_val['pb']-industry_avg_val['pb'])/industry_avg_val['pb']*100:+.1f}%，位于行业{pb_position:.1f}%分位")
@@ -443,6 +449,48 @@ def generate_chapter(context):
         add_paragraph(document, f'⚠️ PS({current_metrics_val["ps"]:.2f}倍)高于行业Q3({industry_stats_val["ps"]["q3"]:.2f}倍)，市销率偏高')
     elif current_metrics_val['ps'] < industry_stats_val['ps']['q1']:
         add_paragraph(document, f'✅ PS({current_metrics_val["ps"]:.2f}倍)低于行业Q1({industry_stats_val["ps"]["q1"]:.2f}倍)，市销率偏低')
+
+    # 2.2.2 与申万行业指数对比
+    if sw_index_pe is not None:
+        add_paragraph(document, '')
+        add_title(document, '2.2.2 与申万行业指数对比', level=3)
+        add_paragraph(document, '')
+
+        # 计算与申万行业指数的偏离度
+        pe_dev_sw = (current_metrics_val['pe'] - sw_index_pe) / sw_index_pe * 100
+        pb_dev_sw = (current_metrics_val['pb'] - sw_index_pb) / sw_index_pb * 100 if sw_index_pb else None
+        ps_dev_sw = (current_metrics_val['ps'] - sw_index_ps) / sw_index_ps * 100 if sw_index_ps else None
+
+        add_paragraph(document, f"• PE偏离度: {pe_dev_sw:+.1f}%（标的{current_metrics_val['pe']:.2f}倍 vs 申万{sw_index_pe:.2f}倍）")
+        if pb_dev_sw is not None:
+            add_paragraph(document, f"• PB偏离度: {pb_dev_sw:+.1f}%（标的{current_metrics_val['pb']:.2f}倍 vs 申万{sw_index_pb:.2f}倍）")
+        if ps_dev_sw is not None:
+            add_paragraph(document, f"• PS偏离度: {ps_dev_sw:+.1f}%（标的{current_metrics_val['ps']:.2f}倍 vs 申万{sw_index_ps:.2f}倍）")
+
+        add_paragraph(document, '')
+
+        # PE申万指数对比分析
+        if abs(pe_dev_sw) < 10:
+            add_paragraph(document, f'✅ PE({current_metrics_val["pe"]:.2f}倍)与申万行业指数PE({sw_index_pe:.2f}倍)基本一致，偏离度{pe_dev_sw:+.1f}%')
+        elif pe_dev_sw > 0:
+            add_paragraph(document, f'⚠️ PE({current_metrics_val["pe"]:.2f}倍)高于申万行业指数PE({sw_index_pe:.2f}倍)，溢价{pe_dev_sw:+.1f}%')
+        else:
+            add_paragraph(document, f'✅ PE({current_metrics_val["pe"]:.2f}倍)低于申万行业指数PE({sw_index_pe:.2f}倍)，折价{pe_dev_sw:+.1f}%')
+
+        # PB申万指数对比分析
+        if pb_dev_sw is not None:
+            if abs(pb_dev_sw) < 10:
+                add_paragraph(document, f'✅ PB({current_metrics_val["pb"]:.2f}倍)与申万行业指数PB({sw_index_pb:.2f}倍)基本一致')
+            elif pb_dev_sw > 0:
+                add_paragraph(document, f'⚠️ PB({current_metrics_val["pb"]:.2f}倍)高于申万行业指数PB({sw_index_pb:.2f}倍)，溢价{pb_dev_sw:+.1f}%')
+            else:
+                add_paragraph(document, f'✅ PB({current_metrics_val["pb"]:.2f}倍)低于申万行业指数PB({sw_index_pb:.2f}倍)，折价{pb_dev_sw:+.1f}%')
+
+        add_paragraph(document, '')
+        add_paragraph(document, '💡 申万行业指数说明：')
+        add_paragraph(document, f'• 申万行业指数基于所有成分股市值加权，反映行业整体估值水平')
+        add_paragraph(document, f'• 与申万指数对比可判断个股相对行业整体的估值位置')
+        add_paragraph(document, f'• 正偏离表示估值高于行业平均，负偏离表示估值低于行业平均')
 
     add_paragraph(document, '')
 
