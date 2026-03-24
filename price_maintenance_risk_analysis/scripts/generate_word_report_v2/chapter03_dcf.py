@@ -366,7 +366,7 @@ def generate_chapter(context):
     add_paragraph(document, '')
     add_paragraph(document, '其中：')
     add_paragraph(document, '• 经营活动现金流：来自现金流量表，反映公司主营业务的现金生成能力')
-    add_paragraph(document, '• 资本支出：购建固定资产、无形资产等长期资产支付的现金，取投资活动现金流的30%')
+    add_paragraph(document, '• 资本支出：直接使用投资活动现金流，反映购建固定资产、无形资产和其他长期资产支付的现金')
     add_paragraph(document, '')
     add_paragraph(document, '该方法的优势：')
     add_paragraph(document, '1. 直接使用现金流量表数据，避免复杂的营运资本计算')

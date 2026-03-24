@@ -293,7 +293,7 @@ def generate_chapter(context):
     add_paragraph(document, '')
 
     # ==================== 模拟参数 ====================
-    add_paragraph(document, '<b>1. 模拟参数</b>', bold=True)
+    add_paragraph(document, '1. 模拟参数', bold=True)
 
     # 计算定增溢价率（相对于MA20，与项目概况保持一致）
     ma20_mc = market_data.get('ma_20', 0)
@@ -352,7 +352,7 @@ def generate_chapter(context):
     mc_drift = mc_drift_250d
 
     # ==================== 模拟结果 ====================
-    add_paragraph(document, '<b>2. 模拟结果（250日窗口基准）</b>', bold=True)
+    add_paragraph(document, '2. 模拟结果（250日窗口基准）', bold=True)
 
     # 运行简化模拟
     lockup_days = project_params['lockup_period'] * 30
@@ -537,7 +537,26 @@ def generate_chapter(context):
             # 提取锁定期末价格
             final_prices = sim_window.iloc[:, -1].values
             returns = (final_prices - project_params['issue_price']) / project_params['issue_price']
-            annualized_returns = returns * (12 / project_params['lockup_period'])
+
+            # 年化收益率计算：使用固定系数（单利）
+            # 60日=1/4(季度), 120日=1/2(半年), 250日=1(年度)
+            if time_steps == 60:
+                coefficient = 0.25  # 季度
+            elif time_steps == 120:
+                coefficient = 0.5   # 半年
+            elif time_steps == 250:
+                coefficient = 1.0   # 年度
+            else:
+                coefficient = time_steps / 252.0  # 其他情况用实际计算
+            annualized_returns = returns / coefficient if coefficient > 0 else returns
+
+            # 调试信息
+            print(f"    调试: 当前价={project_params['current_price']:.2f}, 发行价={project_params['issue_price']:.2f}")
+            print(f"    调试: 模拟期数={time_steps}日(系数={coefficient}), 锁定期={project_params['lockup_period']}月")
+            print(f"    调试: 漂移率={window_drift*100:.2f}%, 波动率={window_vol*100:.2f}%")
+            print(f"    调试: 最终价格均值={final_prices.mean():.2f}, 中位数={np.median(final_prices):.2f}")
+            print(f"    调试: 期收益率均值={returns.mean()*100:.2f}%, 年化收益率均值={annualized_returns.mean()*100:.2f}%")
+            print(f"    调试: 盈利次数={(returns>0).sum()}/{len(returns)}, 盈利概率={(returns>0).mean()*100:.1f}%")
 
             # 统计分析
             multi_window_mc_results[window_name] = {
@@ -849,7 +868,7 @@ def generate_chapter(context):
                 arima_result = forecaster.forecast_drift_with_arima(horizon=120)
 
                 # 添加模型设置说明
-                add_paragraph(document, '<b>模型设置：</b>')
+                add_paragraph(document, '模型设置：', bold=True)
                 arima_params = [
                     ['模型类型', 'ARIMA(1,1,1)'],
                     ['预测期数', '120日（半年）'],
@@ -862,8 +881,8 @@ def generate_chapter(context):
 
                 # 添加预测结果
                 add_paragraph(document, '')
-                add_paragraph(document, '<b>预测结果：</b>')
-                add_paragraph(document, f'• 预测漂移率（年化）：<b>{arima_result["forecast_drift"]*100:.2f}%</b>')
+                add_paragraph(document, '预测结果：', bold=True)
+                add_paragraph(document, f'• 预测漂移率（年化）：{arima_result["forecast_drift"]*100:.2f}%')
                 add_paragraph(document, f'• 预测期间：未来120个交易日')
                 add_paragraph(document, f'• 含义：如果模型预测准确，未来半年股价预期年化收益率为{arima_result["forecast_drift"]*100:.2f}%')
 
@@ -876,12 +895,12 @@ def generate_chapter(context):
 
                 # 对比历史漂移率
                 add_paragraph(document, '')
-                add_paragraph(document, '<b>与历史漂移率对比：</b>')
+                add_paragraph(document, '与历史漂移率对比：', bold=True)
                 historical_drifts = [
                     ['60日窗口', f'{mc_drift_60d*100:.2f}%'],
                     ['120日窗口', f'{mc_drift_120d*100:.2f}%'],
                     ['250日窗口', f'{mc_drift_250d*100:.2f}%'],
-                    ['ARIMA预测', f'<b>{arima_result["forecast_drift"]*100:.2f}%</b>']
+                    ['ARIMA预测', f'{arima_result["forecast_drift"]*100:.2f}%']
                 ]
                 add_table_data(document, ['数据来源', '年化漂移率'], historical_drifts)
 
@@ -926,7 +945,7 @@ def generate_chapter(context):
                 garch_result = forecaster.forecast_volatility_with_garch(horizon=120)
 
                 # 添加模型设置说明
-                add_paragraph(document, '<b>模型设置：</b>')
+                add_paragraph(document, '模型设置：', bold=True)
                 garch_params = [
                     ['模型类型', 'GARCH(1,1)'],
                     ['预测期数', '120日（半年）'],
@@ -938,7 +957,7 @@ def generate_chapter(context):
                 # 添加模型参数（如果拟合成功）
                 if garch_result['model_fitted']:
                     add_paragraph(document, '')
-                    add_paragraph(document, '<b>模型参数：</b>')
+                    add_paragraph(document, '模型参数：', bold=True)
                     model_params = [
                         ['ω（长期平均方差）', f"{garch_result['omega']:.6f}"],
                         ['α（ARCH系数）', f"{garch_result['alpha']:.4f}"],
@@ -955,8 +974,8 @@ def generate_chapter(context):
 
                 # 添加预测结果
                 add_paragraph(document, '')
-                add_paragraph(document, '<b>预测结果：</b>')
-                add_paragraph(document, f'• 预测波动率（年化）：<b>{garch_result["forecast_volatility"]*100:.2f}%</b>')
+                add_paragraph(document, '预测结果：', bold=True)
+                add_paragraph(document, f'• 预测波动率（年化）：{garch_result["forecast_volatility"]*100:.2f}%')
                 add_paragraph(document, f'• 预测期间：未来120个交易日')
                 add_paragraph(document, f'• 含义：未来半年股价的预期年化波动率为{garch_result["forecast_volatility"]*100:.2f}%')
 
@@ -966,12 +985,12 @@ def generate_chapter(context):
 
                 # 对比历史波动率
                 add_paragraph(document, '')
-                add_paragraph(document, '<b>与历史波动率对比：</b>')
+                add_paragraph(document, '与历史波动率对比：', bold=True)
                 historical_vols = [
                     ['60日窗口', f'{mc_volatility_60d*100:.2f}%'],
                     ['120日窗口', f'{mc_volatility_120d*100:.2f}%'],
                     ['250日窗口', f'{mc_volatility_250d*100:.2f}%'],
-                    ['GARCH预测', f'<b>{garch_result["forecast_volatility"]*100:.2f}%</b>']
+                    ['GARCH预测', f'{garch_result["forecast_volatility"]*100:.2f}%']
                 ]
                 add_table_data(document, ['数据来源', '年化波动率'], historical_vols)
 
@@ -1019,7 +1038,11 @@ def generate_chapter(context):
         # 计算结果
         final_prices = sim_predicted.iloc[:, -1].values
         returns = (final_prices - project_params['issue_price']) / project_params['issue_price']
-        annualized_returns = returns * (12 / project_params['lockup_period'])
+
+        # 年化收益率计算：使用固定系数（单利）
+        # 120日=1/2(半年)
+        coefficient = 0.5
+        annualized_returns = returns / coefficient
 
         # 统计
         profit_prob = (returns > 0).mean() * 100
@@ -1029,8 +1052,11 @@ def generate_chapter(context):
         percentile_95 = np.percentile(annualized_returns, 95)
 
         # 添加模拟参数说明
-        add_paragraph(document, '<b>模拟参数：</b>')
+        add_paragraph(document, '模拟参数：', bold=True)
         mc_5_5_params = [
+            ['当前价格', f'{project_params["current_price"]:.2f}元'],
+            ['发行价格', f'{project_params["issue_price"]:.2f}元'],
+            ['溢价率', f'{(project_params["issue_price"]/project_params["current_price"]-1)*100:+.2f}%'],
             ['预测漂移率', f'{predicted_drift*100:.2f}%（来自5.3节ARIMA预测）'],
             ['预测波动率', f'{predicted_vol*100:.2f}%（来自5.4节GARCH预测）'],
             ['模拟期数', f'{time_steps}日（120个交易日，约半年）'],
@@ -1041,7 +1067,7 @@ def generate_chapter(context):
 
         # 添加模拟结果
         add_paragraph(document, '')
-        add_paragraph(document, '<b>模拟结果：</b>')
+        add_paragraph(document, '模拟结果：', bold=True)
         mc_5_5_results = [
             ['盈利概率', f'{profit_prob:.1f}%'],
             ['预期年化收益', f'{mean_return*100:.2f}%'],
@@ -1053,7 +1079,7 @@ def generate_chapter(context):
 
         # 添加结论说明
         add_paragraph(document, '')
-        add_paragraph(document, '<b>结果解读：</b>')
+        add_paragraph(document, '结果解读：', bold=True)
         add_paragraph(document, f'• 在{n_simulations:,}次模拟中，约{profit_prob:.1f}%的场景实现盈利')
         add_paragraph(document, f'• 预期年化收益率为{mean_return*100:.2f}%，{"高于" if mean_return > 0 else "低于"}无风险收益')
         add_paragraph(document, f'• 95%置信区间：年化收益在{percentile_5*100:.2f}%至{percentile_95*100:.2f}%之间')
@@ -1089,7 +1115,7 @@ def generate_chapter(context):
 
         # 与历史参数方法对比
         add_paragraph(document, '')
-        add_paragraph(document, '<b>与历史参数方法对比：</b>')
+        add_paragraph(document, '与历史参数方法对比：', bold=True)
         add_paragraph(document, '为了验证预测参数的有效性，下表对比基于预测参数和历史参数的模拟结果：')
         add_paragraph(document, '')
 
@@ -1137,7 +1163,7 @@ def generate_chapter(context):
 
         # 对比分析
         add_paragraph(document, '')
-        add_paragraph(document, '<b>对比分析：</b>')
+        add_paragraph(document, '对比分析：', bold=True)
         add_paragraph(document, f'• 漂移率：预测参数{"高于" if predicted_drift > historical_drift else "低于"}历史参数，差{abs(predicted_drift - historical_drift)*100:.2f}个百分点')
         add_paragraph(document, f'• 波动率：预测参数{"高于" if predicted_vol > historical_vol else "低于"}历史参数，差{abs(predicted_vol - historical_vol)*100:.2f}个百分点')
         add_paragraph(document, f'• 盈利概率：预测参数{"更高" if profit_prob > profit_prob_hist else "更低"}，差{abs(profit_prob - profit_prob_hist):.1f}个百分点')
@@ -1145,7 +1171,7 @@ def generate_chapter(context):
 
         # 投资建议
         add_paragraph(document, '')
-        add_paragraph(document, '<b>投资建议：</b>')
+        add_paragraph(document, '投资建议：', bold=True)
 
         if mean_return > mean_return_hist and profit_prob > profit_prob_hist:
             add_paragraph(document, f'✅ 基于预测参数的模拟结果优于历史参数，预期收益更高且盈利概率更大，建议积极考虑投资。')
@@ -1165,3 +1191,9 @@ def generate_chapter(context):
         print(f"✅ 5.5节完成：盈利概率{profit_prob:.1f}%，预期收益{mean_return*100:.2f}%")
 
         add_section_break(document)
+
+    # 保存数据到context供后续章节使用
+    context['results']['arima_result'] = arima_result
+    context['results']['garch_result'] = garch_result
+
+    return context

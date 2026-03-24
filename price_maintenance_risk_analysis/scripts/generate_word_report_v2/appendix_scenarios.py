@@ -14,7 +14,8 @@ def generate_chapter(context):
     """
     document = context['document']
     all_scenarios_for_appendix = context['results'].get('all_scenarios', [])
-    return _generate_appendix_scenarios(document, all_scenarios_for_appendix)
+    _generate_appendix_scenarios(document, all_scenarios_for_appendix)
+    return context
 
 
 def _generate_appendix_scenarios(document, all_scenarios_for_appendix):

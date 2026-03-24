@@ -5,36 +5,53 @@
 基于保守原则，确保投资决策在合理风险可控范围内进行。
 """
 
-def generate_chapter(document, project_params, market_data, all_scenarios_for_appendix,
-                       intrinsic_value, discount_premium, issue_type,
-                       profit_prob, mean_return, var_95, var_99,
-                       total_score, ma20_mc):
+import sys
+import os
+from datetime import datetime
+from docx.shared import Inches
+
+# 添加路径
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
+sys.path.insert(0, PROJECT_DIR)
+
+from module_utils import add_title, add_paragraph, add_table_data, add_image, add_section_break
+from module_utils import generate_break_even_chart
+
+def generate_chapter(context):
     """
     生成第九章：风控建议与风险提示
 
     参数说明：
-    - document: Word文档对象
-    - project_params: 项目参数字典
-    - market_data: 市场数据字典
-    - all_scenarios_for_appendix: 所有情景数据（用于附件）
-    - intrinsic_value: DCF内在价值
-    - discount_premium: 溢价率（相对MA20）
-    - issue_type: 发行类型
-    - profit_prob: 盈利概率
-    - mean_return: 预期收益率
-    - var_95: 95% VaR
-    - var_99: 99% VaR
-    - total_score: 风险评分
-    - ma20_mc: MA20价格
+    - context: 包含所有必要数据的上下文字典
     """
-    from docx.shared import Inches
-    from module_utils import add_title, add_paragraph, add_table_data, add_image, add_section_break
-    from .charts import generate_break_even_chart
-    import os
-    from datetime import datetime
+    # 从context中提取变量
+    document = context['document']
+    project_params = context['project_params']
+    market_data = context['market_data']
+    IMAGES_DIR = context['IMAGES_DIR']
 
-    # 配置常量
-    IMAGES_DIR = os.path.join(os.path.dirname(__file__), '..', 'outputs', 'images')
+    # 从context['results']中获取其他章节的计算结果
+    all_scenarios_for_appendix = context['results'].get('all_scenarios', [])
+    intrinsic_value = context.get('intrinsic_value', 25.0)
+    discount_premium = context['results'].get('discount_premium', 0.0)
+    issue_type = project_params.get('issue_type', '竞价')
+
+    # 从第五章获取蒙特卡洛结果
+    mc_results = context['results'].get('mc_results', {})
+    profit_prob = mc_results.get('profit_prob_120d', 0.5)
+    mean_return = mc_results.get('mean_return_120d', 0.0)
+
+    # 从第八章获取VaR结果
+    var_95 = context['results'].get('var_95', 0.5)
+    var_99 = context['results'].get('var_99', 0.7)
+
+    # 其他参数（使用默认值或从context获取）
+    total_score = context['results'].get('total_score', 50)
+    ma20_mc = market_data.get('ma_20', project_params['current_price'])
+
+    # 配置常量（使用context中的IMAGES_DIR）
+    # IMAGES_DIR已在context中定义
 
     # ==================== 第九章标题 ====================
     add_title(document, '九、风控建议与风险提示', level=1)
@@ -404,3 +421,7 @@ def generate_chapter(document, project_params, market_data, all_scenarios_for_ap
     '''
 
     add_paragraph(document, disclaimer, font_size=9)
+
+    add_section_break(document)
+
+    return context

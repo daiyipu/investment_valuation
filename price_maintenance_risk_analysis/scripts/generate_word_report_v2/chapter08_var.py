@@ -8,69 +8,50 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from docx.shared import Inches
+import sys
+import os
+
+# 添加路径
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
+sys.path.insert(0, PROJECT_DIR)
+
+from module_utils import (
+    add_title, add_paragraph, add_table_data,
+    add_image, add_section_break, generate_var_chart
+)
 
 
-def generate_chapter(
-    document,
-    project_params,
-    market_data,
-    mc_volatility_60d,
-    mc_drift_60d,
-    mc_volatility_120d,
-    mc_drift_120d,
-    mc_volatility_250d,
-    mc_drift_250d,
-    IMAGES_DIR,
-    add_title,
-    add_paragraph,
-    add_table_data,
-    add_image,
-    add_section_break,
-    generate_var_chart
-):
+def generate_chapter(context):
     """
     生成第八章：VaR风险度量
 
     Parameters:
     -----------
-    document : Document
-        Word文档对象
-    project_params : dict
-        项目参数
-    market_data : dict
-        市场数据
-    mc_volatility_60d : float
-        60日蒙特卡洛波动率
-    mc_drift_60d : float
-        60日蒙特卡洛漂移率
-    mc_volatility_120d : float
-        120日蒙特卡洛波动率
-    mc_drift_120d : float
-        120日蒙特卡洛漂移率
-    mc_volatility_250d : float
-        250日蒙特卡洛波动率
-    mc_drift_250d : float
-        250日蒙特卡洛漂移率
-    IMAGES_DIR : str
-        图片保存目录
-    add_title : function
-        添加标题的函数
-    add_paragraph : function
-        添加段落的函数
-    add_table_data : function
-        添加表格的函数
-    add_image : function
-        添加图片的函数
-    add_section_break : function
-        添加分节的函数
-    generate_var_chart : function
-        生成VaR图表的函数
+    context : dict
+        包含所有必要数据的上下文字典
 
     Returns:
     --------
     dict
-        包含VaR相关变量的字典，供后续章节使用
+        更新后的上下文字典
     """
+    # 从context中提取变量
+    document = context['document']
+    project_params = context['project_params']
+    market_data = context['market_data']
+    IMAGES_DIR = context['IMAGES_DIR']
+
+    # 从context['results']中获取第五章的蒙特卡洛参数
+    mc_results = context['results'].get('mc_results', {})
+
+    # 使用默认值或从第五章结果中获取
+    mc_volatility_60d = mc_results.get('volatility_60d', market_data.get('volatility_60d', 0.3))
+    mc_drift_60d = mc_results.get('drift_60d', market_data.get('annual_return_60d', 0.0))
+    mc_volatility_120d = mc_results.get('volatility_120d', market_data.get('volatility_120d', 0.3))
+    mc_drift_120d = mc_results.get('drift_120d', market_data.get('annual_return_120d', 0.0))
+    mc_volatility_250d = mc_results.get('volatility_250d', market_data.get('volatility_250d', 0.3))
+    mc_drift_250d = mc_results.get('drift_250d', market_data.get('annual_return_250d', 0.0))
 
     # ==================== 八、VaR风险度量 ====================
     add_title(document, '八、VaR风险度量', level=1)
@@ -471,44 +452,11 @@ def generate_chapter(
         else:
             return "高风险", "🔴", "VaR和CVaR均很高，下行风险极大，需极度谨慎"
 
+    # 计算综合风险评级
     risk_rating, risk_emoji, risk_description = get_comprehensive_risk_level(var_95, cvar_95)
+    print(f"✅ 风险评级: {risk_rating} ({risk_emoji})")
 
-    add_paragraph(document, '8.7.3 综合风险评级', bold=True)
-    add_paragraph(document, '')
-
-    add_paragraph(document, f'{risk_emoji} 基于VaR的综合风险评级: {risk_rating}')
-    add_paragraph(document, f'   评级说明: {risk_description}')
-    add_paragraph(document, '')
-
-    add_paragraph(document, '8.7.4 风险控制建议', bold=True)
-    add_paragraph(document, '')
-
-    if var_95 <= 0.15:
-        add_paragraph(document, '基于VaR分析，项目下行风险有限，建议：')
-        add_paragraph(document, '• 正常配置仓位，VaR显示95%概率亏损不超过15%')
-        add_paragraph(document, '• 设置预警线（-10%），关注市场变化')
-        add_paragraph(document, '• 可适度参与，但需定期review')
-    elif var_95 <= 0.25:
-        add_paragraph(document, '基于VaR分析，项目存在一定下行风险，建议：')
-        add_paragraph(document, f'• 适度控制仓位，95% VaR为{var_95*100:.1f}%')
-        add_paragraph(document, '• 设置止损线（如-15%），严格执行')
-        add_paragraph(document, '• 考虑分批建仓，降低单点风险')
-        add_paragraph(document, '• 做好对冲准备')
-    elif var_95 <= 0.40:
-        add_paragraph(document, '基于VaR分析，项目下行风险较大，建议：')
-        add_paragraph(document, f'• 严格控制仓位，95% VaR达{var_95*100:.1f}%')
-        add_paragraph(document, '• 设置严格止损线（-12%），果断执行')
-        add_paragraph(document, '• 必须做好风险对冲（如期权保护）')
-        add_paragraph(document, '• 分批小额建仓或考虑放弃投资')
-    else:
-        add_paragraph(document, '基于VaR分析，项目下行风险极大，建议：')
-        add_paragraph(document, f'• 极度谨慎，95% VaR高达{var_95*100:.1f}%')
-        add_paragraph(document, '• 设置最严格止损线（-8%），坚决执行')
-        add_paragraph(document, '• 必须使用对冲工具保护下行风险')
-        add_paragraph(document, '• 强烈建议避免参与或仅做极少量配置')
-
-    add_paragraph(document, '')
-    add_paragraph(document, '8.7.5 VaR分析的局限性', bold=True)
+    add_paragraph(document, '8.7.3 VaR分析的局限性', bold=True)
     add_paragraph(document, '')
 
     add_paragraph(document, '⚠️ VaR分析的重要提示：')
@@ -520,22 +468,22 @@ def generate_chapter(
     add_paragraph(document, '')
 
     add_paragraph(document, '💡 总结：')
-    add_paragraph(document, f'通过多窗口期VaR分析、CVaR分析、回撤分析和金额估算，我们得出{risk_rating}结论。')
-    add_paragraph(document, f'投资者应根据自身风险承受能力，参考上述风险控制建议，审慎决策。')
+    add_paragraph(document, f'通过多窗口期VaR分析、CVaR分析和金额估算，我们得出{risk_rating}结论。')
+    add_paragraph(document, f'投资者应根据自身风险承受能力，审慎决策。')
     add_paragraph(document, '')
 
     add_section_break(document)
 
     # 返回VaR相关变量供后续章节使用
-    return {
-        'var_90': var_90,
-        'var_95': var_95,
-        'var_99': var_99,
-        'cvar_95': cvar_95,
-        'cvar_99': cvar_99,
-        'profit_losses': profit_losses,
-        'mc_volatility': mc_volatility,
-        'mc_drift': mc_drift,
-        'risk_rating': risk_rating,
-        'var_results': var_results
-    }
+    context['results']['var_90'] = var_90
+    context['results']['var_95'] = var_95
+    context['results']['var_99'] = var_99
+    context['results']['cvar_95'] = cvar_95
+    context['results']['cvar_99'] = cvar_99
+    context['results']['profit_losses'] = profit_losses
+    context['results']['mc_volatility'] = mc_volatility
+    context['results']['mc_drift'] = mc_drift
+    context['results']['risk_rating'] = risk_rating
+    context['results']['var_results'] = var_results
+
+    return context

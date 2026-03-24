@@ -11,6 +11,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from docx.shared import Pt, Inches
 from docx.oxml.ns import qn
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 # 添加路径
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -688,3 +689,5 @@ def generate_chapter(context):
     add_paragraph(document, '')
 
     add_section_break(document)
+
+    return context

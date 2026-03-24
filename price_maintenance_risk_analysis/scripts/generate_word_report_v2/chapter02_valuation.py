@@ -93,17 +93,38 @@ def generate_chapter(context):
             if df_industry.empty:
                 raise ValueError("未获取到行业分类")
 
+            # 显示所有行业分类记录，方便调试
             df_industry = df_industry.sort_values('in_date', ascending=False)
+            print(f"✅ 获取到{len(df_industry)}条行业分类记录:")
+
+            for idx, row in df_industry.head(5).iterrows():
+                print(f"   [{idx}] {row['in_date']}: 一级={row.get('index_name', 'N/A')}, L1={row.get('l1_name', 'N/A')}, L2={row.get('l2_name', 'N/A')}, L3={row.get('l3_name', 'N/A')}")
+                print(f"        L1代码={row.get('l1_code', 'N/A')}, L2代码={row.get('l2_code', 'N/A')}, L3代码={row.get('l3_code', 'N/A')}")
+
             latest_industry = df_industry.iloc[0]
+
+            # 调试输出
+            print(f"\n✅ 使用最新记录:")
+            print(f"   股票代码: {stock_code}")
+            print(f"   申万一级: {latest_industry.get('index_name', 'N/A')}")
+            print(f"   申万三级代码: {latest_industry['l3_code']}")
+            print(f"   申万三级名称: {latest_industry['l3_name']}")
+
             target_index_code = latest_industry['l3_code']  # 申万三级行业指数代码
             target_industry_l3 = latest_industry['l3_name']  # 行业名称
 
             # 获取该三级行业的所有成分股
+            print(f"\n✅ 正在使用指数代码 {target_index_code} 查询成分股...")
+
             df_peers = pro.index_member_all(l3_code=target_index_code)
+            print(f"✅ 获取到 {len(df_peers)} 条成分股记录")
+
             df_peers = df_peers[df_peers['ts_code'] != stock_code]
 
             # 获取同行公司基本信息
             peer_codes = df_peers['ts_code'].unique().tolist()
+            print(f"✅ 过滤后剩余 {len(peer_codes)} 个同行公司")
+
             peer_basic = pro.stock_basic(ts_code=','.join(peer_codes[:30]),
                                        fields='ts_code,name,market')
 
@@ -132,6 +153,33 @@ def generate_chapter(context):
                     pass
 
                 time.sleep(0.2)  # 避免请求过快
+
+            # 获取申万行业指数的PE数据（使用sw_daily接口）
+            sw_index_pe = None
+            sw_index_pb = None
+            sw_index_ps = None
+            try:
+                print(f"✅ 正在获取申万行业指数PE数据: {target_index_code}")
+                # 获取最近5天的数据，取最新的一条
+                end_date = datetime.now().strftime('%Y%m%d')
+                start_date = (datetime.now() - timedelta(days=10)).strftime('%Y%m%d')
+                df_index = pro.sw_daily(
+                    ts_code=target_index_code,
+                    start_date=start_date,
+                    end_date=end_date
+                )
+                if df_index is not None and not df_index.empty:
+                    # sw_daily返回的是pe列（不是pe_ttm）
+                    latest = df_index.iloc[-1]
+                    sw_index_pe = latest.get('pe', None)
+                    sw_index_pb = latest.get('pb', None)
+                    sw_index_ps = latest.get('ps_ttm', None)  # sw_daily可能没有ps_ttm
+                    if sw_index_pe:
+                        print(f"✅ 申万行业指数PE数据获取成功: PE={sw_index_pe:.2f}, PB={sw_index_pb:.2f}")
+                else:
+                    print(f"⚠️ 申万行业指数PE数据为空")
+            except Exception as e:
+                print(f"⚠️ 获取申万行业指数PE数据失败: {e}")
 
             if peer_data_list:
                 peer_companies_val = pd.concat(peer_data_list, ignore_index=True)
@@ -218,7 +266,7 @@ def generate_chapter(context):
         'pb': industry_stats_val['pb']['mean']
     }
 
-    # 估值指标对比表（增强版）
+    # 估值指标对比表
     valuation_headers = ['指标', '光弘科技', '行业平均', '中位数', 'Q1(25分位)', 'Q3(75分位)', '最小值', '最大值', '偏离度']
     valuation_data = [
         ['PE (TTM)',
@@ -310,6 +358,58 @@ def generate_chapter(context):
     add_paragraph(document, '')
     add_paragraph(document, '图表 2.3: 相对估值对比分析 - PS倍数对比')
     add_image(document, chart_paths[3])
+
+    # ==================== 2.1.2 申万行业指数估值 ====================
+    add_title(document, '2.1.2 申万行业指数估值', level=3)
+    add_paragraph(document, '')
+
+    if sw_index_pe is not None:
+        add_paragraph(document, f'本节展示申万三级行业指数"{target_industry_l3}"的估值数据，提供官方行业指数视角的估值基准。')
+        add_paragraph(document, f'申万行业指数代码: {target_index_code}')
+        add_paragraph(document, '')
+
+        # 申万行业指数估值表格
+        sw_index_headers = ['指标', '申万行业指数', '光弘科技', '差异', '说明']
+        sw_index_data = [
+            ['PE (TTM)',
+             f"{sw_index_pe:.2f}倍",
+             f"{current_metrics_val['pe']:.2f}倍",
+             f"{(current_metrics_val['pe']-sw_index_pe)/sw_index_pe*100:+.1f}%",
+             '行业指数PE反映行业整体估值水平' if current_metrics_val['pe'] > sw_index_pe else '个股PE低于行业指数，相对低估'],
+            ['PB',
+             f"{sw_index_pb:.2f}倍" if sw_index_pb else "N/A",
+             f"{current_metrics_val['pb']:.2f}倍",
+             f"{(current_metrics_val['pb']-sw_index_pb)/sw_index_pb*100:+.1f}%" if sw_index_pb else "N/A",
+             '市净率反映行业整体账面价值溢价'],
+            ['PS (TTM)',
+             f"{sw_index_ps:.2f}倍" if sw_index_ps else "N/A",
+             f"{current_metrics_val['ps']:.2f}倍",
+             f"{(current_metrics_val['ps']-sw_index_ps)/sw_index_ps*100:+.1f}%" if sw_index_ps else "N/A",
+             '市销率反映行业整体营收能力']
+        ]
+        add_table_data(document, sw_index_headers, sw_index_data)
+
+        add_paragraph(document, '')
+        add_paragraph(document, '💡 申万行业指数估值说明：')
+        add_paragraph(document, f'• 申万行业指数是基于该行业所有成分股按市值加权计算的指数')
+        add_paragraph(document, f'• 指数PE/PB/PS反映行业整体的估值水平，不同于同行公司平均（简单平均）')
+        add_paragraph(document, f'• 指数估值受大盘股权重影响，更能代表行业龙头公司的估值水平')
+        add_paragraph(document, f'• 同行公司平均反映行业内典型公司的估值，受小盘股影响较大')
+        add_paragraph(document, '')
+
+        # 对比分析
+        add_paragraph(document, '📊 对比分析：', bold=True)
+        if abs(current_metrics_val['pe'] - sw_index_pe) / sw_index_pe < 0.1:
+            add_paragraph(document, f'✅ 个股PE({current_metrics_val["pe"]:.2f}倍)与申万行业指数PE({sw_index_pe:.2f}倍)基本一致，估值合理')
+        elif current_metrics_val['pe'] < sw_index_pe:
+            add_paragraph(document, f'✅ 个股PE({current_metrics_val["pe"]:.2f}倍)低于申万行业指数PE({sw_index_pe:.2f}倍)，相对行业指数低估')
+        else:
+            add_paragraph(document, f'⚠️ 个股PE({current_metrics_val["pe"]:.2f}倍)高于申万行业指数PE({sw_index_pe:.2f}倍)，相对行业指数高估')
+    else:
+        add_paragraph(document, f'⚠️ 申万行业指数"{target_industry_l3}"的估值数据暂时无法获取')
+        add_paragraph(document, '可能原因：指数代码不正确或数据源暂时不可用')
+
+    add_paragraph(document, '')
 
     add_title(document, '2.2 估值偏离度分析', level=2)
 
@@ -528,6 +628,12 @@ def generate_chapter(context):
     add_paragraph(document, '')
 
     add_section_break(document)
+
+    # 保存数据到context，供后续章节使用（第七章等需要）
+    context['current_metrics_val'] = current_metrics_val
+    context['industry_stats_val'] = industry_stats_val
+    context['industry_avg_val'] = industry_avg_val
+    context['peer_companies_val'] = peer_companies_val
 
     # 返回更新后的context
     return context

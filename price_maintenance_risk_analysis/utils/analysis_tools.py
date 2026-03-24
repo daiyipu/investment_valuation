@@ -104,7 +104,12 @@ class PrivatePlacementRiskAnalyzer:
             drift = self.risk_free_rate
 
         dt = 1 / 252  # 日时间步长
-        total_days = self.lockup_period * 30  # 锁定期天数
+
+        # 使用传入的time_steps，如果没有则使用锁定期天数
+        if time_steps is not None:
+            total_days = time_steps
+        else:
+            total_days = self.lockup_period * 30  # 锁定期天数
 
         # 生成随机路径
         brownian_motion = np.random.standard_normal((n_simulations, total_days))

@@ -692,12 +692,12 @@ class TushareFinancialData:
 
             # 获取现金流量表数据
             # n_cashflow_act: 经营活动现金流
-            # n_cash_flows_inv_act: 投资活动现金流
+            # c_pay_acq_const_fiolta: 购建固定资产、无形资产和其他长期资产支付的现金（资本支出）
             cashflow_df = self.pro.cashflow(
                 ts_code=self.ts_code,
                 start_date=start_date,
                 end_date=end_date,
-                fields='ts_code,end_date,n_cashflow_act,n_cash_flows_inv_act'
+                fields='ts_code,end_date,n_cashflow_act,c_pay_acq_const_fiolta'
             )
 
             if income_df.empty:
@@ -790,12 +790,16 @@ class TushareFinancialData:
             # 经营活动现金流
             df['ocf'] = df['n_cashflow_act'].fillna(0)
 
-            # 资本支出：使用投资活动现金流的估计值（保守估计：假设30%是资本支出）
-            # 对于成长型企业，投资现金流流出主要是扩产，但不全是资本支出
-            if 'n_cash_flows_inv_act' in df.columns:
-                df['capex'] = -df['n_cash_flows_inv_act'].fillna(0) * 0.3
+            # 资本支出：购建固定资产、无形资产和其他长期资产支付的现金
+            # 使用Tushare的c_pay_acq_const_fiolta字段（精确的资本支出科目）
+            if 'c_pay_acq_const_fiolta' in df.columns:
+                df['capex'] = -df['c_pay_acq_const_fiolta'].fillna(0)
             else:
-                df['capex'] = 0
+                # 如果字段不存在，尝试使用投资活动现金流作为备选
+                if 'n_cash_flows_inv_act' in df.columns:
+                    df['capex'] = -df['n_cash_flows_inv_act'].fillna(0)
+                else:
+                    df['capex'] = 0
 
             # FCF = 经营活动现金流 - 资本支出
             df['fcf'] = df['ocf'] - df['capex']

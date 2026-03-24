@@ -58,6 +58,9 @@ class TimeSeriesForecaster:
             # 使用对数收益率
             log_returns = np.log(self.prices).diff().dropna()
 
+            # 重置索引为整数索引，避免ARIMA索引警告
+            log_returns = log_returns.reset_index(drop=True)
+
             # 拟合ARIMA模型
             model = ARIMA(log_returns, order=order)
             fitted = model.fit()

@@ -73,11 +73,18 @@ for module_name, description in chapters_to_test:
     print(f"\n📊 测试 {description}...")
     try:
         module = __import__(module_name, fromlist=['generate_chapter'])
+        # Debug: print module file path for chapter08_var
+        if module_name == 'chapter08_var':
+            print(f"   Debug: Importing from {module.__file__}")
         context = module.generate_chapter(context)
         print(f"✅ {description} 测试通过")
     except Exception as e:
         print(f"❌ {description} 测试失败")
         print(f"   错误: {e}")
+        if module_name == 'chapter08_var':
+            print(f"   Debug: Module file: {module.__file__}")
+            print(f"   Debug: Has generate_chapter: {hasattr(module, 'generate_chapter')}")
+            print(f"   Debug: Available attributes: {[x for x in dir(module) if not x.startswith('_')]}")
         import traceback
         traceback.print_exc()
         break

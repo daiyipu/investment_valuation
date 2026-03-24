@@ -883,7 +883,11 @@ def generate_chapter(context):
                 'var_95': var_95
             })
 
-            print(f"✅ {scenario['name']}: 盈利概率={profit_prob:.1f}%, 中位数收益={median_return:.1f}%")
+            # 调试输出
+            print(f"✅ {scenario['name']}:")
+            print(f"   发行价: {scenario_issue_price:.2f}元 (溢价率{scenario['premium_rate']*100:+.1f}%)")
+            print(f"   漂移率: {scenario['drift']*100:+.2f}% (年化), 波动率: {scenario['volatility']*100:.2f}%")
+            print(f"   盈利概率: {profit_prob:.1f}%, 中位数收益: {median_return:+.1f}%")
 
         except Exception as e:
             print(f"⚠️ {scenario['name']} 模拟失败: {e}")
@@ -1184,15 +1188,23 @@ def generate_chapter(context):
             project_params['current_price'], ma20, risk_params['volatility'],
             risk_params['drift'], project_params['lockup_period'], IMAGES_DIR)
 
-        add_paragraph(document, '')
-        add_paragraph(document, '图表 6.6: 不同波动率下的情景对比')
-        add_image(document, multi_dim_chart_paths[1], width=Inches(6.5))
-        add_paragraph(document, '')
-
-        add_paragraph(document, '图表 6.7: 优质情景TOP10 (盈利概率>50%)')
-        add_image(document, multi_dim_chart_paths[2], width=Inches(6.5))
+        # 该函数只返回1个图表（3D分析图）
+        if len(multi_dim_chart_paths) > 0:
+            add_paragraph(document, '')
+            add_paragraph(document, '图表 6.6: 多维度情景分析（波动率 × 时间窗口 × 折扣率）')
+            add_image(document, multi_dim_chart_paths[0], width=Inches(6.5))
+            add_paragraph(document, '')
 
     except Exception as e:
         print(f"⚠️ 生成多维度图表失败: {e}")
+        import traceback
+        traceback.print_exc()
 
     add_section_break(document)
+
+    # 保存all_scenarios到context供附件使用
+    if 'all_scenarios' in locals() and len(all_scenarios) > 0:
+        context['results']['all_scenarios'] = all_scenarios
+        print(f"✅ 已保存{len(all_scenarios)}个情景到context，供附件使用")
+
+    return context
