@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from docx.shared import Inches
 
 
-def generate_chapter08_var(
+def generate_chapter(
     document,
     project_params,
     market_data,

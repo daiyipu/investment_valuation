@@ -5,7 +5,7 @@
 基于保守原则，确保投资决策在合理风险可控范围内进行。
 """
 
-def generate_chapter09(document, project_params, market_data, all_scenarios_for_appendix,
+def generate_chapter(document, project_params, market_data, all_scenarios_for_appendix,
                        intrinsic_value, discount_premium, issue_type,
                        profit_prob, mean_return, var_95, var_99,
                        total_score, ma20_mc):

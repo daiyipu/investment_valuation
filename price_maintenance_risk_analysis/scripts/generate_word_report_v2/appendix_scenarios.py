@@ -5,7 +5,19 @@
 情景组合：漂移率（-30%~+30%，13档）× 波动率（10%~50%，5档）× 溢价率（-20%~+20%，9档）= 585种
 """
 
-def generate_appendix_scenarios(document, all_scenarios_for_appendix):
+def generate_chapter(context):
+    """
+    生成附件：585种情景完整数据表（统一接口）
+
+    参数:
+        context: 包含document和results的字典
+    """
+    document = context['document']
+    all_scenarios_for_appendix = context['results'].get('all_scenarios', [])
+    return _generate_appendix_scenarios(document, all_scenarios_for_appendix)
+
+
+def _generate_appendix_scenarios(document, all_scenarios_for_appendix):
     """
     生成附件：585种情景完整数据表
 
