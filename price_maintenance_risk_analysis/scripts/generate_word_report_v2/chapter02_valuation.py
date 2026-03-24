@@ -475,28 +475,117 @@ def generate_chapter(context):
             print(f"   行业数据: {len(industry_pe_data)}条")
             print(f"   行业: {industry_name} ({industry_code})")
 
-            # 计算历史分位数统计
+            # 计算个股历史分位数统计
             stock_pe_current = stock_pe_data.iloc[-1]['pe_ttm']
             stock_pe_min = stock_pe_data['pe_ttm'].min()
             stock_pe_max = stock_pe_data['pe_ttm'].max()
             stock_pe_median = stock_pe_data['pe_ttm'].median()
             stock_pe_percentile = (stock_pe_data['pe_ttm'] < stock_pe_current).sum() / len(stock_pe_data) * 100
 
-            industry_pe_current = industry_pe_data.iloc[-1]['pe_ttm']
-            industry_pe_min = industry_pe_data['pe_ttm'].min()
-            industry_pe_max = industry_pe_data['pe_ttm'].max()
-            industry_pe_median = industry_pe_data['pe_ttm'].median()
-            industry_pe_percentile = (industry_pe_data['pe_ttm'] < industry_pe_current).sum() / len(industry_pe_data) * 100
+            # 计算申万行业指数历史分位数统计
+            sw_index_pe_current = industry_pe_data.iloc[-1]['pe_ttm']
+            sw_index_pe_min = industry_pe_data['pe_ttm'].min()
+            sw_index_pe_max = industry_pe_data['pe_ttm'].max()
+            sw_index_pe_median = industry_pe_data['pe_ttm'].median()
+            sw_index_pe_percentile = (industry_pe_data['pe_ttm'] < sw_index_pe_current).sum() / len(industry_pe_data) * 100
+
+            # 获取同行公司的历史PE数据
+            print("\n获取同行公司历史PE数据...")
+            custom_peer_pe_current = None
+            custom_peer_pe_min = None
+            custom_peer_pe_max = None
+            custom_peer_pe_median = None
+            custom_peer_pe_percentile = None
+
+            try:
+                # 提取同行公司代码列表
+                peer_codes = peer_companies_val['code'].tolist()[:20]  # 取前20个
+                print(f"  同行公司数量: {len(peer_codes)}")
+
+                # 获取每个同行公司的历史PE
+                peer_pe_histories = []
+                for peer_code in peer_codes:
+                    try:
+                        peer_history = pe_analyzer.get_stock_pe_history(peer_code, days=1825)
+                        if peer_history is not None and not peer_history.empty:
+                            peer_history = peer_history.rename(columns={'pe_ttm': 'pe'})
+                            peer_pe_histories.append(peer_history)
+                    except Exception as e:
+                        print(f"    获取{peer_code}历史PE失败: {e}")
+                        continue
+
+                if peer_pe_histories:
+                    # 合并所有同行公司的历史PE
+                    import pandas as pd
+                    peer_pe_df = pd.concat(peer_pe_histories, ignore_index=True)
+
+                    # 按日期分组计算平均值
+                    custom_peer_pe_data = peer_pe_df.groupby('trade_date')['pe'].mean().reset_index()
+                    custom_peer_pe_data = custom_peer_pe_data.sort_values('trade_date').reset_index(drop=True)
+
+                    # 计算统计指标
+                    custom_peer_pe_current = custom_peer_pe_data.iloc[-1]['pe']
+                    custom_peer_pe_min = custom_peer_pe_data['pe'].min()
+                    custom_peer_pe_max = custom_peer_pe_data['pe'].max()
+                    custom_peer_pe_median = custom_peer_pe_data['pe'].median()
+                    custom_peer_pe_percentile = (custom_peer_pe_data['pe'] < custom_peer_pe_current).sum() / len(custom_peer_pe_data) * 100
+
+                    print(f"  ✅ 同行公司历史PE计算成功:")
+                    print(f"     当前PE: {custom_peer_pe_current:.2f}倍")
+                    print(f"     数据点数: {len(custom_peer_pe_data)}")
+                else:
+                    print(f"  ⚠️ 未获取到同行公司历史PE数据")
+
+            except Exception as e:
+                print(f"  ❌ 获取同行公司历史PE失败: {e}")
 
             # 添加历史分位数统计表格
-            pe_history_headers = ['指标', '标的股票', '行业指数', '差异']
-            pe_history_data = [
-                ['当前PE-TTM', f'{stock_pe_current:.2f}倍', f'{industry_pe_current:.2f}倍', f'{(stock_pe_current/industry_pe_current-1)*100:+.1f}%'],
-                ['历史最小PE', f'{stock_pe_min:.2f}倍', f'{industry_pe_min:.2f}倍', f'{stock_pe_min-industry_pe_min:+.2f}倍'],
-                ['历史最大PE', f'{stock_pe_max:.2f}倍', f'{industry_pe_max:.2f}倍', f'{stock_pe_max-industry_pe_max:+.2f}倍'],
-                ['历史中位数PE', f'{stock_pe_median:.2f}倍', f'{industry_pe_median:.2f}倍', f'{stock_pe_median-industry_pe_median:+.2f}倍'],
-                ['当前分位数', f'{stock_pe_percentile:.1f}%', f'{industry_pe_percentile:.1f}%', f'{stock_pe_percentile-industry_pe_percentile:+.1f}%']
-            ]
+            if custom_peer_pe_current is not None:
+                # 有自定义同行数据的完整表格
+                pe_history_headers = ['指标', '标的股票', '行业指数<br/>(申万)', '行业指数<br/>(自定义)', '差异<br/>(vs申万)', '差异<br/>(vs自定义)']
+                pe_history_data = [
+                    ['当前PE-TTM',
+                     f'{stock_pe_current:.2f}倍',
+                     f'{sw_index_pe_current:.2f}倍',
+                     f'{custom_peer_pe_current:.2f}倍',
+                     f'{(stock_pe_current/sw_index_pe_current-1)*100:+.1f}%',
+                     f'{(stock_pe_current/custom_peer_pe_current-1)*100:+.1f}%'],
+                    ['历史最小PE',
+                     f'{stock_pe_min:.2f}倍',
+                     f'{sw_index_pe_min:.2f}倍',
+                     f'{custom_peer_pe_min:.2f}倍',
+                     f'{stock_pe_min-sw_index_pe_min:+.2f}倍',
+                     f'{stock_pe_min-custom_peer_pe_min:+.2f}倍'],
+                    ['历史最大PE',
+                     f'{stock_pe_max:.2f}倍',
+                     f'{sw_index_pe_max:.2f}倍',
+                     f'{custom_peer_pe_max:.2f}倍',
+                     f'{stock_pe_max-sw_index_pe_max:+.2f}倍',
+                     f'{stock_pe_max-custom_peer_pe_max:+.2f}倍'],
+                    ['历史中位数PE',
+                     f'{stock_pe_median:.2f}倍',
+                     f'{sw_index_pe_median:.2f}倍',
+                     f'{custom_peer_pe_median:.2f}倍',
+                     f'{stock_pe_median-sw_index_pe_median:+.2f}倍',
+                     f'{stock_pe_median-custom_peer_pe_median:+.2f}倍'],
+                    ['当前分位数',
+                     f'{stock_pe_percentile:.1f}%',
+                     f'{sw_index_pe_percentile:.1f}%',
+                     f'{custom_peer_pe_percentile:.1f}%',
+                     f'{stock_pe_percentile-sw_index_pe_percentile:+.1f}%',
+                     f'{stock_pe_percentile-custom_peer_pe_percentile:+.1f}%']
+                ]
+            else:
+                # 只有申万数据的简化表格
+                pe_history_headers = ['指标', '标的股票', '行业指数<br/>(申万)', '差异']
+                pe_history_data = [
+                    ['当前PE-TTM', f'{stock_pe_current:.2f}倍', f'{sw_index_pe_current:.2f}倍', f'{(stock_pe_current/sw_index_pe_current-1)*100:+.1f}%'],
+                    ['历史最小PE', f'{stock_pe_min:.2f}倍', f'{sw_index_pe_min:.2f}倍', f'{stock_pe_min-sw_index_pe_min:+.2f}倍'],
+                    ['历史最大PE', f'{stock_pe_max:.2f}倍', f'{sw_index_pe_max:.2f}倍', f'{stock_pe_max-sw_index_pe_max:+.2f}倍'],
+                    ['历史中位数PE', f'{stock_pe_median:.2f}倍', f'{sw_index_pe_median:.2f}倍', f'{stock_pe_median-sw_index_pe_median:+.2f}倍'],
+                    ['当前分位数', f'{stock_pe_percentile:.1f}%', f'{sw_index_pe_percentile:.1f}%', f'{stock_pe_percentile-sw_index_pe_percentile:+.1f}%']
+                ]
+
             add_table_data(document, pe_history_headers, pe_history_data)
 
             add_paragraph(document, '')
@@ -504,6 +593,9 @@ def generate_chapter(context):
             add_paragraph(document, f'• 当前分位数表示当前PE在历史数据中的相对位置')
             add_paragraph(document, f'• 例如：{stock_pe_percentile:.1f}%分位数表示历史上只有{stock_pe_percentile:.1f}%的时间PE低于当前值')
             add_paragraph(document, f'• 50%分位数即为中位数，代表历史平均水平')
+            if custom_peer_pe_current is not None:
+                add_paragraph(document, f'• 行业指数（申万）：申万行业指数的PE，基于所有成分股按市值加权计算')
+                add_paragraph(document, f'• 行业指数（自定义）：2.1.1节中同行公司PE的简单平均，反映所选同行公司的平均估值水平')
             add_paragraph(document, '')
 
             # 生成PE趋势图
