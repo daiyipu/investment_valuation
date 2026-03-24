@@ -109,54 +109,45 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技'):
     }
 
     # ==================== 依次调用各章节 ====================
-
-    # 封面
-    print("\n📄 生成封面...")
-    chapter01_overview.generate_cover(context)
-
-    # 目录
-    print("📑 生成目录...")
-    chapter01_overview.generate_table_of_contents(context)
-
-    # 第一章：项目概况
+    # 第一章：项目概况（包含封面和目录）
     print("\n📊 生成第一章：项目概况...")
-    chapter01_overview.generate_chapter(context)
+    context = chapter01_overview.generate_chapter(context)
 
     # 第二章：相对估值分析
     print("\n📊 生成第二章：相对估值分析...")
-    chapter02_valuation.generate_chapter(context)
+    context = chapter02_valuation.generate_chapter(context)
 
     # 第三章：DCF估值分析
     print("\n📊 生成第三章：DCF估值分析...")
-    chapter03_dcf.generate_chapter(context)
+    context = chapter03_dcf.generate_chapter(context)
 
     # 第四章：敏感性分析
     print("\n📊 生成第四章：敏感性分析...")
-    chapter04_sensitivity.generate_chapter(context)
+    context = chapter04_sensitivity.generate_chapter(context)
 
     # 第五章：蒙特卡洛模拟
     print("\n📊 生成第五章：蒙特卡洛模拟...")
-    chapter05_montecarlo.generate_chapter(context)
+    context = chapter05_montecarlo.generate_chapter(context)
 
     # 第六章：情景分析
     print("\n📊 生成第六章：情景分析...")
-    chapter06_scenario.generate_chapter(context)
+    context = chapter06_scenario.generate_chapter(context)
 
     # 第七章：压力测试
     print("\n📊 生成第七章：压力测试...")
-    chapter07_stress.generate_chapter(context)
+    context = chapter07_stress.generate_chapter(context)
 
     # 第八章：VaR风险度量
     print("\n📊 生成第八章：VaR风险度量...")
-    chapter08_var.generate_chapter(context)
+    context = chapter08_var.generate_chapter(context)
 
     # 第九章：风控建议与风险提示
     print("\n📊 生成第九章：风控建议与风险提示...")
-    chapter09_advice.generate_chapter(context)
+    context = chapter09_advice.generate_chapter(context)
 
     # 附件：情景数据表
     print("\n📊 生成附件：情景数据表...")
-    appendix_scenarios.generate_chapter(context)
+    context = appendix_scenarios.generate_chapter(context)
 
     print("\n" + "="*70)
     print("✅ 报告生成完成！")
