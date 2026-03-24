@@ -792,12 +792,13 @@ class TushareFinancialData:
 
             # 资本支出：购建固定资产、无形资产和其他长期资产支付的现金
             # 使用Tushare的c_pay_acq_const_fiolta字段（精确的资本支出科目）
+            # 注意：Tushare返回的c_pay_acq_const_fiolta已经是正数（流出金额），直接使用
             if 'c_pay_acq_const_fiolta' in df.columns:
-                df['capex'] = -df['c_pay_acq_const_fiolta'].fillna(0)
+                df['capex'] = df['c_pay_acq_const_fiolta'].fillna(0)  # 直接使用原始值，不需要取负
             else:
                 # 如果字段不存在，尝试使用投资活动现金流作为备选
                 if 'n_cash_flows_inv_act' in df.columns:
-                    df['capex'] = -df['n_cash_flows_inv_act'].fillna(0)
+                    df['capex'] = df['n_cash_flows_inv_act'].fillna(0)  # 直接使用原始值
                 else:
                     df['capex'] = 0
 
