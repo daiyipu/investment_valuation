@@ -130,7 +130,12 @@ def load_placement_config(
             print(f"   将使用默认值")
 
     # 3. 计算或获取发行价
+    pricing_ma20 = None  # 用于定价的MA20（整个报告统一使用）
+
     if market_data and 'ma_20' in market_data:
+        # 保存用于定价的MA20（确保整个报告使用同一值）
+        pricing_ma20 = market_data['ma_20']
+
         # 根据定价方式和溢价率计算发行价
         pricing_method = placement_params.get('pricing_method', 'ma20_discount_90')
         premium_rate = placement_params.get('premium_rate', -0.10)
@@ -154,11 +159,13 @@ def load_placement_config(
             premium_rate = -0.10
             price_source = "MA20的九折"
 
-        issue_price = market_data['ma_20'] * (1 + premium_rate)
-        print(f"✅ 自动计算发行价: {issue_price:.2f} 元/股 ({price_source}, MA20: {market_data['ma_20']:.2f}元)")
+        issue_price = pricing_ma20 * (1 + premium_rate)
+        print(f"✅ 自动计算发行价: {issue_price:.2f} 元/股 ({price_source}, MA20: {pricing_ma20:.2f}元)")
     elif 'issue_price' in placement_params and placement_params['issue_price'] > 0:
         # 兼容旧配置：如果配置文件中有issue_price且大于0，使用配置值
         issue_price = placement_params['issue_price']
+        pricing_ma20 = issue_price / (1 + placement_params.get('premium_rate', -0.10))  # 反推MA20
+        price_source = "配置文件指定"
         print(f"✅ 使用配置文件中的发行价: {issue_price:.2f} 元/股")
     else:
         # 没有市场数据且配置文件中没有发行价，抛出错误
@@ -189,7 +196,16 @@ def load_placement_config(
         'current_price': current_price,
         'risk_free_rate': placement_params.get('risk_free_rate', 0.03),
         'financing_amount': 100000000,  # 固定1亿元，用于风险评估
+        'pricing_ma20': pricing_ma20,  # 用于定价的MA20（整个报告统一使用）
+        'pricing_method': pricing_method if 'pricing_method' in locals() else placement_params.get('pricing_method', 'ma20_discount_90'),
+        'premium_rate': premium_rate if 'premium_rate' in locals() else placement_params.get('premium_rate', -0.10),
     }
+
+    # 将pricing_ma20也添加到market_data中，确保统一
+    if market_data:
+        market_data['pricing_ma20'] = pricing_ma20
+        if 'ma_20' not in market_data:
+            market_data['ma_20'] = pricing_ma20  # 确保ma_20存在
 
     # 4. 构建风险参数
     if market_data:

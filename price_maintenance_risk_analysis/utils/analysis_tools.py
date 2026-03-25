@@ -10,6 +10,43 @@ import warnings
 warnings.filterwarnings('ignore')
 
 
+def calculate_profit_probability_lognormal(target_price: float,
+                                           current_price: float,
+                                           drift: float,
+                                           volatility: float,
+                                           period_months: int) -> float:
+    """
+    使用对数正态分布计算盈利概率（几何布朗运动模型）
+
+    理论基础：
+    - 股票价格服从几何布朗运动：dS = μSdt + σSdW
+    - 对数价格服从正态分布：ln(S_t) ~ N(ln(S_0) + (μ - σ²/2)t, σ²t)
+    - 盈利概率：P(S_t > target_price)
+
+    参数:
+        target_price: 目标价格（盈利阈值）
+        current_price: 当前价格
+        drift: 年化漂移率（μ）
+        volatility: 年化波动率（σ）
+        period_months: 预测期（月）
+
+    返回:
+        float: 盈利概率（0-100）
+    """
+    T = period_months / 12  # 转换为年
+
+    # 对数正态分布参数
+    # E[ln(S_t)] = ln(S_0) + (μ - σ²/2)t
+    log_mean = np.log(current_price) + (drift - volatility**2 / 2) * T
+    log_std = volatility * np.sqrt(T)
+
+    # P(S_t > target_price) = P(ln(S_t) > ln(target_price))
+    z_score = (np.log(target_price) - log_mean) / log_std
+    probability = (1 - stats.norm.cdf(z_score)) * 100
+
+    return probability
+
+
 class PrivatePlacementRiskAnalyzer:
     """定增项目风险分析器"""
 

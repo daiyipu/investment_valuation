@@ -23,6 +23,7 @@ try:
     PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
     sys.path.insert(0, PROJECT_DIR)
     from utils.font_manager import get_font_prop
+    from utils.analysis_tools import calculate_profit_probability_lognormal
     font_prop = get_font_prop()
 except Exception as e:
     print(f"⚠️ 无法加载中文字体: {e}")
@@ -399,14 +400,22 @@ def generate_tornado_chart_split(issue_price, current_price, lockup_period, vola
         'drift': drift
     }
 
-    # 计算基准盈利概率
+    # 计算基准盈利概率（使用对数正态分布）
     def calculate_profit_prob(params):
         period_years = lockup_period / 12  # 使用外部变量lockup_period
         vol_period = params['volatility'] * np.sqrt(period_years)
         drift_period = params['drift'] * period_years
-        required_return = (params['current_price'] - params['issue_price']) / params['issue_price']
-        z_score = (drift_period - required_return) / vol_period
-        return stats.norm.cdf(z_score) * 100
+
+        # 使用对数正态分布计算盈利概率
+        # 发行价作为盈利阈值
+        prob = calculate_profit_probability_lognormal(
+            target_price=params['issue_price'],
+            current_price=params['current_price'],
+            drift=params['drift'],
+            volatility=params['volatility'],
+            period_months=lockup_period
+        )
+        return prob
 
     # 计算预期收益率（年化）
     def calculate_expected_return(params):
@@ -793,10 +802,14 @@ def generate_discount_scenario_charts_split(base_price, current_price, volatilit
             issue_price = base_price * (1 + rate/100)
             threshold = max(base_price, issue_price * 1.02)
 
-        # 计算盈利概率
-        required_return = (threshold - current_price) / current_price
-        z_score = (lockup_drift - required_return) / lockup_vol
-        profit_prob = (1 - stats.norm.cdf(-z_score)) * 100
+        # 计算盈利概率（使用对数正态分布）
+        profit_prob = calculate_profit_probability_lognormal(
+            target_price=threshold,
+            current_price=current_price,
+            drift=drift,
+            volatility=volatility,
+            period_months=lockup_period
+        )
 
         # 计算预期收益率
         expected_return = (expected_future_price - issue_price) / issue_price * 100
@@ -925,13 +938,14 @@ def generate_multi_dimension_scenario_charts_split(current_price, base_price, vo
                     issue_price = base_price * (1 + abs(discount)/100)
                     threshold = issue_price
 
-                # 计算盈利概率
-                period_years = window / 12
-                lockup_vol = vol * np.sqrt(period_years)
-                lockup_drift = drift * period_years
-                required_return = (threshold - current_price) / current_price
-                z_score = (lockup_drift - required_return) / lockup_vol
-                profit_prob = stats.norm.cdf(z_score) * 100
+                # 计算盈利概率（使用对数正态分布）
+                profit_prob = calculate_profit_probability_lognormal(
+                    target_price=threshold,
+                    current_price=current_price,
+                    drift=drift,
+                    volatility=vol,
+                    period_months=window
+                )
 
                 multi_dim_results.append({
                     'volatility': vol,

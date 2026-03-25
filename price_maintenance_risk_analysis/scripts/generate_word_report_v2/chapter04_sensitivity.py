@@ -28,6 +28,7 @@ PROJECT_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 sys.path.insert(0, PROJECT_DIR)
 
 from utils.font_manager import get_font_prop
+from utils.analysis_tools import calculate_profit_probability_lognormal
 from module_utils import (
     add_title,
     add_paragraph,
@@ -190,10 +191,14 @@ def generate_discount_scenario_charts_split(base_price, current_price, volatilit
         else:
             threshold = max(base_price, issue_price * 1.02)  # 溢价发行
 
-        # 计算盈利概率
-        required_return = (threshold - current_price) / current_price
-        z_score = (lockup_drift - required_return) / lockup_vol
-        prob = (1 - stats.norm.cdf(-z_score)) * 100
+        # 计算盈利概率（使用对数正态分布）
+        prob = calculate_profit_probability_lognormal(
+            target_price=threshold,
+            current_price=current_price,
+            drift=drift,
+            volatility=volatility,
+            period_months=lockup_period
+        )
         prob_results.append(prob)
 
         # 计算期望收益率
@@ -402,14 +407,19 @@ def generate_tornado_chart(issue_price, current_price, lockup_period, volatility
     ]
 
     # 计算基准值
+    # 使用对数正态分布计算基准盈利概率
+    prob_base = calculate_profit_probability_lognormal(
+        target_price=issue_price,
+        current_price=current_price,
+        drift=drift,
+        volatility=volatility,
+        period_months=lockup_period
+    )
+
+    # 计算基准期望收益率
     lockup_years = lockup_period / 12
-    lockup_vol = volatility * np.sqrt(lockup_years)
     lockup_drift = drift * lockup_years
-
-    required_return = (issue_price - current_price) / current_price
-    z_score_base = (lockup_drift - required_return) / lockup_vol
-    prob_base = (1 - stats.norm.cdf(-z_score_base)) * 100
-
+    lockup_vol = volatility * np.sqrt(lockup_years)
     expected_future_price = current_price * np.exp(lockup_drift + lockup_vol**2 / 2)
     return_base = (expected_future_price - issue_price) / issue_price * 100
 
@@ -426,30 +436,30 @@ def generate_tornado_chart(issue_price, current_price, lockup_period, volatility
         # 计算-5%变化的影响
         val_neg = base_val * scenario['pct_05_neg']
 
-        # 计算盈利概率变化
+        # 计算盈利概率变化（使用对数正态分布）
         if param_name == '发行价':
-            prob_pos = calculate_prob(val_pos, current_price, lockup_period, volatility, drift)
-            prob_neg = calculate_prob(val_neg, current_price, lockup_period, volatility, drift)
+            prob_pos = calculate_profit_probability_lognormal(val_pos, current_price, drift, volatility, lockup_period)
+            prob_neg = calculate_profit_probability_lognormal(val_neg, current_price, drift, volatility, lockup_period)
             return_pos = calculate_return(val_pos, current_price, lockup_period, volatility, drift)
             return_neg = calculate_return(val_neg, current_price, lockup_period, volatility, drift)
         elif param_name == '当前价':
-            prob_pos = calculate_prob(issue_price, val_pos, lockup_period, volatility, drift)
-            prob_neg = calculate_prob(issue_price, val_neg, lockup_period, volatility, drift)
+            prob_pos = calculate_profit_probability_lognormal(issue_price, val_pos, drift, volatility, lockup_period)
+            prob_neg = calculate_profit_probability_lognormal(issue_price, val_neg, drift, volatility, lockup_period)
             return_pos = calculate_return(issue_price, val_pos, lockup_period, volatility, drift)
             return_neg = calculate_return(issue_price, val_neg, lockup_period, volatility, drift)
         elif param_name == '波动率':
-            prob_pos = calculate_prob(issue_price, current_price, lockup_period, val_pos, drift)
-            prob_neg = calculate_prob(issue_price, current_price, lockup_period, val_neg, drift)
+            prob_pos = calculate_profit_probability_lognormal(issue_price, current_price, drift, val_pos, lockup_period)
+            prob_neg = calculate_profit_probability_lognormal(issue_price, current_price, drift, val_neg, lockup_period)
             return_pos = calculate_return(issue_price, current_price, lockup_period, val_pos, drift)
             return_neg = calculate_return(issue_price, current_price, lockup_period, val_neg, drift)
         elif param_name == '漂移率':
-            prob_pos = calculate_prob(issue_price, current_price, lockup_period, volatility, val_pos)
-            prob_neg = calculate_prob(issue_price, current_price, lockup_period, volatility, val_neg)
+            prob_pos = calculate_profit_probability_lognormal(issue_price, current_price, val_pos, volatility, lockup_period)
+            prob_neg = calculate_profit_probability_lognormal(issue_price, current_price, val_neg, volatility, lockup_period)
             return_pos = calculate_return(issue_price, current_price, lockup_period, volatility, val_pos)
             return_neg = calculate_return(issue_price, current_price, lockup_period, volatility, val_neg)
         elif param_name == '锁定期':
-            prob_pos = calculate_prob(issue_price, current_price, val_pos, volatility, drift)
-            prob_neg = calculate_prob(issue_price, current_price, val_neg, volatility, drift)
+            prob_pos = calculate_profit_probability_lognormal(issue_price, current_price, drift, volatility, val_pos)
+            prob_neg = calculate_profit_probability_lognormal(issue_price, current_price, drift, volatility, val_neg)
             return_pos = calculate_return(issue_price, current_price, val_pos, volatility, drift)
             return_neg = calculate_return(issue_price, current_price, val_neg, volatility, drift)
 
@@ -518,14 +528,33 @@ def generate_tornado_chart(issue_price, current_price, lockup_period, volatility
 
 
 def calculate_prob(issue_price, current_price, lockup_period, volatility, drift):
-    """计算盈利概率"""
-    lockup_years = lockup_period / 12
-    lockup_vol = volatility * np.sqrt(lockup_years)
-    lockup_drift = drift * lockup_years
+    """
+    计算盈利概率
 
-    required_return = (issue_price - current_price) / current_price
-    z_score = (lockup_drift - required_return) / lockup_vol
-    prob = (1 - stats.norm.cdf(-z_score)) * 100
+    使用对数正态分布模型：
+    ln(S_t) ~ N(ln(S_0) + (μ - σ²/2)t, σ²t)
+
+    参数:
+        issue_price: 发行价（盈利阈值）
+        current_price: 当前价格
+        lockup_period: 锁定期（月）
+        volatility: 年化波动率
+        drift: 年化漂移率
+
+    返回:
+        float: 盈利概率（%）
+    """
+    lockup_years = lockup_period / 12
+
+    # 对数正态分布参数
+    # E[ln(S_t)] = ln(S_0) + (μ - σ²/2) * t
+    log_mean = np.log(current_price) + (drift - volatility**2 / 2) * lockup_years
+    log_std = volatility * np.sqrt(lockup_years)
+
+    # P(S_t > issue_price) = P(ln(S_t) > ln(issue_price))
+    z_score = (np.log(issue_price) - log_mean) / log_std
+    prob = (1 - stats.norm.cdf(z_score)) * 100
+
     return prob
 
 
@@ -587,60 +616,102 @@ def generate_chapter(context):
             print(f"✅ 使用已保存的市场数据（共{total_days}个交易日）")
 
             # 从market_data中提取时间窗口数据
-            time_window_results = {
-                'window': [20, 60, 120, 250],
-                'volatility': [
-                    market_data.get('volatility_20d', market_data.get('volatility', 0)),
-                    market_data.get('volatility_60d', market_data.get('volatility', 0)),
-                    market_data.get('volatility_120d', market_data.get('volatility', 0)),
-                    market_data.get('volatility_250d', market_data.get('volatility', 0))
-                ],
-                'total_return': [
-                    market_data.get('period_return_20d', 0),
-                    market_data.get('period_return_60d', 0),
-                    market_data.get('period_return_120d', 0),
-                    market_data.get('period_return_250d', 0)
-                ],
-                'annual_return': [
-                    market_data.get('annual_return_20d', 0),
-                    market_data.get('annual_return_60d', 0),
-                    market_data.get('annual_return_120d', 0),
-                    market_data.get('annual_return_250d', 0)
-                ],
-                'mean': [0] * 4,
-                'std': [0] * 4,
-                'max_drawdown': [0] * 4,
-                'sharpe': [0] * 4
-            }
+            windows = [20, 60, 120, 250]
 
-            # 过滤掉没有数据的窗口
-            valid_indices = [i for i in range(4) if time_window_results['volatility'][i] > 0]
+            # 获取价格序列
+            price_series_list = market_data.get('price_series', [])
 
-            if len(valid_indices) == 0:
+            if len(price_series_list) < 250:
+                print(f"⚠️ 价格数据不足（{len(price_series_list)}条），需要至少250条")
                 add_paragraph(document, '⚠️ 当前历史数据不足以进行时间窗口分析')
             else:
-                # 只保留有数据的窗口
-                filtered_results = {
-                    'window': [time_window_results['window'][i] for i in valid_indices],
-                    'volatility': [time_window_results['volatility'][i] for i in valid_indices],
-                    'total_return': [time_window_results['total_return'][i] for i in valid_indices],
-                    'annual_return': [time_window_results['annual_return'][i] for i in valid_indices],
-                    'max_drawdown': [time_window_results['max_drawdown'][i] for i in valid_indices],
-                    'sharpe': [time_window_results['sharpe'][i] for i in valid_indices]
+                import pandas as pd
+                price_series = pd.Series(price_series_list)
+
+                # 计算各窗口指标
+                time_window_results = {
+                    'window': [],
+                    'volatility': [],
+                    'total_return': [],
+                    'annual_return': [],
+                    'max_drawdown': [],
+                    'sharpe': []
                 }
 
-                # 添加时间窗口数据表格
-                window_data = []
-                for i, window in enumerate(filtered_results['window']):
-                    window_data.append([
-                        f'{window}日',
-                        f'{filtered_results["volatility"][i]*100:.2f}%',
-                        f'{filtered_results["total_return"][i]*100:+.2f}%',
-                        f'{filtered_results["annual_return"][i]*100:+.2f}%',
-                        f'{filtered_results["max_drawdown"][i]*100:.2f}%',
-                        f'{filtered_results["sharpe"][i]:.2f}'
-                    ])
-                add_table_data(document, ['时间窗口', '年化波动率', '期间收益率', '年化收益率', '最大回撤', '夏普比率'], window_data)
+                risk_free_rate = 0.03  # 无风险利率3%
+
+                for window in windows:
+                    if len(price_series) < window:
+                        continue
+
+                    # 获取窗口期价格
+                    window_prices = price_series[-window:].values
+
+                    # 计算波动率
+                    returns = pd.Series(window_prices).pct_change().dropna()
+                    volatility = returns.std() * np.sqrt(252)
+
+                    # 计算收益率
+                    total_return = (window_prices[-1] / window_prices[0] - 1)
+
+                    # 年化收益率（使用固定系数）
+                    if window == 20:
+                        coefficient = 1/12  # 月度
+                    elif window == 60:
+                        coefficient = 1/4   # 季度
+                    elif window == 120:
+                        coefficient = 1/2   # 半年
+                    elif window == 250:
+                        coefficient = 1.0   # 年度
+                    else:
+                        coefficient = window / 252.0
+
+                    annual_return = total_return / coefficient if coefficient > 0 else total_return
+
+                    # 计算最大回撤
+                    cummax = pd.Series(window_prices).cummax()
+                    drawdown = (pd.Series(window_prices) - cummax) / cummax
+                    max_drawdown = drawdown.min()
+
+                    # 计算夏普比率
+                    excess_return = annual_return - risk_free_rate
+                    sharpe = excess_return / volatility if volatility > 0 else 0
+
+                    time_window_results['window'].append(window)
+                    time_window_results['volatility'].append(volatility)
+                    time_window_results['total_return'].append(total_return)
+                    time_window_results['annual_return'].append(annual_return)
+                    time_window_results['max_drawdown'].append(max_drawdown)
+                    time_window_results['sharpe'].append(sharpe)
+
+                # 过滤掉没有数据的窗口
+                valid_indices = [i for i in range(len(time_window_results['window'])) if time_window_results['volatility'][i] > 0]
+
+                if len(valid_indices) == 0:
+                    add_paragraph(document, '⚠️ 当前历史数据不足以进行时间窗口分析')
+                else:
+                    # 只保留有数据的窗口
+                    filtered_results = {
+                        'window': [time_window_results['window'][i] for i in valid_indices],
+                        'volatility': [time_window_results['volatility'][i] for i in valid_indices],
+                        'total_return': [time_window_results['total_return'][i] for i in valid_indices],
+                        'annual_return': [time_window_results['annual_return'][i] for i in valid_indices],
+                        'max_drawdown': [time_window_results['max_drawdown'][i] for i in valid_indices],
+                        'sharpe': [time_window_results['sharpe'][i] for i in valid_indices]
+                    }
+
+                    # 添加时间窗口数据表格
+                    window_data = []
+                    for i, window in enumerate(filtered_results['window']):
+                        window_data.append([
+                            f'{window}日',
+                            f'{filtered_results["volatility"][i]*100:.2f}%',
+                            f'{filtered_results["total_return"][i]*100:+.2f}%',
+                            f'{filtered_results["annual_return"][i]*100:+.2f}%',
+                            f'{filtered_results["max_drawdown"][i]*100:.2f}%',
+                            f'{filtered_results["sharpe"][i]:.2f}'
+                        ])
+                    add_table_data(document, ['时间窗口', '年化波动率', '期间收益率', '年化收益率', '最大回撤', '夏普比率'], window_data)
 
                 # 生成图表（如果有完整数据）
                 if len(filtered_results['window']) >= 4:
@@ -702,6 +773,30 @@ def generate_chapter(context):
     add_paragraph(document, '• 溢价发行：发行价 > MA20，无安全边际，盈利阈值 = max(MA20, 发行价×1.02)')
     add_paragraph(document, '')
 
+    # 计算并显示实际溢价率
+    # 使用pricing_ma20（用于定价的MA20）确保整个报告统一
+    pricing_ma20 = project_params.get('pricing_ma20', market_data.get('ma_20', ma120))
+    ma20_current = market_data.get('ma_20', pricing_ma20)  # 当前最新MA20
+    nominal_premium = (project_params['issue_price'] - pricing_ma20) / pricing_ma20 * 100
+    actual_premium = (project_params['issue_price'] - project_params['current_price']) / project_params['current_price'] * 100
+
+    add_paragraph(document, '💡 **重要说明：名义溢价率 vs 实际溢价率**')
+    add_paragraph(document, '')
+    add_paragraph(document, f'• 名义溢价率（相对定价MA20）：{nominal_premium:+.2f}%')
+    add_paragraph(document, f'  → 定增定价时参考，用于评估发行价相对20日均线的折溢价程度')
+    add_paragraph(document, f'  → 定价MA20：{pricing_ma20:.2f}元（发行价计算基准）')
+    add_paragraph(document, '')
+    add_paragraph(document, f'• 实际溢价率（相对当前价）：{actual_premium:+.2f}%')
+    add_paragraph(document, f'  → 模型预测时使用，所有概率计算从当前价开始')
+    add_paragraph(document, f'  → 更能反映实际投资起点和真实风险收益')
+    add_paragraph(document, '')
+
+    if abs(nominal_premium - actual_premium) > 10:
+        add_paragraph(document, f'⚠️ 注意：名义溢价率与实际溢价率差异较大（{abs(nominal_premium - actual_premium):.1f}个百分点）')
+        add_paragraph(document, f'   原因：当前价（{project_params["current_price"]:.2f}元）已偏离定价MA20（{pricing_ma20:.2f}元）')
+        add_paragraph(document, f'   建议：重点关注实际溢价率（相对当前价），更符合模型预测逻辑')
+        add_paragraph(document, '')
+
     # 生成发行价折扣情景图表（统一版）
     scenario_chart_paths = generate_discount_scenario_charts_split(
         ma120, project_params['current_price'], risk_params['volatility'],
@@ -741,9 +836,10 @@ def generate_chapter(context):
     add_paragraph(document, '发行价折扣情景分析结论：')
 
     # 计算当前发行价的折扣（负值表示折价，正值表示溢价）
-    current_discount = (project_params['issue_price'] - ma120) / ma120 * 100
+    # 使用pricing_ma20确保与发行价计算一致
+    current_discount = (project_params['issue_price'] - pricing_ma20) / pricing_ma20 * 100
     add_paragraph(document, f'• 当前发行价: {project_params["issue_price"]:.2f} 元')
-    add_paragraph(document, f'• MA20基准价: {ma120:.2f} 元')
+    add_paragraph(document, f'• 定价MA20基准价: {pricing_ma20:.2f} 元')
     add_paragraph(document, f'• 当前折价/溢价率: {current_discount:.1f}%')
 
     if current_discount <= -20:
@@ -817,23 +913,31 @@ def generate_chapter(context):
         else:
             threshold = max(ma120, issue_price * 1.02)  # 溢价发行，盈利阈值 = max(MA20, 发行价×1.02)
 
-        # 计算基础盈利概率（保本，0%）
-        required_return = (threshold - current_price) / current_price
-        z_score = (lockup_drift - required_return) / lockup_vol
-        prob = (1 - stats.norm.cdf(-z_score)) * 100
+        # 计算基础盈利概率（保本，0%）- 使用对数正态分布
+        prob = calculate_profit_probability_lognormal(
+            target_price=threshold,
+            current_price=current_price,
+            drift=current_drift,
+            volatility=current_vol,
+            period_months=lockup_months
+        )
 
         # 计算期望收益率（基于对数正态分布）
         expected_future_price = current_price * np.exp(lockup_drift + lockup_vol**2 / 2)
         expected_return = (expected_future_price - issue_price) / issue_price * 100
         expected_returns_list.append(expected_return)
 
-        # 计算不同盈利目标的概率
+        # 计算不同盈利目标的概率 - 使用对数正态分布
         profit_probs = []
         for target_pct in profit_targets_pct:
             target_price = issue_price * (1 + target_pct/100)
-            target_return = (target_price - current_price) / current_price
-            z_score_target = (lockup_drift - target_return) / lockup_vol
-            prob_target = (1 - stats.norm.cdf(-z_score_target)) * 100
+            prob_target = calculate_profit_probability_lognormal(
+                target_price=target_price,
+                current_price=current_price,
+                drift=current_drift,
+                volatility=current_vol,
+                period_months=lockup_months
+            )
             profit_probs.append(f'{prob_target:.1f}%')
 
         drift_analysis_data.append([
@@ -920,10 +1024,14 @@ def generate_chapter(context):
         else:
             threshold = max(ma120, issue_price * 1.02)  # 溢价发行
 
-        # 计算基础盈利概率（保本）
-        required_return = (threshold - current_price) / current_price
-        z_score = (lockup_drift - required_return) / lockup_vol
-        prob = (1 - stats.norm.cdf(-z_score)) * 100
+        # 计算基础盈利概率（保本）- 使用对数正态分布
+        prob = calculate_profit_probability_lognormal(
+            target_price=threshold,
+            current_price=current_price,
+            drift=drift,
+            volatility=volatility_i,
+            period_months=lockup_period
+        )
         prob_results.append(prob)
 
         # 计算期望收益率（基于对数正态分布）
@@ -931,14 +1039,18 @@ def generate_chapter(context):
         expected_return = (expected_future_price - issue_price) / issue_price * 100
         mean_return_results.append(expected_return)
 
-        # 计算不同盈利目标的概率
+        # 计算不同盈利目标的概率 - 使用对数正态分布
         profit_targets_pct = [0, 5, 10, 15, 20]
         profit_probs_row = []
         for target_pct in profit_targets_pct:
             target_price = issue_price * (1 + target_pct/100)
-            target_return = (target_price - current_price) / current_price
-            z_score_target = (lockup_drift - target_return) / lockup_vol
-            prob_target = (1 - stats.norm.cdf(-z_score_target)) * 100
+            prob_target = calculate_profit_probability_lognormal(
+                target_price=target_price,
+                current_price=current_price,
+                drift=drift,
+                volatility=volatility_i,
+                period_months=lockup_period
+            )
             profit_probs_row.append(prob_target)
         profit_target_results.append(profit_probs_row)
 
@@ -986,22 +1098,11 @@ def generate_chapter(context):
     add_paragraph(document, '• 高波动率环境下，即使是小幅度盈利（如+5%）也面临挑战')
     add_paragraph(document, '• 投资者应根据风险承受能力，选择合适的盈利目标')
 
-    # 添加拆分的敏感性分析图表
+    # 添加波动率敏感性分析图表
     add_paragraph(document, '')
     add_paragraph(document, '图表 4.11: 波动率与盈利概率')
     add_image(document, sensitivity_chart_paths[0], width=Inches(6))
     add_paragraph(document, '')
-
-    add_paragraph(document, '图表 4.12: 发行价折扣与盈利概率')
-    add_image(document, sensitivity_chart_paths[1], width=Inches(6))
-    add_paragraph(document, '')
-
-    add_paragraph(document, '图表 4.13: 盈利概率热力图（波动率 vs 漂移率）')
-    add_image(document, sensitivity_chart_paths[2], width=Inches(6))
-    add_paragraph(document, '')
-
-    add_paragraph(document, '图表 4.14: 盈利概率热力图（漂移率 vs 折价率）')
-    add_image(document, sensitivity_chart_paths[3], width=Inches(6))
 
     add_paragraph(document, '分析结论（基于120日窗口）：')
     add_paragraph(document, f'• 保持漂移率和锁定期不变，波动率每增加10%，盈利概率下降约15-20%')
