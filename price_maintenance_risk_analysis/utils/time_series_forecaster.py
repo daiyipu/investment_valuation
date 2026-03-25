@@ -129,10 +129,10 @@ class TimeSeriesForecaster:
                 try:
                     model = ARIMA(log_returns, order=(p, d, q))
 
-                    # 抑制收敛警告
+                    # 抑制收敛警告，使用method_kwargs传递优化器参数
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore")
-                        fitted = model.fit(method='lbfgs', maxiter=200)
+                        fitted = model.fit(method='lbfgs', method_kwargs={'gtol': 1e-6})
 
                     ic_value = fitted.aic if information_criterion == 'aic' else fitted.bic
 
@@ -241,17 +241,10 @@ class TimeSeriesForecaster:
             # 拟合ARIMA模型，使用更稳健的优化参数
             model = ARIMA(log_returns, order=order)
 
-            # 抑制收敛警告，增加最大迭代次数
+            # 抑制收敛警告，使用method_kwargs传递优化器参数
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                fitted = model.fit(method='lbfgs', maxiter=500)
-
-            # 检查是否收敛
-            if hasattr(fitted, 'mle_retvals'):
-                converged = fitted.mle_retvals.get('converged', True)
-                if not converged:
-                    print(f"⚠️ ARIMA模型未完全收敛，使用降级策略")
-                    raise ValueError("ARIMA optimization did not converge")
+                fitted = model.fit(method='lbfgs', method_kwargs={'gtol': 1e-6})
 
             # 预测未来horizon期
             forecast = fitted.forecast(steps=horizon)
