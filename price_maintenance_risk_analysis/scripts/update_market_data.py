@@ -677,7 +677,7 @@ class TushareFinancialData:
                 ts_code=self.ts_code,
                 start_date=start_date,
                 end_date=end_date,
-                fields='ts_code,end_date,ann_date,revenue,operate_profit,total_profit,n_income_attr_p,'
+                fields='ts_code,end_date,end_type,update_flag,ann_date,revenue,operate_profit,total_profit,n_income_attr_p,'
                        'income_tax_exp,fin_exp,int_exp'
             )
 
@@ -686,7 +686,7 @@ class TushareFinancialData:
                 ts_code=self.ts_code,
                 start_date=start_date,
                 end_date=end_date,
-                fields='ts_code,end_date,total_assets,total_liab,total_hldr_eqy_exc_min_int,'
+                fields='ts_code,end_date,end_type,update_flag,total_assets,total_liab,total_hldr_eqy_exc_min_int,'
                        'money_cap,fix_assets,total_nca'
             )
 
@@ -697,7 +697,7 @@ class TushareFinancialData:
                 ts_code=self.ts_code,
                 start_date=start_date,
                 end_date=end_date,
-                fields='ts_code,end_date,n_cashflow_act,c_pay_acq_const_fiolta'
+                fields='ts_code,end_date,end_type,update_flag,n_cashflow_act,c_pay_acq_const_fiolta'
             )
 
             if income_df.empty:
@@ -708,32 +708,81 @@ class TushareFinancialData:
                 print(f"⚠️ 未获取到资产负债表数据")
                 return None
 
-            # 按年度汇总（保留每年最后一份报告，通常是年报）
-            income_df['year'] = income_df['end_date'].str[:4].astype(int)
-            balance_df['year'] = balance_df['end_date'].str[:4].astype(int)
+            # 筛选年报数据（只使用年报，跳过季报）
+            # 使用end_type字段：4=年报, 3=三季报, 2=半年报, 1=一季报
+            # 如果end_type字段不存在，回退到使用end_date以'1231'结尾筛选
+            print(f"📊 财务报告数据筛选（只使用年报）:")
 
-            # 对每个指标，取每年最后一期（年报）
-            income_annual = income_df.sort_values('end_date').groupby('year').last().reset_index()
-            balance_annual = balance_df.sort_values('end_date').groupby('year').last().reset_index()
+            # 利润表筛选
+            if 'end_type' in income_df.columns:
+                income_annual_only = income_df[income_df['end_type'] == '4'].copy()
+                filter_method = "end_type=4"
+            else:
+                income_annual_only = income_df[income_df['end_date'].str.endswith('1231')].copy()
+                filter_method = "end_date=1231"
 
-            # 合并数据
-            financial_data = income_annual.merge(
-                balance_annual,
-                on=['ts_code', 'year', 'end_date'],
+            # 资产负债表筛选
+            if 'end_type' in balance_df.columns:
+                balance_annual_only = balance_df[balance_df['end_type'] == '4'].copy()
+            else:
+                balance_annual_only = balance_df[balance_df['end_date'].str.endswith('1231')].copy()
+
+            # 去重：对于每个end_date，优先选择update_flag=1（最新版本），否则使用update_flag=0
+            if 'update_flag' in income_annual_only.columns:
+                # 按end_date分组，每组选择update_flag最大的记录
+                income_annual_only = income_annual_only.sort_values('update_flag', ascending=False) \
+                    .drop_duplicates(subset=['end_date'], keep='first')
+
+            if 'update_flag' in balance_annual_only.columns:
+                balance_annual_only = balance_annual_only.sort_values('update_flag', ascending=False) \
+                    .drop_duplicates(subset=['end_date'], keep='first')
+
+            income_annual_only['year'] = income_annual_only['end_date'].str[:4].astype(int)
+            balance_annual_only['year'] = balance_annual_only['end_date'].str[:4].astype(int)
+
+            print(f"   利润表: {len(income_df)} 份 → {len(income_annual_only)} 份年报（{filter_method}，已去重）")
+            print(f"   资产负债表: {len(balance_df)} 份 → {len(balance_annual_only)} 份年报（{filter_method}，已去重）")
+
+            # 合并利润表和资产负债表（只按year合并，避免end_date不一致导致重复）
+            financial_data = income_annual_only.merge(
+                balance_annual_only,
+                on=['ts_code', 'year'],
                 how='outer',
                 suffixes=('', '_balance')
             )
 
-            # 如果有现金流量表，也合并
+            # 如果有现金流量表，也只使用年报数据
             if not cashflow_df.empty:
-                cashflow_df['year'] = cashflow_df['end_date'].str[:4].astype(int)
-                cashflow_annual = cashflow_df.sort_values('end_date').groupby('year').last().reset_index()
+                # 筛选年报：end_type='4'（年报），如果不存在则使用end_date以'1231'结尾
+                if 'end_type' in cashflow_df.columns:
+                    cashflow_annual_only = cashflow_df[cashflow_df['end_type'] == '4'].copy()
+                    cashflow_filter_method = "end_type=4"
+                else:
+                    cashflow_annual_only = cashflow_df[cashflow_df['end_date'].str.endswith('1231')].copy()
+                    cashflow_filter_method = "end_date=1231"
+
+                # 去重：优先选择update_flag=1（最新版本）
+                if 'update_flag' in cashflow_annual_only.columns:
+                    cashflow_annual_only = cashflow_annual_only.sort_values('update_flag', ascending=False) \
+                        .drop_duplicates(subset=['end_date'], keep='first')
+
+                cashflow_annual_only['year'] = cashflow_annual_only['end_date'].str[:4].astype(int)
+
+                print(f"   现金流量表: {len(cashflow_df)} 份 → {len(cashflow_annual_only)} 份年报（{cashflow_filter_method}，已去重）")
+
+                # 合并现金流量表（只按year合并）
                 financial_data = financial_data.merge(
-                    cashflow_annual,
-                    on=['ts_code', 'year', 'end_date'],
+                    cashflow_annual_only,
+                    on=['ts_code', 'year'],
                     how='outer',
                     suffixes=('', '_cashflow')
                 )
+
+            # 去重（如果仍有重复）
+            financial_data = financial_data.drop_duplicates(subset=['ts_code', 'year']).reset_index(drop=True)
+
+            # 按年份排序
+            financial_data = financial_data.sort_values('year').reset_index(drop=True)
 
             # 计算自由现金流
             financial_data = self._calculate_fcf(financial_data)

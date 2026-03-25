@@ -1,38 +1,46 @@
 #!/bin/bash
 # 通用定增风险分析报告生成脚本
-# 使用方法：./gen_report.sh <股票代码> [输出文件名]
+# 使用方法：./gen_report.sh <股票代码> <企业名称> [输出文件名]
 
 set -e
 
 # 检查参数
-if [ $# -lt 1 ]; then
+if [ $# -lt 2 ]; then
     echo "===================================="
     echo "📊 定增风险分析报告生成器"
     echo "===================================="
     echo ""
     echo "使用方法："
-    echo "  $0 <股票代码> [输出文件名]"
+    echo "  $0 <股票代码> <企业名称> [输出文件名]"
     echo ""
     echo "示例："
-    echo "  $0 603296.SH                    # 生成华勤技术报告"
-    echo "  $0 603296.SH 华勤技术报告.docx  # 指定输出文件名"
-    echo "  $0 300735.SZ                    # 生成光弘科技报告"
+    echo "  $0 603296.SH 华勤技术                    # 生成华勤技术报告（自动命名）"
+    echo "  $0 300735.SZ 光弘科技                    # 生成光弘科技报告（自动命名）"
+    echo "  $0 603296.SH 华勤技术 自定义文件名.docx  # 指定输出文件名"
     echo ""
     echo "股票代码格式："
     echo "  上交所：600xxx.SH 或 601xxx.SH"
     echo "  深交所：300xxx.SZ"
     echo "  北交所：8xxxxx.BJ"
     echo ""
+    echo "说明："
+    echo "  - 企业名称建议使用2-8个汉字，避免特殊字符"
+    echo "  - 如不指定输出文件名，将自动生成：{企业名称}_定增风险分析报告_{时间戳}.docx"
+    echo ""
     exit 1
 fi
 
 # 获取参数
 STOCK_CODE="$1"
-OUTPUT_FILE="${2:-自动生成报告.docx}"
+STOCK_NAME="$2"
+OUTPUT_FILE="${3:-}"
 
-# 如果输出文件名为"自动生成报告.docx"，使用股票名称
-if [ "$OUTPUT_FILE" = "自动生成报告.docx" ]; then
-    OUTPUT_FILE="${STOCK_CODE}_定增风险分析报告.docx"
+# 生成时间戳
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+
+# 如果未指定输出文件名，自动生成带时间戳的文件名
+if [ -z "$OUTPUT_FILE" ]; then
+    OUTPUT_FILE="${STOCK_NAME}_定增风险分析报告_${TIMESTAMP}.docx"
 fi
 
 # 切换到脚本目录
@@ -43,6 +51,7 @@ echo "📊 定增风险分析报告生成器"
 echo "===================================="
 echo ""
 echo "股票代码：$STOCK_CODE"
+echo "企业名称：$STOCK_NAME"
 echo "输出文件：$OUTPUT_FILE"
 echo ""
 
@@ -107,13 +116,13 @@ EOF
             code "$CONFIG_FILE"
             echo ""
             echo "编辑完成后，请重新运行脚本："
-            echo "  $0 $STOCK_CODE $OUTPUT_FILE"
+            echo "  $0 $STOCK_CODE <企业名称> [输出文件名]"
             exit 0
         fi
     fi
 
     echo "配置完成后，重新运行脚本："
-    echo "  $0 $STOCK_CODE $OUTPUT_FILE"
+    echo "  $0 $STOCK_CODE <企业名称> [输出文件名]"
     exit 0
 fi
 
