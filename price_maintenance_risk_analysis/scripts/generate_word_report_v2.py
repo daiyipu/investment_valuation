@@ -3765,11 +3765,12 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
                     custom_peer_pe_data = custom_peer_pe_data.sort_values('trade_date').reset_index(drop=True)
 
                     # 计算统计指标
-                    custom_peer_pe_current = float(custom_peer_pe_data.iloc[-1]['pe'])
-                    custom_peer_pe_min = float(custom_peer_pe_data['pe'].min())
-                    custom_peer_pe_max = float(custom_peer_pe_data['pe'].max())
-                    custom_peer_pe_median = float(custom_peer_pe_data['pe'].median())
-                    custom_peer_pe_percentile = float((custom_peer_pe_data['pe'] < custom_peer_pe_current).sum() / len(custom_peer_pe_data) * 100)
+                    # 使用.item()安全地提取标量值，避免Series转float错误
+                    custom_peer_pe_current = custom_peer_pe_data.iloc[-1]['pe'].item()
+                    custom_peer_pe_min = custom_peer_pe_data['pe'].min().item()
+                    custom_peer_pe_max = custom_peer_pe_data['pe'].max().item()
+                    custom_peer_pe_median = custom_peer_pe_data['pe'].median().item()
+                    custom_peer_pe_percentile = ((custom_peer_pe_data['pe'] < custom_peer_pe_current).sum() / len(custom_peer_pe_data) * 100).item()
 
                     print(f"  ✅ 同行公司历史PE计算成功:")
                     print(f"     当前PE: {custom_peer_pe_current:.2f}倍")
