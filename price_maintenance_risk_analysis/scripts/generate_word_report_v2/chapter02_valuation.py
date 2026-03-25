@@ -572,9 +572,9 @@ def generate_chapter(context):
                     custom_peer_pe_data = custom_peer_pe_data.sort_values('trade_date').reset_index(drop=True)
 
                     # 计算统计指标
-                    # min/max/median已经返回标量，直接用float()
-                    # iloc返回可能包含Series，需要先转换为float
-                    custom_peer_pe_current = float(custom_peer_pe_data.iloc[-1]['pe'])
+                    # 使用.values[0]或.item()安全提取标量值
+                    pe_last = custom_peer_pe_data.iloc[-1]['pe']
+                    custom_peer_pe_current = float(pe_last.values[0] if hasattr(pe_last, 'values') else pe_last)
                     custom_peer_pe_min = float(custom_peer_pe_data['pe'].min())
                     custom_peer_pe_max = float(custom_peer_pe_data['pe'].max())
                     custom_peer_pe_median = float(custom_peer_pe_data['pe'].median())
