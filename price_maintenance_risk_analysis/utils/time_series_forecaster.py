@@ -107,6 +107,7 @@ class TimeSeriesForecaster:
         """
         try:
             import itertools
+            import warnings
             from statsmodels.tsa.arima.model import ARIMA
 
             log_returns = np.log(self.prices).diff().dropna()
@@ -127,7 +128,11 @@ class TimeSeriesForecaster:
             for i, (p, d, q) in enumerate(pdq):
                 try:
                     model = ARIMA(log_returns, order=(p, d, q))
-                    fitted = model.fit()
+
+                    # 抑制收敛警告
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        fitted = model.fit(method='lbfgs', maxiter=200)
 
                     ic_value = fitted.aic if information_criterion == 'aic' else fitted.bic
 
@@ -215,6 +220,7 @@ class TimeSeriesForecaster:
         """
         try:
             from statsmodels.tsa.arima.model import ARIMA
+            import warnings
 
             # 使用对数收益率
             log_returns = np.log(self.prices).diff().dropna()
@@ -232,9 +238,20 @@ class TimeSeriesForecaster:
             elif order is None:
                 order = (1, 1, 1)  # 默认值
 
-            # 拟合ARIMA模型
+            # 拟合ARIMA模型，使用更稳健的优化参数
             model = ARIMA(log_returns, order=order)
-            fitted = model.fit()
+
+            # 抑制收敛警告，增加最大迭代次数
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                fitted = model.fit(method='lbfgs', maxiter=500)
+
+            # 检查是否收敛
+            if hasattr(fitted, 'mle_retvals'):
+                converged = fitted.mle_retvals.get('converged', True)
+                if not converged:
+                    print(f"⚠️ ARIMA模型未完全收敛，使用降级策略")
+                    raise ValueError("ARIMA optimization did not converge")
 
             # 预测未来horizon期
             forecast = fitted.forecast(steps=horizon)
