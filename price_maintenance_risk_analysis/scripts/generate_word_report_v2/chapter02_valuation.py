@@ -572,13 +572,34 @@ def generate_chapter(context):
                     custom_peer_pe_data = custom_peer_pe_data.sort_values('trade_date').reset_index(drop=True)
 
                     # 计算统计指标
-                    # 使用.values[0]或.item()安全提取标量值
-                    pe_last = custom_peer_pe_data.iloc[-1]['pe']
-                    custom_peer_pe_current = float(pe_last.values[0] if hasattr(pe_last, 'values') else pe_last)
-                    custom_peer_pe_min = float(custom_peer_pe_data['pe'].min())
-                    custom_peer_pe_max = float(custom_peer_pe_data['pe'].max())
-                    custom_peer_pe_median = float(custom_peer_pe_data['pe'].median())
-                    custom_peer_pe_percentile = float((custom_peer_pe_data['pe'] < custom_peer_pe_current).sum() / len(custom_peer_pe_data) * 100)
+                    # 安全提取标量值，处理各种数据类型
+                    try:
+                        # 获取最后一个PE值
+                        pe_last = custom_peer_pe_data.iloc[-1]['pe']
+                        if isinstance(pe_last, (pd.Series, list)):
+                            custom_peer_pe_current = float(pe_last.iloc[0] if isinstance(pe_last, pd.Series) else pe_last[0])
+                        else:
+                            custom_peer_pe_current = float(pe_last)
+
+                        # 其他聚合函数，添加类型检查
+                        pe_min = custom_peer_pe_data['pe'].min()
+                        custom_peer_pe_min = float(pe_min.iloc[0] if isinstance(pe_min, pd.Series) else pe_min)
+
+                        pe_max = custom_peer_pe_data['pe'].max()
+                        custom_peer_pe_max = float(pe_max.iloc[0] if isinstance(pe_max, pd.Series) else pe_max)
+
+                        pe_median = custom_peer_pe_data['pe'].median()
+                        custom_peer_pe_median = float(pe_median.iloc[0] if isinstance(pe_median, pd.Series) else pe_median)
+
+                        # 计算百分位
+                        pe_percentile_count = (custom_peer_pe_data['pe'] < custom_peer_pe_current).sum()
+                        custom_peer_pe_percentile = float(pe_percentile_count.iloc[0] if isinstance(pe_percentile_count, pd.Series) else pe_percentile_count) / len(custom_peer_pe_data) * 100
+
+                    except Exception as e:
+                        print(f"  ⚠️ 计算统计指标时出错: {e}")
+                        print(f"  ⚠️ custom_peer_pe_data形状: {custom_peer_pe_data.shape}")
+                        print(f"  ⚠️ custom_peer_pe_data列: {custom_peer_pe_data.columns.tolist()}")
+                        raise
 
                     print(f"  ✅ 同行公司历史PE计算成功:")
                     print(f"     当前PE: {custom_peer_pe_current:.2f}倍")
