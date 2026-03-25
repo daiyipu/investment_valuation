@@ -1,0 +1,30 @@
+# 数据文件（运行时生成）
+data/*.json
+data/images_temp/
+
+# Python缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# 虚拟环境
+venv/
+env/
+ENV/
+
+# IDE配置
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 报告输出
+reports/outputs/*.docx
+
+# 临时文件
+*.log
+*.tmp
+.DS_Store
