@@ -129,10 +129,10 @@ class TimeSeriesForecaster:
                 try:
                     model = ARIMA(log_returns, order=(p, d, q))
 
-                    # 抑制收敛警告，使用method_kwargs传递优化器参数
+                    # 抑制收敛警告，使用默认参数
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore")
-                        fitted = model.fit(method='lbfgs', method_kwargs={'gtol': 1e-6})
+                        fitted = model.fit()
 
                     ic_value = fitted.aic if information_criterion == 'aic' else fitted.bic
 
@@ -238,13 +238,13 @@ class TimeSeriesForecaster:
             elif order is None:
                 order = (1, 1, 1)  # 默认值
 
-            # 拟合ARIMA模型，使用更稳健的优化参数
+            # 拟合ARIMA模型
             model = ARIMA(log_returns, order=order)
 
-            # 抑制收敛警告，使用method_kwargs传递优化器参数
+            # 抑制收敛警告，使用默认参数
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                fitted = model.fit(method='lbfgs', method_kwargs={'gtol': 1e-6})
+                fitted = model.fit()
 
             # 预测未来horizon期
             forecast = fitted.forecast(steps=horizon)
