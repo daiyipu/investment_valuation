@@ -491,7 +491,8 @@ class TimeSeriesForecaster:
         try:
             from arch import arch_model
 
-            returns_pct = self.prices.pct_change().dropna() * 100
+            # 计算收益率（小数形式，与历史波动率计算保持一致）
+            returns_decimal = self.prices.pct_change().dropna()
 
             # 确定使用的阶数
             order_selection = None
@@ -506,8 +507,8 @@ class TimeSeriesForecaster:
                 else:
                     p, q = 1, 1
 
-            # 拟合GARCH(p,q)模型
-            model = arch_model(returns_pct, vol='Garch', p=p, q=q, mean='Constant')
+            # 拟合GARCH(p,q)模型（输入小数形式的收益率）
+            model = arch_model(returns_decimal, vol='Garch', p=p, q=q, mean='Constant')
             fitted = model.fit(disp='off')
 
             # 提取模型参数
@@ -521,9 +522,9 @@ class TimeSeriesForecaster:
             forecast = fitted.forecast(horizon=horizon)
             variance_forecast = forecast.variance.iloc[-1]
 
-            # 计算平均年化波动率
-            vol_daily_pct = np.sqrt(variance_forecast).mean()
-            annualized_vol = vol_daily_pct / 100 * np.sqrt(252)
+            # 计算平均年化波动率（与历史波动率计算方式保持一致）
+            vol_daily_decimal = np.sqrt(variance_forecast).mean()
+            annualized_vol = vol_daily_decimal * np.sqrt(250)  # 使用√250与历史数据一致
 
             # 获取条件方差和标准化残差
             conditional_variances = fitted.conditional_volatility ** 2
