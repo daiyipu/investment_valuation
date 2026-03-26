@@ -917,7 +917,7 @@ def generate_chapter(context):
         prob = calculate_profit_probability_lognormal(
             target_price=threshold,
             current_price=current_price,
-            drift=current_drift,
+            drift=drift,  # 使用循环变量drift，不是current_drift
             volatility=current_vol,
             period_months=lockup_months
         )
@@ -934,7 +934,7 @@ def generate_chapter(context):
             prob_target = calculate_profit_probability_lognormal(
                 target_price=target_price,
                 current_price=current_price,
-                drift=current_drift,
+                drift=drift,  # 使用循环变量drift，不是current_drift
                 volatility=current_vol,
                 period_months=lockup_months
             )
@@ -1028,9 +1028,9 @@ def generate_chapter(context):
         prob = calculate_profit_probability_lognormal(
             target_price=threshold,
             current_price=current_price,
-            drift=drift,
-            volatility=volatility_i,
-            period_months=lockup_period
+            drift=drift_rate,
+            volatility=vol,  # 使用循环变量vol
+            period_months=lockup_months
         )
         prob_results.append(prob)
 
@@ -1047,9 +1047,9 @@ def generate_chapter(context):
             prob_target = calculate_profit_probability_lognormal(
                 target_price=target_price,
                 current_price=current_price,
-                drift=drift,
-                volatility=volatility_i,
-                period_months=lockup_period
+                drift=drift_rate,
+                volatility=vol,  # 使用循环变量vol
+                period_months=lockup_months
             )
             profit_probs_row.append(prob_target)
         profit_target_results.append(profit_probs_row)
