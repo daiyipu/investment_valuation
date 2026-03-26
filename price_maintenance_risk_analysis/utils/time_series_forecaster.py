@@ -249,12 +249,28 @@ class TimeSeriesForecaster:
             # 预测未来horizon期
             forecast = fitted.forecast(steps=horizon)
 
-            # 计算年化漂移率
-            total_return = forecast.sum()
-            annualized_drift = total_return / horizon * 252
+            # 计算年化漂移率（两种方式）
+            # 方式1：简单年化（对数收益率线性年化）
+            total_log_return = forecast.sum()
+            annualized_drift_simple = total_log_return / horizon * 252
+
+            # 方式2：复利年化（更准确，转换为简单收益率后年化再转回）
+            # 累积简单收益率
+            total_simple_return = np.exp(total_log_return) - 1
+            # 复利年化
+            annualized_simple_return = (1 + total_simple_return) ** (252 / horizon) - 1
+            # 转回对数收益率
+            annualized_drift_compound = np.log(1 + annualized_simple_return)
+
+            # 使用复利年化方式（更准确）
+            annualized_drift = annualized_drift_compound
 
             result = {
                 'forecast_drift': annualized_drift,
+                'forecast_drift_simple': annualized_drift_simple,  # 保留简单年化供参考
+                'forecast_drift_compound': annualized_drift_compound,  # 复利年化
+                'total_log_return': total_log_return,
+                'total_simple_return': total_simple_return,
                 'model_fitted': True,
                 'aic': fitted.aic,
                 'forecast_series': forecast,
