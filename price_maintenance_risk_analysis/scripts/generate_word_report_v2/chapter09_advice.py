@@ -16,7 +16,7 @@ PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
 sys.path.insert(0, PROJECT_DIR)
 
 from module_utils import add_title, add_paragraph, add_table_data, add_image, add_section_break
-from module_utils import generate_break_even_chart
+from module_utils import generate_break_even_chart, generate_market_turnover_chart
 
 def generate_chapter(context):
     """
@@ -145,7 +145,135 @@ def generate_chapter(context):
     add_paragraph(document, '')
 
     # ==================== 9.3 报价方案建议 ====================
-    add_title(document, '9.3 报价方案建议', level=2)
+    # 9.3.1 宏观环境评估
+    add_title(document, '9.3.1 宏观环境评估', level=3)
+    add_paragraph(document, '在制定报价方案前，先评估当前的宏观环境，包括货币政策与财政政策、行业发展周期、二级市场活跃度三个维度。')
+    add_paragraph(document, '')
+
+    # 计算二级市场活跃度（使用换手率）
+    print(f"正在读取市场换手率数据...")
+
+    # 尝试从market_data中读取
+    if 'market_turnover' in market_data and market_data['market_turnover'] is not None:
+        turnover_info = market_data['market_turnover']
+        weighted_turnover = turnover_info.get('current_turnover', 1.99)
+        current_turnover_percentile = turnover_info.get('historical_percentile', 50)
+        historical_count = turnover_info.get('historical_count', 0)
+
+        print(f"✅ 成功读取市场换手率数据：")
+        print(f"   当前换手率={weighted_turnover:.2f}%")
+        print(f"   历史分位数={current_turnover_percentile:.1f}%（基于{historical_count}个交易日）")
+    else:
+        print(f"⚠️ 市场换手率数据不可用，使用默认值")
+        weighted_turnover = 1.99
+        current_turnover_percentile = 50
+        historical_count = 0
+        turnover_info = {}
+
+    # 根据历史分位数确定活跃度等级和得分
+    if current_turnover_percentile < 20:
+        market_activity_level = "不活跃"
+        market_activity_score = 20
+        market_activity_desc = "历史分位数<20%（5年）"
+    elif current_turnover_percentile < 40:
+        market_activity_level = "较不活跃"
+        market_activity_score = 40
+        market_activity_desc = f"历史分位数20%-40%（5年，当前{current_turnover_percentile:.1f}%）"
+    elif current_turnover_percentile < 60:
+        market_activity_level = "平稳"
+        market_activity_score = 60
+        market_activity_desc = f"历史分位数40%-60%（5年，当前{current_turnover_percentile:.1f}%）"
+    elif current_turnover_percentile < 80:
+        market_activity_level = "较活跃"
+        market_activity_score = 80
+        market_activity_desc = f"历史分位数60%-80%（5年，当前{current_turnover_percentile:.1f}%）"
+    else:
+        market_activity_level = "活跃"
+        market_activity_score = 100
+        market_activity_desc = f"历史分位数>80%（5年，当前{current_turnover_percentile:.1f}%）"
+
+    current_percentile = current_turnover_percentile
+
+    # 宏观环境评估表格
+    add_paragraph(document, '📊 宏观环境三维度评估：', bold=True)
+    add_paragraph(document, '')
+
+    # 由于货币政策、财政政策、行业周期难以自动判断，这里提供模板供人工填写
+    macro_env_data = [
+        ['评估维度', '当前状态', '得分', '权重', '加权得分', '说明'],
+        ['', '', '', '', '', ''],
+        # 1. 货币政策与财政政策（权重30%）
+        ['货币政策/财政政策', '__________', '_____', '30%', '_____', '扩展(100分)/稳健(60分)/紧缩(40分) - 请人工判断填写'],
+        ['', '', '', '', '', ''],
+
+        # 2. 行业发展周期（权重30%）
+        ['行业发展周期', '__________', '_____', '30%', '_____', '成长(100分)/成熟(80分)/幼稚(60分)/衰退(40分) - 请人工判断填写'],
+        ['', '', '', '', '', ''],
+
+        # 3. 二级市场活跃度（权重40%，自动计算）
+        ['二级市场活跃度', market_activity_level, f'{market_activity_score}', '40%', f'{market_activity_score * 0.4:.1f}',
+         f'{market_activity_desc}，基于最近5年历史换手率计算'],
+    ]
+
+    # 分离表头和数据
+    macro_env_headers = macro_env_data[0]
+    macro_env_table_data = macro_env_data[1:]
+    add_table_data(document, macro_env_headers, macro_env_table_data)
+
+    # 评估说明
+    add_paragraph(document, '')
+    add_paragraph(document, '💡 评估说明：', bold=True)
+    add_paragraph(document, '• 评估周期：基于最近5年历史数据计算分位数')
+    add_paragraph(document, '• 权重分配：货币政策/财政政策(30%) + 行业发展周期(30%) + 二级市场活跃度(40%)')
+    add_paragraph(document, '• 得分标准：')
+    add_paragraph(document, '  - 货币/财政政策：扩展(100分)、稳健(60分)、紧缩(40分)')
+    add_paragraph(document, '  - 行业发展周期：成长(100分)、成熟(80分)、幼稚(60分)、衰退(40分)')
+    add_paragraph(document, '  - 二级市场活跃度：根据历史分位数自动计算（20-100分）')
+    add_paragraph(document, '')
+
+    # 二级市场活跃度详细说明
+    add_paragraph(document, '📈 二级市场活跃度详情：', bold=True)
+    add_paragraph(document, f'• 当前状态：{market_activity_level}（得分{market_activity_score}分）')
+    add_paragraph(document, f'• 当前换手率：{weighted_turnover:.2f}%（120日中位数）')
+    add_paragraph(document, f'• 历史分位数：{current_percentile:.1f}%（最近{historical_count}个交易日）')
+    add_paragraph(document, '• 数据来源：深圳市场换手率（代表全市场，tushare daily_info接口）')
+    add_paragraph(document, '')
+
+    # 生成并添加换手率曲线图
+    if 'market_turnover' in market_data and market_data['market_turnover'] is not None:
+        turnover_chart_path = os.path.join(IMAGES_DIR, '09_market_turnover_history.png')
+        print(f"正在生成市场换手率曲线图...")
+        chart_path = generate_market_turnover_chart(market_data['market_turnover'], turnover_chart_path)
+        if chart_path and os.path.exists(chart_path):
+            add_paragraph(document, '图表 9.3: 市场换手率历史走势')
+            add_image(document, chart_path, width=Inches(6.0))
+            add_paragraph(document, '')
+            add_paragraph(document, '💡 图表说明：')
+            add_paragraph(document, f'• 蓝色曲线：历史换手率走势（共{historical_count}个交易日）')
+            add_paragraph(document, f'• 红色虚线：当前120日中位数（{weighted_turnover:.2f}%），代表近期市场活跃度水平')
+            add_paragraph(document, f'• 绿色点线：最新一日换手率（{turnover_info.get("latest_turnover", 0):.2f}%），反映当日市场情绪')
+            add_paragraph(document, f'• 当前分位数：{current_percentile:.1f}%，表示当前活跃度在历史中的相对位置')
+            add_paragraph(document, '')
+
+    add_paragraph(document, '')
+
+    # 活跃度对定增的影响
+    add_paragraph(document, '⚠️ 活跃度对定增的影响：', bold=True)
+    if market_activity_score >= 80:
+        add_paragraph(document, f'• ✅ 市场较活跃，流动性充足，有利于定增项目发行和退出')
+        add_paragraph(document, f'• 投资者情绪较高，可适当提高报价预期')
+    elif market_activity_score >= 60:
+        add_paragraph(document, f'• 📊 市场平稳，流动性适中，定增项目正常发行')
+        add_paragraph(document, f'• 建议按照标准折价率报价')
+    else:
+        add_paragraph(document, f'• ⚠️ 市场不活跃，流动性偏紧，定增发行难度增加')
+        add_paragraph(document, f'• 建议要求更高折价率或谨慎参与')
+
+    add_paragraph(document, '')
+    add_paragraph(document, '')
+
+    # 9.3.2 报价方案建议
+    add_title(document, '9.3.2 报价方案建议', level=3)
     add_paragraph(document, '本节提供不同目标收益率下的报价建议，帮助投资者根据风险偏好选择合适的报价方案。')
     add_paragraph(document, '')
 

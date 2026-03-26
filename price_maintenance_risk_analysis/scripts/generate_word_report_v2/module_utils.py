@@ -2004,3 +2004,97 @@ def generate_radar_chart(scores, save_path):
     plt.tight_layout()
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
     plt.close()
+
+
+def generate_market_turnover_chart(market_turnover_data, save_path):
+    """
+    生成市场换手率历史曲线图
+
+    参数:
+        market_turnover_data: 市场换手率数据字典，包含:
+            - current_turnover: 当前120日中位数
+            - latest_turnover: 最新一日换手率
+            - historical_percentile: 历史分位数
+            - historical_data: 历史数据数组 [{'date': '20200101', 'turnover': 2.5}, ...]
+        save_path: 图片保存路径
+
+    返回:
+        图片路径
+    """
+    import matplotlib.dates as mdates
+    from datetime import datetime
+
+    try:
+        historical_data = market_turnover_data.get('historical_data', [])
+        if not historical_data:
+            print("⚠️ 没有历史换手率数据，跳过图表生成")
+            return None
+
+        # 提取数据
+        dates = []
+        turnovers = []
+
+        for item in historical_data:
+            # 将日期字符串转换为datetime对象
+            date_str = item['date']
+            date_obj = datetime.strptime(date_str, '%Y%m%d')
+            dates.append(date_obj)
+            turnovers.append(item['turnover'])
+
+        # 创建图表
+        fig, ax = plt.subplots(figsize=(14, 6))
+
+        # 绘制历史曲线
+        ax.plot(dates, turnovers, label='历史换手率', linewidth=1.5, color='#3498db', alpha=0.7)
+
+        # 标注当前120日中位数
+        current_turnover = market_turnover_data.get('current_turnover', 0)
+        percentile = market_turnover_data.get('historical_percentile', 0)
+
+        # 添加水平线标注120日中位数
+        ax.axhline(y=current_turnover, color='#e74c3c', linestyle='--', linewidth=2,
+                   label=f'当前120日中位数: {current_turnover:.2f}%')
+
+        # 标注最新一日
+        latest_turnover = market_turnover_data.get('latest_turnover', 0)
+        ax.axhline(y=latest_turnover, color='#27ae60', linestyle=':', linewidth=1.5,
+                   label=f'最新一日: {latest_turnover:.2f}%')
+
+        # 添加分位数标注
+        ax.text(0.02, 0.98, f'历史分位数: {percentile:.1f}%',
+                transform=ax.transAxes, fontsize=12, verticalalignment='top',
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5),
+                fontproperties=font_prop)
+
+        # 设置标题和标签
+        ax.set_xlabel('日期', fontproperties=font_prop, fontsize=12)
+        ax.set_ylabel('换手率 (%)', fontproperties=font_prop, fontsize=12)
+        ax.set_title('市场换手率历史走势（深圳市场代表全市场）',
+                     fontproperties=font_prop, fontsize=14, fontweight='bold')
+
+        # 格式化x轴日期
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+        ax.xaxis.set_major_locator(mdates.MonthLocator(interval=6))
+        plt.xticks(rotation=45, ha='right')
+
+        # 添加网格和图例
+        ax.grid(True, alpha=0.3, linestyle='-', linewidth=0.5)
+        ax.legend(prop=font_prop, loc='upper left', framealpha=0.9)
+
+        # 设置字体
+        for label in ax.get_xticklabels() + ax.get_yticklabels():
+            label.set_fontproperties(font_prop)
+
+        # 保存图片
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        plt.close()
+
+        print(f"✅ 换手率曲线图已保存: {save_path}")
+        return save_path
+
+    except Exception as e:
+        print(f"⚠️ 生成换手率曲线图失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
