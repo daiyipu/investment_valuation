@@ -134,6 +134,108 @@ def calculate_period_return(df, window):
     return period_return
 
 
+def fetch_market_turnover_data(target_days=1200):
+    """
+    获取市场换手率数据（上海+深圳）
+
+    参数:
+        target_days: 目标获取天数（默认1200个交易日≈5年）
+
+    返回:
+        dict: 包含当前换手率、历史数据和分位数
+    """
+    try:
+        import tushare as ts
+        pro = ts.pro_api()
+
+        print(f"\n📡 正在获取市场换手率数据...")
+
+        # 使用批量获取方式
+        end_date = datetime.now().strftime('%Y%m%d')
+        start_date = (datetime.now() - timedelta(days=365*6)).strftime('%Y%m%d')  # 回溯6年确保有足够交易日
+
+        print(f"   查询日期范围: {start_date} ~ {end_date}")
+
+        # 批量获取上海A股数据
+        df_sh_all = pro.daily_info(start_date=start_date, end_date=end_date, exchange='SH',
+                                    fields='trade_date,ts_name,total_mv,float_mv,tr')
+
+        # 批量获取深圳市场数据
+        df_sz_all = pro.daily_info(start_date=start_date, end_date=end_date, exchange='SZ',
+                                    fields='trade_date,ts_name,total_mv,float_mv,amount')
+
+        print(f"✅ 获取到上海数据 {len(df_sh_all)} 条，深圳数据 {len(df_sz_all)} 条")
+
+        # 只使用深圳市场数据（数据历史更长，约5年）
+        df_sz = df_sz_all[df_sz_all['ts_name'] == '深圳市场'].copy()
+
+        if len(df_sz) == 0:
+            print(f"⚠️ 没有找到深圳市场数据")
+            return None
+
+        # 计算深圳市场换手率（作为全市场换手率）
+        df_sz['sz_turnover'] = (df_sz['amount'] / df_sz['float_mv'] * 100).fillna(3.0)
+
+        # 使用深圳数据作为市场数据
+        df_merged = df_sz[['trade_date', 'sz_turnover']].copy()
+        df_merged = df_merged.rename(columns={'sz_turnover': 'weighted_turnover'})
+
+        # 按日期排序
+        df_merged = df_merged.sort_values('trade_date').reset_index(drop=True)
+
+        # 获取最近120个交易日的中位数作为当前换手率
+        recent_120_days = df_merged.iloc[-120:] if len(df_merged) >= 120 else df_merged
+        market_turnover = recent_120_days['weighted_turnover'].median()
+        latest_turnover = df_merged.iloc[-1]['weighted_turnover']  # 最新一天数据，用于参考
+
+        print(f"✅ 成功获取市场换手率数据（使用深圳市场数据代表全市场）：")
+        print(f"   数据量：{len(df_merged)} 个交易日")
+        print(f"   数据范围：{df_merged['trade_date'].iloc[0]} ~ {df_merged['trade_date'].iloc[-1]}")
+        print(f"   最新一日换手率：{latest_turnover:.2f}%")
+        print(f"   当前市场换手率（120日中位数）：{market_turnover:.2f}%")
+
+        # 获取最近target_days天的数据计算分位数
+        if len(df_merged) >= target_days:
+            recent_df = df_merged.iloc[-target_days:]
+        else:
+            recent_df = df_merged
+            print(f"⚠️ 数据量不足{target_days}天，使用全部{len(df_merged)}天数据")
+
+        historical_series = recent_df['weighted_turnover']
+        # 计算120日中位数在历史数据中的分位数
+        current_percentile = (historical_series < market_turnover).mean() * 100
+
+        print(f"✅ 历史分位数计算完成（120日中位数在{len(recent_df)}天历史中的分位数）：{current_percentile:.1f}%")
+
+        # 保存历史换手率数据（用于绘制图表）
+        historical_turnover_data = []
+        for _, row in recent_df.iterrows():
+            historical_turnover_data.append({
+                'date': row['trade_date'],
+                'turnover': round(float(row['weighted_turnover']), 4)
+            })
+
+        return {
+            'current_turnover': round(float(market_turnover), 4),
+            'latest_turnover': round(float(latest_turnover), 4),  # 最新一日数据
+            'historical_count': len(recent_df),
+            'historical_percentile': round(float(current_percentile), 2),
+            'historical_mean': round(float(historical_series.mean()), 4),
+            'historical_median': round(float(historical_series.median()), 4),
+            'historical_std': round(float(historical_series.std()), 4),
+            'historical_min': round(float(historical_series.min()), 4),
+            'historical_max': round(float(historical_series.max()), 4),
+            'historical_data': historical_turnover_data,  # 新增：历史数据数组
+            'data_fetched_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+
+    except Exception as e:
+        print(f"⚠️ 获取市场换手率数据失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
 def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技'):
     """
     生成市场数据
@@ -196,6 +298,14 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技'):
     # 保存最近500个交易日的收盘价
     price_series = df['close'].iloc[-500:].tolist() if len(df) >= 500 else df['close'].tolist()
 
+    # 获取市场换手率数据
+    print(f"\n📊 获取市场换手率数据...")
+    turnover_data = fetch_market_turnover_data(target_days=1200)  # 获取5年数据
+    if turnover_data:
+        print(f"✅ 市场换手率数据获取成功")
+    else:
+        print(f"⚠️ 市场换手率数据获取失败，将使用默认值")
+
     # 构建市场数据字典
     market_data = {
         'stock_code': stock_code,
@@ -233,6 +343,12 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技'):
         'data_source': 'tushare_realtime',
         'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     }
+
+    # 添加市场换手率数据（如果获取成功）
+    if turnover_data:
+        market_data['market_turnover'] = turnover_data
+
+    return market_data
 
     return market_data
 
@@ -280,6 +396,19 @@ def print_market_data_summary(market_data):
     print(f"   季度(60日): {market_data.get('win_rate_60d', 0)*100:.1f}%")
     print(f"   半年(120日): {market_data.get('win_rate_120d', 0)*100:.1f}%")
     print(f"   年度(250日): {market_data.get('win_rate_250d', 0)*100:.1f}%")
+
+    # 显示市场换手率数据
+    if 'market_turnover' in market_data:
+        turnover = market_data['market_turnover']
+        current_to = turnover.get('current_turnover', 0)
+        print(f"\n💹 市场换手率（二级市场活跃度）:")
+        print(f"   当前换手率: {current_to:.2f}%")  # current_turnover已经是百分比形式
+        if turnover.get('historical_count', 0) > 0:
+            print(f"   历史分位数: {turnover.get('historical_percentile', 0):.1f}%（最近{turnover.get('historical_count', 0)}个交易日）")
+            print(f"   历史均值: {turnover.get('historical_mean', 0):.2f}%")
+            print(f"   历史中位数: {turnover.get('historical_median', 0):.2f}%")
+        else:
+            print(f"   历史数据: 不可用")
 
     print(f"\n⏰ 数据生成时间: {market_data['generated_at']}")
     print("="*70)

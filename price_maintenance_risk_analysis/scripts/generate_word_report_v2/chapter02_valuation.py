@@ -564,7 +564,6 @@ def generate_chapter(context):
 
                 if peer_pe_histories:
                     # 合并所有同行公司的历史PE
-                    import pandas as pd
                     peer_pe_df = pd.concat(peer_pe_histories, ignore_index=True)
 
                     # 按日期分组计算平均值
