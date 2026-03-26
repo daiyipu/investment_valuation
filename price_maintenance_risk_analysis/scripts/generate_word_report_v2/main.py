@@ -41,6 +41,7 @@ import chapter05_montecarlo
 import chapter06_scenario
 import chapter07_stress
 import chapter08_var
+import chapter09_01_evaluation
 import chapter09_advice
 import appendix_scenarios
 
@@ -147,6 +148,12 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技'):
 
     # 第九章：风控建议与风险提示
     print("\n📊 生成第九章：风控建议与风险提示...")
+
+    # 9.1 综合评估汇总
+    print("\n📊 生成第九章第一节：综合评估汇总...")
+    context = chapter09_01_evaluation.generate_chapter(context)
+
+    # 9.2-9.9 风控建议与风险提示
     context = chapter09_advice.generate_chapter(context)
 
     # 附件：情景数据表
