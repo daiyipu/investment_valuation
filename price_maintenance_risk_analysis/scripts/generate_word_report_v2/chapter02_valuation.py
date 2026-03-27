@@ -705,7 +705,7 @@ def generate_chapter(context):
 
                 add_paragraph(document, f'右下-行业PE历史分位数：')
                 add_paragraph(document, f'  • 显示{industry_name}的PE在历史中的位置变化')
-                add_paragraph(document, f'  • 当前分位数：{industry_pe_percentile:.1f}%')
+                add_paragraph(document, f'  • 当前分位数：{sw_index_pe_percentile:.1f}%')
                 add_paragraph(document, f'  • 可用于判断行业整体估值水平')
                 add_paragraph(document, '')
 
@@ -741,14 +741,14 @@ def generate_chapter(context):
             add_paragraph(document, '')
 
             # 与行业对比
-            if stock_pe_percentile > industry_pe_percentile + 20:
-                relative_comment = f"个股分位数({stock_pe_percentile:.1f}%)显著高于行业({industry_pe_percentile:.1f}%)，相对行业估值偏高"
+            if stock_pe_percentile > sw_index_pe_percentile + 20:
+                relative_comment = f"个股分位数({stock_pe_percentile:.1f}%)显著高于行业({sw_index_pe_percentile:.1f}%)，相对行业估值偏高"
                 relative_emoji = "⚠️"
-            elif stock_pe_percentile < industry_pe_percentile - 20:
-                relative_comment = f"个股分位数({stock_pe_percentile:.1f}%)显著低于行业({industry_pe_percentile:.1f}%)，相对行业估值偏低，安全边际较高"
+            elif stock_pe_percentile < sw_index_pe_percentile - 20:
+                relative_comment = f"个股分位数({stock_pe_percentile:.1f}%)显著低于行业({sw_index_pe_percentile:.1f}%)，相对行业估值偏低，安全边际较高"
                 relative_emoji = "✅"
             else:
-                relative_comment = f"个股分位数({stock_pe_percentile:.1f}%)与行业({industry_pe_percentile:.1f}%)基本持平"
+                relative_comment = f"个股分位数({stock_pe_percentile:.1f}%)与行业({sw_index_pe_percentile:.1f}%)基本持平"
                 relative_emoji = "ℹ️"
 
             add_paragraph(document, f'{relative_emoji} 相对行业估值：{relative_comment}')
