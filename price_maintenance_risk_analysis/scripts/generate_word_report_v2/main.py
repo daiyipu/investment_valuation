@@ -87,11 +87,12 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技'):
     project_params, risk_params, market_data = load_placement_config(stock_code)
     industry_data = _load_industry_data(stock_code)
 
-    # 创建分析器
+    # 创建分析器（注意参数顺序：issue_price, issue_shares, lockup_period, current_price, risk_free_rate）
     analyzer = PrivatePlacementRiskAnalyzer(
         project_params['issue_price'],
-        project_params['current_price'],
+        project_params['issue_shares'],
         project_params['lockup_period'],
+        project_params['current_price'],
         project_params.get('risk_free_rate', 0.03)
     )
 

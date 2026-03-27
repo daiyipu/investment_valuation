@@ -509,17 +509,23 @@ def generate_chapter(context):
     mc_n_sim = 5000  # 使用5000次模拟以加快速度
 
     print("\n运行多窗口期蒙特卡洛模拟...")
+
+    # 使用250日年化收益率作为基准（更稳定，避免极端值）
+    base_annual_drift = market_data.get('annual_return_250d', risk_params.get('drift', 0.08))
+
+    # 限制漂移率在合理范围内：-30%到+30%（避免极端值导致模拟失真）
+    base_annual_drift = max(-0.30, min(0.30, base_annual_drift))
+
+    print(f"  使用基准年化漂移率: {base_annual_drift*100:.2f}%（已限制在±30%范围内）")
+
     for window_name, config in windows_mc.items():
         print(f"  模拟 {window_name}...")
 
-        # 获取该窗口期的波动率和收益率
+        # 获取该窗口期的波动率
         window_vol = market_data.get(config['vol_key'], risk_params.get('volatility', 0.30))
 
-        # 获取历史年化收益率，如果缺失则使用备选数据
-        window_drift = market_data.get(config['return_key'])
-        if window_drift is None:
-            window_drift = risk_params.get('drift', 0.08)
-            print(f"    警告：未找到{window_name}年化收益率，使用默认值({window_drift*100:.2f}%)")
+        # 所有窗口期使用统一的基准漂移率（避免极端值）
+        window_drift = base_annual_drift
 
         # 计算时间步数（交易日转换为天，假设1月=21交易日）
         time_steps = config['days']
