@@ -40,7 +40,7 @@ def generate_chapter(context):
     project_params = context['project_params']
     IMAGES_DIR = context['IMAGES_DIR']
 
-    stock_code = project_params.get('stock_code', '')
+    stock_code = project_params.get('stock_code', '')  # 从project_params获取（与V2一致）
 
     # ==================== 二、相对估值分析 ====================
     add_title(document, '二、相对估值分析', level=1)
@@ -92,6 +92,11 @@ def generate_chapter(context):
             df_industry = pro.index_member_all(ts_code=stock_code)
             if df_industry.empty:
                 raise ValueError("未获取到行业分类")
+
+            # 过滤：只保留该股票的记录（防止API返回过多数据）
+            df_industry = df_industry[df_industry['ts_code'] == stock_code]
+            if df_industry.empty:
+                raise ValueError(f"未找到{stock_code}的行业分类记录")
 
             # 显示所有行业分类记录，方便调试
             df_industry = df_industry.sort_values('in_date', ascending=False)

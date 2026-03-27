@@ -190,6 +190,7 @@ def load_placement_config(
 
     # 6. 构建项目参数
     project_params = {
+        'stock_code': stock_code,  # 添加股票代码
         'issue_price': issue_price,
         'issue_shares': issue_shares,
         'lockup_period': placement_params['lockup_period'],
