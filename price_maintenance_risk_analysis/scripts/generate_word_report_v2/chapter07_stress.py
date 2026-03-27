@@ -379,7 +379,7 @@ def generate_chapter(context):
     # 同时考虑：
     # 1. 深度溢价发行（+20%溢价）
     # 2. 高波动率（当前波动率 × 1.5）
-    # 3. 负向漂移率（-10%年化收益率）
+    # 3. 负向漂移率（当前漂移率 × 1.5，使情况更糟）
 
     current_vol_120d = market_data.get('volatility_120d', market_data.get('volatility', 0.30))
     current_drift_120d = market_data.get('annual_return_120d', market_data.get('drift', 0.08))
@@ -389,7 +389,7 @@ def generate_chapter(context):
     # 情景1：深度溢价 + 高波动 + 负向漂移（三重打击）
     premium_rate_extreme = 0.20  # 20%溢价
     vol_multiplier_extreme = 1.5  # 波动率放大1.5倍
-    drift_extreme = -0.10  # -10%年化漂移率
+    drift_extreme = current_drift_120d * 1.5  # 当前漂移率放大1.5倍（使情况更糟）
 
     issue_price_extreme = current_price_multi * (1 + premium_rate_extreme)
     vol_extreme = current_vol_120d * vol_multiplier_extreme
@@ -423,7 +423,7 @@ def generate_chapter(context):
     extreme_scenario_data = [
         ['发行价', f'{project_params["issue_price"]:.2f}元', f'{issue_price_extreme:.2f}元', f'+{premium_rate_extreme*100:.0f}%溢价'],
         ['波动率', f'{current_vol_120d*100:.2f}%', f'{vol_extreme*100:.2f}%', f'×{vol_multiplier_extreme:.1f}'],
-        ['漂移率', f'{current_drift_120d*100:+.2f}%', f'{drift_rate_extreme*100:+.2f}%', f'极端悲观'],
+        ['漂移率', f'{current_drift_120d*100:+.2f}%', f'{drift_rate_extreme*100:+.2f}%', f'×{vol_multiplier_extreme:.1f}'],
         ['窗口期', '120日', '120日', '保持不变'],
         ['锁定期', f'{lockup_months}个月', f'{lockup_months}个月', '保持不变']
     ]
@@ -463,7 +463,7 @@ def generate_chapter(context):
     add_paragraph(document, '')
 
     add_paragraph(document, '关键发现：')
-    add_paragraph(document, f'• 在深度溢价（+20%）、高波动（×1.5）、负向漂移（-10%）的三重打击下：')
+    add_paragraph(document, f'• 在深度溢价（溢价率+20%）、高波动（×1.5）、负向漂移（{drift_extreme*100:+.2f}%）的三重打击下：')
     add_paragraph(document, f'  - 预期年化收益率为{mean_return_extreme:+.2f}%')
     add_paragraph(document, f'  - 盈利概率为{profit_prob_extreme:.1f}%')
     add_paragraph(document, f'  - 95% VaR为{var_95_extreme:+.2f}%，表示95%置信度下最大损失为{abs(var_95_extreme):.2f}%')
