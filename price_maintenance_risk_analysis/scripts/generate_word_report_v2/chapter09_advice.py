@@ -357,9 +357,8 @@ def generate_chapter(context):
     add_paragraph(document, '• 同等情况下选择保守程度更高的方案')
     add_paragraph(document, '')
 
-    # 从context获取comprehensive_results和multi_window_mc_results
+    # 从context获取comprehensive_results（6.6节的情景分析结果）
     comprehensive_results = context['results'].get('comprehensive_results', [])
-    multi_window_mc_results = context['results'].get('multi_window_mc_results', {})
 
     # 收集所有情景方案
     scenario_options = []
@@ -368,40 +367,21 @@ def generate_chapter(context):
         # 从comprehensive_results提取所有情景
         for result in comprehensive_results:
             if 'scenario' in result and 'median_return' in result and 'profit_prob' in result:
-                scenario_name = result['scenario']['name']
+                scenario_obj = result['scenario']
+                scenario_name = scenario_obj['name']
                 median_return = result['median_return']  # 已经是百分比
                 profit_prob = result['profit_prob']  # 已经是百分比
-
-                # 获取情景的溢价率
-                scenario_premium_rate = result['scenario']['premium_rate']  # 小数形式
-                scenario_premium_pct = scenario_premium_rate * 100  # 转为百分比
-
-                # 获取情景的VaR
-                var_95 = abs(result.get('var_95', median_return))
+                var_95 = result.get('var_95', 0)  # 已经是百分比
 
                 scenario_options.append({
                     'name': scenario_name,
+                    'description': scenario_obj.get('description', ''),
                     'median_return': median_return,
                     'profit_prob': profit_prob,
-                    'premium_rate': scenario_premium_pct,
+                    'premium_rate': scenario_obj['premium_rate'] * 100,  # 转为百分比
                     'var_95': var_95,
-                    'issue_price': current_price_eval * (1 + scenario_premium_rate)
+                    'issue_price': result['issue_price']
                 })
-
-        # 添加预测参数模拟方案（如果有）
-        if '120日' in multi_window_mc_results:
-            mc_120_result = multi_window_mc_results['120日']
-            # 获取当前溢价率
-            discount_premium = (issue_price_eval - current_price_eval) / current_price_eval * 100
-
-            scenario_options.append({
-                'name': '历史参数模拟（120日）',
-                'median_return': mc_120_result['median_return'],
-                'profit_prob': mc_120_result['profit_prob'],
-                'premium_rate': discount_premium,
-                'var_95': abs(mc_120_result.get('percentile_5', mc_120_result['median_return'])),
-                'issue_price': issue_price_eval
-            })
 
     # 如果有情景方案，显示筛选结果
     if scenario_options:
@@ -421,7 +401,7 @@ def generate_chapter(context):
         add_paragraph(document, '所有情景方案筛选结果：', bold=True)
         add_paragraph(document, '')
 
-        # 创建所有方案表格
+        # 创建所有方案表格（与6.6节格式一致）
         all_scenarios_data = []
         for scenario in scenario_options:
             # 检查是否满足条件
@@ -433,9 +413,9 @@ def generate_chapter(context):
 
             all_scenarios_data.append([
                 scenario['name'],
-                f"{scenario['premium_rate']:+.2f}%",
-                f"{scenario['median_return']:.2f}%",
-                f"{scenario['var_95']:.2f}%",
+                f"{scenario['premium_rate']:+.1f}%",  # 与6.6节一致：整数格式
+                f"{scenario['median_return']:+.1f}%",  # 与6.6节一致：保留1位小数
+                f"{scenario['var_95']:+.1f}%",  # VaR显示符号
                 f"{scenario['profit_prob']:.1f}%",
                 f"{condition_1} {condition_2} {condition_3} {condition_4}",
                 '✅符合' if all_qualified else '❌不符合'
