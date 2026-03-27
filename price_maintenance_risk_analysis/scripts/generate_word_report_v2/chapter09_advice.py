@@ -336,6 +336,185 @@ def generate_chapter(context):
     add_paragraph(document, '   • 风险：溢价率较高或溢价发行，安全边际有限，需承受较高波动风险')
     add_paragraph(document, '')
 
+    # ==================== 基于情景分析的报价方案筛选 ====================
+    add_paragraph(document, '')
+    add_paragraph(document, '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    add_paragraph(document, '基于9.1.5情景分析汇总的报价方案筛选', bold=True)
+    add_paragraph(document, '')
+
+    # 筛选条件
+    add_paragraph(document, '📋 筛选条件（必须全部满足）：', bold=True)
+    add_paragraph(document, '1. 溢价率 ≤ -5%（折价至少5%，提供安全边际）')
+    add_paragraph(document, '2. 预测中位数收益率 > 8%（年化收益达标）')
+    add_paragraph(document, '3. 95% VaR < 60%（最大损失可控）')
+    add_paragraph(document, '4. 盈利概率 > 50%（盈利可能性较高）')
+    add_paragraph(document, '')
+
+    # 选择逻辑
+    add_paragraph(document, '🎯 选择逻辑（从符合条件中优选）：', bold=True)
+    add_paragraph(document, '• 优先选择最接近8%收益率的方案（保守原则）')
+    add_paragraph(document, '• 同等收益率下选择报价更低的方案')
+    add_paragraph(document, '• 同等情况下选择保守程度更高的方案')
+    add_paragraph(document, '')
+
+    # 从context获取comprehensive_results和multi_window_mc_results
+    comprehensive_results = context['results'].get('comprehensive_results', [])
+    multi_window_mc_results = context['results'].get('multi_window_mc_results', {})
+
+    # 收集所有情景方案
+    scenario_options = []
+
+    if comprehensive_results:
+        # 从comprehensive_results提取所有情景
+        for result in comprehensive_results:
+            if 'scenario' in result and 'median_return' in result and 'profit_prob' in result:
+                scenario_name = result['scenario']['name']
+                median_return = result['median_return']  # 已经是百分比
+                profit_prob = result['profit_prob']  # 已经是百分比
+
+                # 获取情景的溢价率
+                scenario_premium_rate = result['scenario']['premium_rate']  # 小数形式
+                scenario_premium_pct = scenario_premium_rate * 100  # 转为百分比
+
+                # 获取情景的VaR
+                var_95 = abs(result.get('var_95', median_return))
+
+                scenario_options.append({
+                    'name': scenario_name,
+                    'median_return': median_return,
+                    'profit_prob': profit_prob,
+                    'premium_rate': scenario_premium_pct,
+                    'var_95': var_95,
+                    'issue_price': current_price_eval * (1 + scenario_premium_rate)
+                })
+
+        # 添加预测参数模拟方案（如果有）
+        if '120日' in multi_window_mc_results:
+            mc_120_result = multi_window_mc_results['120日']
+            # 获取当前溢价率
+            discount_premium = (issue_price_eval - current_price_eval) / current_price_eval * 100
+
+            scenario_options.append({
+                'name': '历史参数模拟（120日）',
+                'median_return': mc_120_result['median_return'],
+                'profit_prob': mc_120_result['profit_prob'],
+                'premium_rate': discount_premium,
+                'var_95': abs(mc_120_result.get('percentile_5', mc_120_result['median_return'])),
+                'issue_price': issue_price_eval
+            })
+
+    # 如果有情景方案，显示筛选结果
+    if scenario_options:
+        # 筛选符合条件的方案
+        qualified_scenarios = []
+        for scenario in scenario_options:
+            # 检查四个条件
+            condition_1 = scenario['premium_rate'] <= -5  # 溢价率 ≤ -5%
+            condition_2 = scenario['median_return'] > 8  # 中位数收益率 > 8%
+            condition_3 = scenario['var_95'] < 60  # VaR < 60%
+            condition_4 = scenario['profit_prob'] > 50  # 盈利概率 > 50%
+
+            if condition_1 and condition_2 and condition_3 and condition_4:
+                qualified_scenarios.append(scenario)
+
+        # 显示筛选结果
+        add_paragraph(document, '所有情景方案筛选结果：', bold=True)
+        add_paragraph(document, '')
+
+        # 创建所有方案表格
+        all_scenarios_data = []
+        for scenario in scenario_options:
+            # 检查是否满足条件
+            condition_1 = '✅' if scenario['premium_rate'] <= -5 else '❌'
+            condition_2 = '✅' if scenario['median_return'] > 8 else '❌'
+            condition_3 = '✅' if scenario['var_95'] < 60 else '❌'
+            condition_4 = '✅' if scenario['profit_prob'] > 50 else '❌'
+            all_qualified = condition_1 == '✅' and condition_2 == '✅' and condition_3 == '✅' and condition_4 == '✅'
+
+            all_scenarios_data.append([
+                scenario['name'],
+                f"{scenario['premium_rate']:+.2f}%",
+                f"{scenario['median_return']:.2f}%",
+                f"{scenario['var_95']:.2f}%",
+                f"{scenario['profit_prob']:.1f}%",
+                f"{condition_1} {condition_2} {condition_3} {condition_4}",
+                '✅符合' if all_qualified else '❌不符合'
+            ])
+
+        add_table_data(document, ['情景方案', '溢价率', '中位数收益率', '95% VaR', '盈利概率', '条件检查', '筛选结果'], all_scenarios_data)
+
+        add_paragraph(document, '')
+
+        # 推荐方案
+        add_paragraph(document, '推荐方案：', bold=True)
+        add_paragraph(document, '')
+
+        if qualified_scenarios:
+            # 选择最接近8%收益率的方案（保守原则）
+            qualified_scenarios.sort(key=lambda x: abs(x['median_return'] - 8))
+
+            # 如果收益率距离相同，选择报价更低的
+            best_scenario = qualified_scenarios[0]
+            close_to_8 = [s for s in qualified_scenarios if abs(s['median_return'] - 8) < 0.01]
+            if len(close_to_8) > 1:
+                close_to_8.sort(key=lambda x: x['issue_price'])
+                best_scenario = close_to_8[0]
+
+            # 显示推荐方案详情
+            recommended_data = [
+                ['推荐方案', best_scenario['name'], '基于筛选条件和选择逻辑'],
+                ['建议报价', f"{best_scenario['issue_price']:.2f}元/股", f"溢价率{best_scenario['premium_rate']:+.2f}%"],
+                ['预期中位数收益率', f"{best_scenario['median_return']:.2f}%", '年化收益率'],
+                ['盈利概率', f"{best_scenario['profit_prob']:.1f}%", '蒙特卡洛模拟盈利概率'],
+                ['95% VaR', f"{best_scenario['var_95']:.2f}%", '锁定期最大损失'],
+                ['', '', ''],
+                ['✅ 溢价率', f"{best_scenario['premium_rate']:+.2f}%", '≤ -5% ✓'],
+                ['✅ 中位数收益率', f"{best_scenario['median_return']:.2f}%", '> 8% ✓'],
+                ['✅ 95% VaR', f"{best_scenario['var_95']:.2f}%", '< 60% ✓'],
+                ['✅ 盈利概率', f"{best_scenario['profit_prob']:.1f}%", '> 50% ✓'],
+            ]
+
+            add_table_data(document, ['指标', '数值', '说明'], recommended_data)
+
+            # 推荐理由
+            add_paragraph(document, '')
+            add_paragraph(document, '💡 推荐理由：', bold=True)
+            add_paragraph(document, f'• 该方案（{best_scenario["name"]}）满足所有4个筛选条件')
+            add_paragraph(document, f'• 中位数收益率{best_scenario["median_return"]:.2f}%最接近8%目标，符合保守原则')
+            add_paragraph(document, f'• 溢价率{best_scenario["premium_rate"]:+.2f}%提供{abs(best_scenario["premium_rate"]):.2f}%的安全边际')
+            add_paragraph(document, f'• 盈利概率{best_scenario["profit_prob"]:.1f}%，超过半数场景盈利')
+            add_paragraph(document, f'• 95% VaR为{best_scenario["var_95"]:.2f}%，最大损失相对可控')
+
+            # 投资建议
+            add_paragraph(document, '')
+            add_paragraph(document, '📊 投资建议：', bold=True)
+
+            if best_scenario['median_return'] >= 15:
+                add_paragraph(document, f'• ✅ 强烈推荐 - 该方案预期收益率{best_scenario["median_return"]:.2f}%较高，风险可控')
+            elif best_scenario['median_return'] >= 10:
+                add_paragraph(document, f'• ✅ 推荐 - 该方案预期收益率{best_scenario["median_return"]:.2f}%达标，风险收益平衡')
+            else:
+                add_paragraph(document, f'• ⚠️ 谨慎推荐 - 该方案预期收益率{best_scenario["median_return"]:.2f}%勉强达标，需密切关注风险')
+
+            if best_scenario['profit_prob'] >= 70:
+                add_paragraph(document, f'• 盈利概率{best_scenario["profit_prob"]:.1f}%较高，投资安全性较好')
+            elif best_scenario['profit_prob'] >= 60:
+                add_paragraph(document, f'• 盈利概率{best_scenario["profit_prob"]:.1f}%中等，需评估风险承受能力')
+            else:
+                add_paragraph(document, f'• ⚠️ 盈利概率{best_scenario["profit_prob"]:.1f}%偏低，建议提高安全边际要求')
+
+        else:
+            # 没有符合条件的方案
+            add_paragraph(document, '⚠️ 情景分析中未找到完全符合所有4个筛选条件的方案')
+            add_paragraph(document, '')
+            add_paragraph(document, '建议：')
+            add_paragraph(document, '• 适当降低预期收益率要求（如从8%降至5%）')
+            add_paragraph(document, '• 要求更高的折价率（如-10%或更低）')
+            add_paragraph(document, '• 谨整报价策略，等待更好的市场时机')
+
+        add_paragraph(document, '')
+        add_paragraph(document, '')
+
     # ==================== 9.4 当前发行价评估 ====================
     add_title(document, '9.4 当前发行价评估', level=2)
     add_paragraph(document, '本节评估当前发行价的合理性，并给出投资建议。')

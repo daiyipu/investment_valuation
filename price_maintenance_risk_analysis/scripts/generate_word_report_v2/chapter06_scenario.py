@@ -893,6 +893,10 @@ def generate_chapter(context):
             print(f"⚠️ {scenario['name']} 模拟失败: {e}")
             continue
 
+    # 存储comprehensive_results到context，供第九章使用
+    context['results']['comprehensive_results'] = comprehensive_results
+    print(f"✅ 已保存comprehensive_results到context，共{len(comprehensive_results)}个情景")
+
     # 筛选6.2节相关情景（当前情景、情景1-3）
     index_industry_results = [r for r in comprehensive_results
                               if 'scenario' in r and

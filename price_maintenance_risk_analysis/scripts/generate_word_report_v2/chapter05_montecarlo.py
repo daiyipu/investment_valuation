@@ -1195,5 +1195,7 @@ def generate_chapter(context):
     # 保存数据到context供后续章节使用
     context['results']['arima_result'] = arima_result
     context['results']['garch_result'] = garch_result
+    context['results']['multi_window_mc_results'] = multi_window_mc_results
+    print(f"✅ 已保存multi_window_mc_results到context，共{len(multi_window_mc_results)}个窗口期")
 
     return context
