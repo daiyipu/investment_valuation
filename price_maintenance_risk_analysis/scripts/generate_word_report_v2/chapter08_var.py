@@ -107,7 +107,11 @@ def generate_chapter(context):
         final_prices_var = project_params['current_price'] * np.exp(returns_var)
         profit_losses_var = (final_prices_var - project_params['issue_price']) / project_params['issue_price']
 
+        # 限制最大损失为-100%（本金全部亏完）
+        profit_losses_var = np.maximum(profit_losses_var, -1.0)
+
         # 计算不同置信水平的VaR和CVaR
+        # VaR取绝对值，表示损失的幅度
         var_90 = abs(np.percentile(profit_losses_var, 10))
         var_95 = abs(np.percentile(profit_losses_var, 5))
         var_99 = abs(np.percentile(profit_losses_var, 1))
@@ -153,7 +157,7 @@ def generate_chapter(context):
     add_table_data(document, var_params_headers, var_params_data)
 
     add_paragraph(document, '')
-    add_paragraph(document, '💡 参数说明：')
+    add_paragraph(document, '参数说明：')
     add_paragraph(document, '• 60日窗口：反映短期波动特征，适合评估短期风险')
     add_paragraph(document, '• 120日窗口：反映中期波动特征，平衡稳定性和时效性（推荐）')
     add_paragraph(document, '• 250日窗口：反映长期波动特征，数据最稳定，适合长期风险评估')
@@ -178,7 +182,7 @@ def generate_chapter(context):
         elif var_value <= 0.40:
             return "🟠 较高风险"
         else:
-            return "🔴 高风险"
+            return "高风险"
 
     var_comparison_data = []
     for window in ['60日', '120日', '250日']:
@@ -214,7 +218,7 @@ def generate_chapter(context):
     recommended_cvar = var_results[recommended_window]['cvar_95']
 
     add_paragraph(document, '')
-    add_paragraph(document, f'💡 推荐窗口期：{recommended_window}')
+    add_paragraph(document, f'推荐窗口期：{recommended_window}')
     add_paragraph(document, f'   理由：平衡了数据稳定性和时效性，95% VaR为{recommended_var*100:.2f}%，95% CVaR为{recommended_cvar*100:.2f}%')
     add_paragraph(document, '')
 
@@ -243,12 +247,10 @@ def generate_chapter(context):
     ]
     add_table_data(document, ['置信水平', 'VaR', 'CVaR', '说明'], var_table_data)
 
-    add_paragraph(document, '')
     add_paragraph(document, '图表 8.1: VaR风险度量')
     add_image(document, var_chart_path, width=Inches(6))
 
     # ==================== 8.3.2 蒙特卡洛模拟收益率分布图 ====================
-    add_paragraph(document, '')
     add_paragraph(document, '图表 8.2: 蒙特卡洛模拟收益率分布（VaR位置标注）')
 
     # 生成收益率分布图
@@ -328,7 +330,7 @@ def generate_chapter(context):
     add_paragraph(document, '')
 
     # 增量风险分析
-    add_paragraph(document, '💡 VaR vs CVaR 的区别：')
+    add_paragraph(document, 'VaR vs CVaR 的区别：')
     add_paragraph(document, '• VaR：回答"有5%的概率损失至少多少"')
     add_paragraph(document, '• CVaR：回答"在最差5%的情况下，平均损失多少"')
     add_paragraph(document, '• CVaR > VaR，说明极端损失的"尾部"比VaR预测的更严重')
@@ -383,7 +385,7 @@ def generate_chapter(context):
     add_table_data(document, ['项目', '金额（万元）', '占投资比例', '剩余本金（万元）'], loss_amount_data)
 
     add_paragraph(document, '')
-    add_paragraph(document, '💡 金额说明：')
+    add_paragraph(document, '金额说明：')
     add_paragraph(document, f'• 投资总额：{investment_amount/10000:.2f}万元（发行价×发行股数）')
     add_paragraph(document, '• 占投资比例：潜在损失占投资总额的百分比（即亏损比例）')
     add_paragraph(document, '• 剩余本金：投资总额减去潜在损失后的余额')
@@ -450,7 +452,7 @@ def generate_chapter(context):
         elif weighted_risk <= 0.40:
             return "较高风险", "🟠", "VaR和CVaR均较高，下行风险较大，需严格控制"
         else:
-            return "高风险", "🔴", "VaR和CVaR均很高，下行风险极大，需极度谨慎"
+            return "高风险", "", "VaR和CVaR均很高，下行风险极大，需极度谨慎"
 
     # 计算综合风险评级
     risk_rating, risk_emoji, risk_description = get_comprehensive_risk_level(var_95, cvar_95)
@@ -467,7 +469,7 @@ def generate_chapter(context):
     add_paragraph(document, '• 建议结合压力测试（第七章）综合评估风险')
     add_paragraph(document, '')
 
-    add_paragraph(document, '💡 总结：')
+    add_paragraph(document, '总结：')
     add_paragraph(document, f'通过多窗口期VaR分析、CVaR分析和金额估算，我们得出{risk_rating}结论。')
     add_paragraph(document, f'投资者应根据自身风险承受能力，审慎决策。')
     add_paragraph(document, '')

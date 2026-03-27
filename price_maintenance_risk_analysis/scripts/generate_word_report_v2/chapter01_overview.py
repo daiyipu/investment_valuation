@@ -207,7 +207,6 @@ def generate_chapter(context):
                 )
 
                 # 添加图表到文档
-                add_paragraph(document, '')
                 add_paragraph(document, '图表 1.1: 股价走势与均线分析')
                 if len(stock_charts_paths) > 0 and os.path.exists(stock_charts_paths[0]):
                     add_image(document, stock_charts_paths[0], width=Inches(6.5))
@@ -328,7 +327,7 @@ def generate_chapter(context):
             add_table_data(document, index_headers_250d, index_table_data_250d)
 
             add_paragraph(document, '')
-            add_paragraph(document, '💡 说明：')
+            add_paragraph(document, '说明：')
             add_paragraph(document, '• 250日（年线）包含约250个交易日，接近一年的交易日数量（约252天）')
             add_paragraph(document, '• 年化收益率≈区间收益率（因250日≈1年，无需额外年化处理）')
             add_paragraph(document, '• 胜率基于实际历史数据计算，反映各时间窗口的上涨天数占比')
@@ -336,7 +335,6 @@ def generate_chapter(context):
             add_paragraph(document, '• 个股投资应结合行业特征和市场环境综合判断')
 
             # 添加图表 - 60日窗口
-            add_paragraph(document, '')
             add_paragraph(document, '图表 1.4: 各指数波动率对比 (60日窗口)')
             if len(indices_charts_paths) > 0 and os.path.exists(indices_charts_paths[0]):
                 add_image(document, indices_charts_paths[0], width=Inches(6))
@@ -358,7 +356,6 @@ def generate_chapter(context):
                 add_paragraph(document, '')
 
             # 添加图表 - 120日窗口（半年线）
-            add_paragraph(document, '')
             add_paragraph(document, '图表 1.8: 各指数波动率对比 (120日窗口/半年线)')
             if len(indices_charts_paths) > 4 and os.path.exists(indices_charts_paths[4]):
                 add_image(document, indices_charts_paths[4], width=Inches(6))
@@ -370,7 +367,6 @@ def generate_chapter(context):
                 add_paragraph(document, '')
 
             # 添加图表 - 250日窗口
-            add_paragraph(document, '')
             add_paragraph(document, '图表 1.10: 各指数波动率对比 (250日年线窗口)')
             if len(indices_charts_paths) > 6 and os.path.exists(indices_charts_paths[6]):
                 add_image(document, indices_charts_paths[6], width=Inches(6.3))
@@ -541,7 +537,7 @@ def generate_chapter(context):
 
             # 分析结论（以60日窗口为主）
             add_paragraph(document, '')
-            add_paragraph(document, '💡 行业分析结论（以60日窗口为主）：')
+            add_paragraph(document, '行业分析结论（以60日窗口为主）：')
 
             stock_volatility = market_data.get('volatility_60d', 0)
             industry_volatility = industry_data.get('volatility_60d', 0)

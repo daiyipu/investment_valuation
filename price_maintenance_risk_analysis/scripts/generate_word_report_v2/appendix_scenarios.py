@@ -108,7 +108,7 @@ def _generate_appendix_scenarios(document, all_scenarios_for_appendix):
     add_paragraph(document, '• 5% VaR：95%的情景下收益率不低于此值（较好情况）')
     add_paragraph(document, '• 95% VaR：5%的情景下收益率不高于此值（最差情况）')
     add_paragraph(document, '')
-    add_paragraph(document, '💡 使用建议：')
+    add_paragraph(document, '使用建议：')
     add_paragraph(document, f'• 参考创业板180日波动率（约36%），优先查看"中高波动率区间 (30%-40%)"的情景')
     add_paragraph(document, '• 根据对未来市场走势的判断（乐观/中性/悲观），在相应漂移率区间查找情景')
     add_paragraph(document, '• 结合当前项目的实际溢价率，找到最接近的情景作为参考基准')

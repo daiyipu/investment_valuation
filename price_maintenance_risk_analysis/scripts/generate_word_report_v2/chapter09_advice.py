@@ -198,19 +198,35 @@ def generate_chapter(context):
     add_paragraph(document, '📊 宏观环境三维度评估：', bold=True)
     add_paragraph(document, '')
 
-    # 由于货币政策、财政政策、行业周期难以自动判断，这里提供模板供人工填写
+    # 货币政策和财政政策（固定值）
+    monetary_policy = '适度宽松'
+    monetary_policy_score = 80
+    monetary_policy_weight = 0.15  # 15%
+    monetary_policy_weighted = monetary_policy_score * monetary_policy_weight
+
+    fiscal_policy = '积极'
+    fiscal_policy_score = 90
+    fiscal_policy_weight = 0.15  # 15%
+    fiscal_policy_weighted = fiscal_policy_score * fiscal_policy_weight
+
     macro_env_data = [
         ['评估维度', '当前状态', '得分', '权重', '加权得分', '说明'],
         ['', '', '', '', '', ''],
-        # 1. 货币政策与财政政策（权重30%）
-        ['货币政策/财政政策', '__________', '_____', '30%', '_____', '扩展(100分)/稳健(60分)/紧缩(40分) - 请人工判断填写'],
+        # 1. 货币政策（权重15%）
+        ['货币政策', monetary_policy, f'{monetary_policy_score}', '15%', f'{monetary_policy_weighted:.1f}',
+         '紧缩(40分)/稳健(60分)/适度宽松(80分)/宽松(100分)'],
         ['', '', '', '', '', ''],
 
-        # 2. 行业发展周期（权重30%）
+        # 2. 财政政策（权重15%）
+        ['财政政策', fiscal_policy, f'{fiscal_policy_score}', '15%', f'{fiscal_policy_weighted:.1f}',
+         '紧缩(50分)/稳健(70分)/积极(90分)'],
+        ['', '', '', '', '', ''],
+
+        # 3. 行业发展周期（权重30%，需人工填写）
         ['行业发展周期', '__________', '_____', '30%', '_____', '成长(100分)/成熟(80分)/幼稚(60分)/衰退(40分) - 请人工判断填写'],
         ['', '', '', '', '', ''],
 
-        # 3. 二级市场活跃度（权重40%，自动计算）
+        # 4. 二级市场活跃度（权重40%，自动计算）
         ['二级市场活跃度', market_activity_level, f'{market_activity_score}', '40%', f'{market_activity_score * 0.4:.1f}',
          f'{market_activity_desc}，基于最近5年历史换手率计算'],
     ]
@@ -222,11 +238,12 @@ def generate_chapter(context):
 
     # 评估说明
     add_paragraph(document, '')
-    add_paragraph(document, '💡 评估说明：', bold=True)
+    add_paragraph(document, '评估说明：', bold=True)
     add_paragraph(document, '• 评估周期：基于最近5年历史数据计算分位数')
-    add_paragraph(document, '• 权重分配：货币政策/财政政策(30%) + 行业发展周期(30%) + 二级市场活跃度(40%)')
+    add_paragraph(document, '• 权重分配：货币政策(15%) + 财政政策(15%) + 行业发展周期(30%) + 二级市场活跃度(40%)')
     add_paragraph(document, '• 得分标准：')
-    add_paragraph(document, '  - 货币/财政政策：扩展(100分)、稳健(60分)、紧缩(40分)')
+    add_paragraph(document, '  - 货币政策：紧缩(40分)、稳健(60分)、适度宽松(80分)、宽松(100分)')
+    add_paragraph(document, '  - 财政政策：紧缩(50分)、稳健(70分)、积极(90分)')
     add_paragraph(document, '  - 行业发展周期：成长(100分)、成熟(80分)、幼稚(60分)、衰退(40分)')
     add_paragraph(document, '  - 二级市场活跃度：根据历史分位数自动计算（20-100分）')
     add_paragraph(document, '')
@@ -248,7 +265,7 @@ def generate_chapter(context):
             add_paragraph(document, '图表 9.3: 市场换手率历史走势')
             add_image(document, chart_path, width=Inches(6.0))
             add_paragraph(document, '')
-            add_paragraph(document, '💡 图表说明：')
+            add_paragraph(document, '图表说明：')
             add_paragraph(document, f'• 蓝色曲线：历史换手率走势（共{historical_count}个交易日）')
             add_paragraph(document, f'• 红色虚线：当前120日中位数（{weighted_turnover:.2f}%），代表近期市场活跃度水平')
             add_paragraph(document, f'• 绿色点线：最新一日换手率（{turnover_info.get("latest_turnover", 0):.2f}%），反映当日市场情绪')
@@ -285,7 +302,7 @@ def generate_chapter(context):
     expected_price = current_price_eval * (1 + historical_return * lockup_years)
 
     # 添加计算参数说明
-    add_paragraph(document, '💡 计算参数（前置假设）：')
+    add_paragraph(document, '计算参数（前置假设）：')
     add_paragraph(document, f'• 当前价格：{current_price_eval:.2f} 元/股')
     add_paragraph(document, f'• 锁定期：{project_params["lockup_period"]} 个月（{lockup_years:.2f} 年）')
     add_paragraph(document, f'• 历史年化收益率：{historical_return*100:+.2f}%（基于120日窗口数据）')
@@ -458,7 +475,7 @@ def generate_chapter(context):
 
             # 推荐理由
             add_paragraph(document, '')
-            add_paragraph(document, '💡 推荐理由：', bold=True)
+            add_paragraph(document, '推荐理由：', bold=True)
             add_paragraph(document, f'• 该方案（{best_scenario["name"]}）满足所有4个筛选条件')
             add_paragraph(document, f'• 中位数收益率{best_scenario["median_return"]:.2f}%最接近8%目标，符合保守原则')
             add_paragraph(document, f'• 溢价率{best_scenario["premium_rate"]:+.2f}%提供{abs(best_scenario["premium_rate"]):.2f}%的安全边际')
@@ -551,7 +568,12 @@ def generate_chapter(context):
 
     # 3. VaR在险价值风险
     add_paragraph(document, '3. VaR在险价值风险')
-    var_95_display = var_95 * 100
+    # var_95可能是小数形式（如0.5140）或百分比形式（如51.40）
+    # 判断方法：如果绝对值>1，说明是百分比形式；否则是小数形式
+    if abs(var_95) > 1:
+        var_95_display = var_95
+    else:
+        var_95_display = var_95 * 100
     add_paragraph(document, f'   • 120日窗口：95%置信水平下最大可能亏损{var_95_display:.1f}%')
     add_paragraph(document, '   • 尾部风险：历史数据显示，小概率极端事件（黑天鹅）可能导致损失超过VaR预测值')
     add_paragraph(document, '')
@@ -584,7 +606,7 @@ def generate_chapter(context):
     add_paragraph(document, '   • 竞争格局风险：行业竞争加剧可能影响盈利能力')
     add_paragraph(document, '')
 
-    add_paragraph(document, '💡 综合建议：')
+    add_paragraph(document, '综合建议：')
     risk_advice_text = "风险较低，可积极参与" if total_score >= 80 else "风险中等，需谨慎评估" if total_score >= 60 else "风险较高，建议规避"
     add_paragraph(document, f'• 当前项目风险评分{total_score}/100分，{risk_advice_text}')
     add_paragraph(document, f'• 推荐方案：{investment_advice}')
@@ -597,7 +619,7 @@ def generate_chapter(context):
         final_recommendation = f"🟡 谨慎参与"
         reason = f"风险评分{total_score}/100（中等），需结合溢价率和增长预期综合评估。"
     else:
-        final_recommendation = f"🔴 建议规避"
+        final_recommendation = f"建议规避"
         reason = f"风险评分{total_score}/100（较低），安全边际不足，风险较高。"
 
     add_paragraph(document, f'{final_recommendation}')

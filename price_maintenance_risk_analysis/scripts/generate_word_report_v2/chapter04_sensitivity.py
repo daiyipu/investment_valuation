@@ -474,12 +474,19 @@ def generate_tornado_chart(issue_price, current_price, lockup_period, volatility
     # 生成龙卷风图
     fig, axes = plt.subplots(1, 2, figsize=(14, 8))
 
-    params = [r['parameter'] for r in prob_results]
+    # 按敏感性大小排序（从小到大）
+    # 使用绝对影响值作为排序依据
+    prob_results_sorted = sorted(prob_results,
+                                   key=lambda x: max(abs(x['prob_impact_pos']), abs(x['prob_impact_neg'])))
+    return_results_sorted = sorted(prob_results,
+                                     key=lambda x: max(abs(x['return_impact_pos']), abs(x['return_impact_neg'])))
+
+    params = [r['parameter'] for r in prob_results_sorted]
     y_pos = np.arange(len(params))
 
     # 左图：盈利概率敏感性
-    prob_impacts_pos = [r['prob_impact_pos'] for r in prob_results]
-    prob_impacts_neg = [r['prob_impact_neg'] for r in prob_results]
+    prob_impacts_pos = [r['prob_impact_pos'] for r in prob_results_sorted]
+    prob_impacts_neg = [r['prob_impact_neg'] for r in prob_results_sorted]
 
     axes[0].barh(y_pos, prob_impacts_pos, color='#e74c3c', alpha=0.7, label='参数+5%')
     axes[0].barh(y_pos, prob_impacts_neg, color='#27ae60', alpha=0.7, label='参数-5%')
@@ -716,7 +723,7 @@ def generate_chapter(context):
                 # 生成图表（如果有完整数据）
                 if len(filtered_results['window']) >= 4:
                     add_paragraph(document, '')
-                    add_paragraph(document, '💡 说明：')
+                    add_paragraph(document, '说明：')
                     add_paragraph(document, '• 时间窗口分析基于已保存的市场数据文件')
                     add_paragraph(document, '• 数据来源：市场数据文件（自动更新）')
 
@@ -780,7 +787,7 @@ def generate_chapter(context):
     nominal_premium = (project_params['issue_price'] - pricing_ma20) / pricing_ma20 * 100
     actual_premium = (project_params['issue_price'] - project_params['current_price']) / project_params['current_price'] * 100
 
-    add_paragraph(document, '💡 **重要说明：名义溢价率 vs 实际溢价率**')
+    add_paragraph(document, '**重要说明：名义溢价率 vs 实际溢价率**')
     add_paragraph(document, '')
     add_paragraph(document, f'• 名义溢价率（相对定价MA20）：{nominal_premium:+.2f}%')
     add_paragraph(document, f'  → 定增定价时参考，用于评估发行价相对20日均线的折溢价程度')
@@ -803,7 +810,6 @@ def generate_chapter(context):
         risk_params['drift'], project_params['lockup_period'], IMAGES_DIR)
 
     # 添加统一图表
-    add_paragraph(document, '')
     add_paragraph(document, '图表 4.4: 发行价敏感性分析 - 盈利概率（-20%至+20%）')
     add_image(document, scenario_chart_paths[0], width=Inches(6.5))
     add_paragraph(document, '')
@@ -814,7 +820,7 @@ def generate_chapter(context):
 
     # 参数说明
     add_paragraph(document, '')
-    add_paragraph(document, '💡 图表说明：')
+    add_paragraph(document, '图表说明：')
     add_paragraph(document, '• 横轴：发行价相对MA20的折扣/溢价率（负值=折价，正值=溢价）')
     add_paragraph(document, '• 绿色柱：折价发行（<0%），有安全边际')
     add_paragraph(document, '• 灰色柱：平价发行（=0%）')
@@ -824,7 +830,7 @@ def generate_chapter(context):
 
     # 添加参数说明
     add_paragraph(document, '')
-    add_paragraph(document, '💡 计算参数：')
+    add_paragraph(document, '计算参数：')
     add_paragraph(document, f'• 数据窗口：120日（半年线，统一分析基准）')
     add_paragraph(document, f'• 年化波动率：{risk_params["volatility"]*100:.2f}%')
     add_paragraph(document, f'• 年化漂移率：{risk_params["drift"]*100:.2f}%')
@@ -1092,14 +1098,13 @@ def generate_chapter(context):
     add_paragraph(document, f'• 波动率每提升5%，期望收益率平均下降约{avg_return_change:.1f}%')
     add_paragraph(document, f'• 注：期望收益率基于对数正态分布计算，漂移率{drift_rate*100:+.2f}%，折价率{(project_params["issue_price"]/project_params["current_price"] - 1)*100:+.2f}%')
     add_paragraph(document, '')
-    add_paragraph(document, '💡 盈利幅度分析：')
+    add_paragraph(document, '盈利幅度分析：')
     add_paragraph(document, '• "盈利目标概率"列展示了不同盈利目标下的达成概率')
     add_paragraph(document, '• 低波动率环境下，达成高盈利目标（如+20%）的概率相对较高')
     add_paragraph(document, '• 高波动率环境下，即使是小幅度盈利（如+5%）也面临挑战')
     add_paragraph(document, '• 投资者应根据风险承受能力，选择合适的盈利目标')
 
     # 添加波动率敏感性分析图表
-    add_paragraph(document, '')
     add_paragraph(document, '图表 4.11: 波动率与盈利概率')
     add_image(document, sensitivity_chart_paths[0], width=Inches(6))
     add_paragraph(document, '')
@@ -1114,12 +1119,12 @@ def generate_chapter(context):
 
     add_paragraph(document, '龙卷风图展示了各参数变化对盈利概率和预期收益率的影响程度，帮助识别最敏感的风险因子。')
     add_paragraph(document, '')
-    add_paragraph(document, '💡 双维度敏感性分析：')
+    add_paragraph(document, '双维度敏感性分析：')
     add_paragraph(document, '• **A. 盈利概率敏感性**：参数变化对能否盈利（盈利概率>50%）的影响')
     add_paragraph(document, '• **B. 预期收益率敏感性**：参数变化对盈利多少（预期年化收益率）的影响')
     add_paragraph(document, '• 两个维度互为补充，全面评估风险')
     add_paragraph(document, '')
-    add_paragraph(document, '💡 敏感性分析方法说明：')
+    add_paragraph(document, '敏感性分析方法说明：')
     add_paragraph(document, '• 为公平比较各参数的敏感性，所有参数均使用**标准化的单位变化**：')
     add_paragraph(document, '  - 百分比参数（波动率、漂移率）：±5%')
     add_paragraph(document, '  - 时间参数（锁定期）：±1个月')
@@ -1146,7 +1151,7 @@ def generate_chapter(context):
 
     add_paragraph(document, '敏感性分析结论：')
     add_paragraph(document, '')
-    add_paragraph(document, '💡 **分析方法说明**：')
+    add_paragraph(document, '**分析方法说明**：')
     add_paragraph(document, '• 采用**归一化敏感性**分析方法，确保不同参数的公平比较')
     add_paragraph(document, '• 归一化含义：将影响折算为"每单位变化"的效应')
     add_paragraph(document, '• 图表排序依据：归一化敏感性（单位变化的影响程度）')
@@ -1490,13 +1495,13 @@ def generate_chapter(context):
     add_paragraph(document, '')
     add_paragraph(document, '复合敏感性分析结论：')
     add_paragraph(document, '')
-    add_paragraph(document, '💡 **关键发现**：')
+    add_paragraph(document, '**关键发现**：')
     add_paragraph(document, '• 波动率和溢价率是影响盈利概率的最主要因素')
     add_paragraph(document, '• 高波动率需要更深的折价来补偿风险')
     add_paragraph(document, '• 正漂移率可以显著改善盈利概率，即使溢价率较高')
     add_paragraph(document, '• 三维分析揭示了参数之间的复杂交互效应')
     add_paragraph(document, '')
-    add_paragraph(document, '💡 **投资建议**：')
+    add_paragraph(document, '**投资建议**：')
     add_paragraph(document, '• 优先选择低波动率、低溢价率的投资机会')
     add_paragraph(document, '• 对于高波动率股票，要求更深的折价（>20%）')
     add_paragraph(document, '• 关注历史漂移率，正漂移率可适当放松溢价率要求')

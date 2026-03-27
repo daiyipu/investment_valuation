@@ -246,7 +246,7 @@ def generate_chapter(context):
     add_paragraph(document, '📊 本项目采用的模型：几何布朗运动（Geometric Brownian Motion, GBM）')
     add_paragraph(document, '')
 
-    add_paragraph(document, '💡 模型假设：')
+    add_paragraph(document, '模型假设：')
     add_paragraph(document, '• **股价的连续复利收益率服从正态分布**')
     add_paragraph(document, '  - 收益率 r = ln(S(t)/S(0)) ~ N(μ, σ²)')
     add_paragraph(document, '• **股价本身服从对数正态分布**')
@@ -340,7 +340,7 @@ def generate_chapter(context):
     add_table_data(document, ['参数', '值'], mc_params)
 
     add_paragraph(document, '')
-    add_paragraph(document, '💡 参数说明：')
+    add_paragraph(document, '参数说明：')
     add_paragraph(document, '• 60日窗口：反映季度波动和收益特征，适合短期趋势分析')
     add_paragraph(document, '• 120日窗口：反映半年期波动和收益特征，平衡稳定性和时效性')
     add_paragraph(document, '• 250日窗口：反映年度波动和收益特征，数据最稳定，适合长期趋势分析')
@@ -454,13 +454,12 @@ def generate_chapter(context):
     add_table_data(document, ['指标', '值'], mc_results)
 
     add_paragraph(document, '')
-    add_paragraph(document, '💡 参数说明：')
+    add_paragraph(document, '参数说明：')
     add_paragraph(document, '• 年化漂移率反映股价的长期趋势，正值表示上升趋势（基于250日窗口历史数据）')
     add_paragraph(document, '• 年化波动率反映股价的不确定性，值越大风险越高（基于250日窗口历史数据）')
     add_paragraph(document, '• 模拟基于几何布朗运动（GBM）模型，假设股价服从对数正态分布')
     add_paragraph(document, '• 锁定期内的收益率 = 漂移率×时间 + 波动率×√时间×随机因子')
 
-    add_paragraph(document, '')
     add_paragraph(document, '图表 5.1: 蒙特卡洛模拟 - 股价路径可视化')
     add_image(document, path_chart_path, width=Inches(6.5))
     add_paragraph(document, '')
@@ -475,15 +474,12 @@ def generate_chapter(context):
     add_paragraph(document, '图表 5.2: 蒙特卡洛模拟结果 - 价格分布')
     add_image(document, mc_chart_paths[0])
 
-    add_paragraph(document, '')
     add_paragraph(document, '图表 5.3: 蒙特卡洛模拟结果 - 收益率分布')
     add_image(document, mc_chart_paths[1])
 
-    add_paragraph(document, '')
     add_paragraph(document, '图表 5.4: 蒙特卡洛模拟结果 - 累积分布函数')
     add_image(document, mc_chart_paths[2])
 
-    add_paragraph(document, '')
     add_paragraph(document, '图表 5.5: 蒙特卡洛模拟结果 - 盈亏概率')
     add_image(document, mc_chart_paths[3])
 
@@ -664,7 +660,7 @@ def generate_chapter(context):
 
     # 添加说明，解释各项指标含义
     add_paragraph(document, '')
-    add_paragraph(document, '💡 指标说明：')
+    add_paragraph(document, '指标说明：')
     add_paragraph(document, '• 历史年化收益率：该窗口期内股票的实际历史表现，作为蒙特卡洛模拟的输入参数（drift，漂移率）')
     add_paragraph(document, '• 模拟预期年化收益率：')
     add_paragraph(document, '  - 基于历史波动率和漂移率，通过蒙特卡洛模拟5000次得出锁定期收益')
@@ -679,7 +675,6 @@ def generate_chapter(context):
     add_paragraph(document, '• 由于定增通常折价发行，即使历史收益率为负，模拟预期收益仍可能为正')
 
     # 生成多窗口期对比图表
-    add_paragraph(document, '')
     add_paragraph(document, '图表 5.7: 多窗口期蒙特卡洛模拟对比')
 
     try:
@@ -831,7 +826,7 @@ def generate_chapter(context):
 
     add_paragraph(document, '本节使用ARIMA（自回归积分滑动平均）模型预测未来120日的漂移率（年化收益率）。')
     add_paragraph(document, '')
-    add_paragraph(document, '💡 ARIMA模型原理：')
+    add_paragraph(document, 'ARIMA模型原理：')
     add_paragraph(document, '• ARIMA(p,d,q)模型是一种经典的时间序列预测方法')
     add_paragraph(document, '• p：自回归阶数，利用历史值的线性组合预测当前值')
     add_paragraph(document, '• d：差分阶数，通过差分实现序列平稳化')
@@ -850,7 +845,7 @@ def generate_chapter(context):
         print(f"   当前数据量: {len(prices_list) if prices_list else 0} 条")
         print(f"   需要数据量: 至少 100 条")
         print("")
-        print("💡 解决方案：")
+        print("解决方案：")
         print("   请先运行数据更新脚本生成完整的市场数据")
         print("="*70)
 
@@ -888,9 +883,9 @@ def generate_chapter(context):
                 # 添加预测结果
                 add_paragraph(document, '')
                 add_paragraph(document, '预测结果：', bold=True)
-                add_paragraph(document, f'• 预测漂移率（年化）：{arima_result["forecast_drift"]*100:.2f}%')
-                add_paragraph(document, f'• 预测期间：未来120个交易日')
-                add_paragraph(document, f'• 含义：如果模型预测准确，未来半年股价预期年化收益率为{arima_result["forecast_drift"]*100:.2f}%')
+                add_paragraph(document, f'• 预测漂移率（年化，对数收益率）：{arima_result["forecast_drift"]*100:.2f}%')
+                add_paragraph(document, f'• 预测期间：未来120个交易日（约半年）')
+                add_paragraph(document, f'• 含义：如果模型预测准确，未来半年股价预期年化对数收益率为{arima_result["forecast_drift"]*100:.2f}%（连续复利）')
 
                 if not arima_result['model_fitted']:
                     add_paragraph(document, '')
@@ -934,7 +929,7 @@ def generate_chapter(context):
 
     add_paragraph(document, '本节使用GARCH（广义自回归条件异方差）模型预测未来120日的波动率。')
     add_paragraph(document, '')
-    add_paragraph(document, '💡 GARCH模型原理：')
+    add_paragraph(document, 'GARCH模型原理：')
     add_paragraph(document, '• GARCH(p,q)模型专门用于建模和预测波动率（金融时间序列的二阶矩）')
     add_paragraph(document, '• 能捕捉"波动率聚集"现象：高波动期后往往还是高波动，低波动后还是低波动')
     add_paragraph(document, '• ω：长期平均方差（波动率的基准水平）')
@@ -972,7 +967,7 @@ def generate_chapter(context):
                     ]
                     add_table_data(document, ['参数', '值'], model_params)
                     add_paragraph(document, '')
-                    add_paragraph(document, '💡 参数解读：')
+                    add_paragraph(document, '参数解读：')
                     add_paragraph(document, f'• α+β = {garch_result["alpha"] + garch_result["beta"]:.4f} {"< 1，模型平稳，波动率会逐渐回归长期均值" if garch_result["alpha"] + garch_result["beta"] < 1 else "≥ 1，模型非平稳，波动率可能发散"}')
                     if garch_result['alpha'] + garch_result['beta'] < 1:
                         half_life = -np.log(0.5) / (1 - (garch_result['alpha'] + garch_result['beta']))
@@ -1100,19 +1095,15 @@ def generate_chapter(context):
                 IMAGES_DIR
             )
 
-            add_paragraph(document, '')
             add_paragraph(document, '图表 5.8: 基于预测参数的蒙特卡洛模拟 - 价格分布')
             add_image(document, mc_5_5_charts[0])
 
-            add_paragraph(document, '')
             add_paragraph(document, '图表 5.9: 基于预测参数的蒙特卡洛模拟 - 收益率分布')
             add_image(document, mc_5_5_charts[1])
 
-            add_paragraph(document, '')
             add_paragraph(document, '图表 5.10: 基于预测参数的蒙特卡洛模拟 - 累积分布函数')
             add_image(document, mc_5_5_charts[2])
 
-            add_paragraph(document, '')
             add_paragraph(document, '图表 5.11: 基于预测参数的蒙特卡洛模拟 - 盈亏概率')
             add_image(document, mc_5_5_charts[3])
 
@@ -1189,7 +1180,7 @@ def generate_chapter(context):
             add_paragraph(document, f'⚠️ 基于预测参数的模拟结果全面劣于历史参数，建议谨慎投资或要求更高的折价率。')
 
         add_paragraph(document, '')
-        add_paragraph(document, '💡 说明：')
+        add_paragraph(document, '说明：')
         add_paragraph(document, '• 预测参数基于ARIMA和GARCH模型，考虑了时间序列的动态特征')
         add_paragraph(document, '• 历史参数基于过去250个交易日的统计，反映长期平均水平')
         add_paragraph(document, '• 两种方法各有优劣，建议结合使用，互为验证')

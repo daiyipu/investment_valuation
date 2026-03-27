@@ -345,22 +345,18 @@ def generate_chapter(context):
     add_paragraph(document, f'• PS: 平均{industry_stats_val["ps"]["mean"]:.2f}倍，中位数{peer_companies_val["ps"].median():.2f}倍，标准差{industry_stats_val["ps"]["std"]:.2f}倍')
     add_paragraph(document, f'  • Q1-Q3区间: [{industry_stats_val["ps"]["q1"]:.2f}, {industry_stats_val["ps"]["q3"]:.2f}]倍，极值范围: [{industry_stats_val["ps"]["min"]:.2f}, {industry_stats_val["ps"]["max"]:.2f}]倍')
 
-    add_paragraph(document, '')
     add_paragraph(document, '图表 2.0: 相对估值对比分析 - 估值指标对比')
     chart_paths, df_scenarios = generate_relative_valuation_charts_split(
         current_metrics_val, industry_avg_val, peer_companies_val, IMAGES_DIR
     )
     add_image(document, chart_paths[0])  # 估值指标对比
 
-    add_paragraph(document, '')
     add_paragraph(document, '图表 2.1: 相对估值对比分析 - PE倍数对比')
     add_image(document, chart_paths[1])
 
-    add_paragraph(document, '')
     add_paragraph(document, '图表 2.2: 相对估值对比分析 - PB倍数对比')
     add_image(document, chart_paths[2])
 
-    add_paragraph(document, '')
     add_paragraph(document, '图表 2.3: 相对估值对比分析 - PS倍数对比')
     add_image(document, chart_paths[3])
 
@@ -395,7 +391,7 @@ def generate_chapter(context):
         add_table_data(document, sw_index_headers, sw_index_data)
 
         add_paragraph(document, '')
-        add_paragraph(document, '💡 申万行业指数估值说明：')
+        add_paragraph(document, '申万行业指数估值说明：')
         add_paragraph(document, f'• 申万行业指数是基于该行业所有成分股按市值加权计算的指数')
         add_paragraph(document, f'• 指数PE/PB/PS反映行业整体的估值水平，不同于同行公司平均（简单平均）')
         add_paragraph(document, f'• 指数估值受大盘股权重影响，更能代表行业龙头公司的估值水平')
@@ -492,7 +488,7 @@ def generate_chapter(context):
                 add_paragraph(document, f'✅ PB({current_metrics_val["pb"]:.2f}倍)低于申万行业指数PB({sw_index_pb:.2f}倍)，折价{pb_dev_sw:+.1f}%')
 
         add_paragraph(document, '')
-        add_paragraph(document, '💡 申万行业指数说明：')
+        add_paragraph(document, '申万行业指数说明：')
         add_paragraph(document, f'• 申万行业指数基于所有成分股市值加权，反映行业整体估值水平')
         add_paragraph(document, f'• 与申万指数对比可判断个股相对行业整体的估值位置')
         add_paragraph(document, f'• 正偏离表示估值高于行业平均，负偏离表示估值低于行业平均')
@@ -664,7 +660,7 @@ def generate_chapter(context):
             add_table_data(document, pe_history_headers, pe_history_data)
 
             add_paragraph(document, '')
-            add_paragraph(document, '💡 历史分位数说明：')
+            add_paragraph(document, '历史分位数说明：')
             add_paragraph(document, f'• 当前分位数表示当前PE在历史数据中的相对位置')
             add_paragraph(document, f'• 例如：{stock_pe_percentile:.1f}%分位数表示历史上只有{stock_pe_percentile:.1f}%的时间PE低于当前值')
             add_paragraph(document, f'• 50%分位数即为中位数，代表历史平均水平')
@@ -683,7 +679,6 @@ def generate_chapter(context):
 
             # 添加图表到文档
             if chart_path and os.path.exists(chart_path):
-                add_paragraph(document, '')
                 add_paragraph(document, '图表 2.4: PE历史分位数趋势分析')
                 add_image(document, chart_path, width=Inches(6.5))
 
@@ -722,7 +717,7 @@ def generate_chapter(context):
             # 估值水平判断
             if stock_pe_percentile >= 80:
                 stock_valuation_level = "历史高位"
-                stock_emoji = "🔴"
+                stock_emoji = ""
                 stock_comment = f"当前PE处于历史{stock_pe_percentile:.1f}%分位数，属于历史高位，估值偏高，需警惕回调风险"
             elif stock_pe_percentile >= 60:
                 stock_valuation_level = "历史中高位"
@@ -760,7 +755,7 @@ def generate_chapter(context):
             add_paragraph(document, '')
 
             # 投资建议
-            add_paragraph(document, '💡 历史分位数投资启示：')
+            add_paragraph(document, '历史分位数投资启示：')
             if stock_pe_percentile <= 25:
                 add_paragraph(document, f'• 当前PE处于历史{stock_pe_percentile:.1f}%分位数（低位），历史上仅{stock_pe_percentile:.1f}%的时间估值更低')
                 add_paragraph(document, f'• 从历史角度看，当前估值具备较好的安全边际')

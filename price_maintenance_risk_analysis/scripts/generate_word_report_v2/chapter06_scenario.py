@@ -940,7 +940,6 @@ def generate_chapter(context):
             plt.savefig(scenario_chart_path, dpi=150, bbox_inches='tight')
             plt.close()
 
-            add_paragraph(document, '')
             add_paragraph(document, '图表 6.2: 市场指数与行业情景对比分析')
             add_image(document, scenario_chart_path, width=Inches(6))
 
@@ -979,7 +978,7 @@ def generate_chapter(context):
         add_paragraph(document, '通过分析行业PE 75%、50%、25%分位数下的情景，评估不同估值水平对定增收益的影响。')
         add_paragraph(document, '')
 
-        add_paragraph(document, '💡 行业PE分位数计算逻辑：')
+        add_paragraph(document, '行业PE分位数计算逻辑：')
         add_paragraph(document, '• 收集行业历史PE数据（通常为5年）')
         add_paragraph(document, '• 计算25%、50%、75%分位数，分别代表低估、中性、高估水平')
         add_paragraph(document, '• 漂移率 = (行业PE分位数 / 个股当前PE - 1)，反映估值回归潜力')
@@ -1025,7 +1024,7 @@ def generate_chapter(context):
         add_paragraph(document, '通过分析个股PE 75%、50%、25%分位数下的情景，评估个股历史估值水平对定增收益的影响。')
         add_paragraph(document, '')
 
-        add_paragraph(document, '💡 个股PE分位数计算逻辑：')
+        add_paragraph(document, '个股PE分位数计算逻辑：')
         add_paragraph(document, '• 收集个股历史PE数据（通常为5年）')
         add_paragraph(document, '• 计算25%、50%、75%分位数，分别代表历史低估、中性、高估水平')
         add_paragraph(document, '• 漂移率 = (个股PE分位数 / 个股当前PE - 1)，反映估值回归潜力')
@@ -1071,7 +1070,7 @@ def generate_chapter(context):
         add_paragraph(document, '通过分析DCF内在价值与当前价格的比值，评估公司内在价值对定增收益的影响。')
         add_paragraph(document, '')
 
-        add_paragraph(document, '💡 DCF估值方法说明：')
+        add_paragraph(document, 'DCF估值方法说明：')
         add_paragraph(document, '• DCF（现金流折现模型）通过预测未来自由现金流并折现计算内在价值')
         add_paragraph(document, '• 漂移率 = (DCF内在价值 / 当前价格 - 1)，反映内在价值与市场价格的偏离')
         add_paragraph(document, '• 如果DCF内在价值高于当前价格，股票被低估，未来收益率应该为正')
@@ -1139,7 +1138,7 @@ def generate_chapter(context):
 
         # 添加说明
         add_paragraph(document, '')
-        add_paragraph(document, '💡 情景说明：')
+        add_paragraph(document, '情景说明：')
         add_paragraph(document, '• 当前情景：标的股票120日窗口真实数据，反映项目实际风险收益特征')
         add_paragraph(document, '• 情景1-3：基于行业120日窗口历史数据的典型情景（乐观/中性/悲观）')
         if pe_scenarios:
@@ -1153,7 +1152,7 @@ def generate_chapter(context):
         add_paragraph(document, '• 中性：盈利概率和收益率中位数适中，风险可控')
         add_paragraph(document, '• 悲观：盈利概率或收益率中位数较低，风险较高')
         add_paragraph(document, '')
-        add_paragraph(document, '💡 投资建议：')
+        add_paragraph(document, '投资建议：')
         add_paragraph(document, '• 优先选择乐观评级情景，安全边际充足')
         add_paragraph(document, '• 当前项目定位在"当前情景"，需结合实际参数评估')
         add_paragraph(document, '• 不同情景反映市场环境变化，建议根据风险偏好选择')
@@ -1167,7 +1166,6 @@ def generate_chapter(context):
 
         # 该函数只返回1个图表（3D分析图）
         if len(multi_dim_chart_paths) > 0:
-            add_paragraph(document, '')
             add_paragraph(document, '图表 6.6: 多维度情景分析（波动率 × 时间窗口 × 折扣率）')
             add_image(document, multi_dim_chart_paths[0], width=Inches(6.5))
             add_paragraph(document, '')

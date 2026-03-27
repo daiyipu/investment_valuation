@@ -215,7 +215,7 @@ def generate_chapter(context):
     # 计算定增收益影响
     issue_price = project_params['issue_price']
     return_pe_stress = (target_price_q1 - issue_price) / issue_price * 100
-    add_paragraph(document, '💡 对定增收益的影响：')
+    add_paragraph(document, '对定增收益的影响：')
     add_paragraph(document, f'• 发行价：{issue_price:.2f}元')
     add_paragraph(document, f'• PE回归Q1后的定增收益率：{return_pe_stress:+.2f}%')
     if return_pe_stress < 0:
@@ -359,7 +359,7 @@ def generate_chapter(context):
         risk_emoji = "🟡"
     else:
         risk_level = "高风险 - 大部分情景下亏损"
-        risk_emoji = "🔴"
+        risk_emoji = ""
 
     add_paragraph(document, '')
     add_paragraph(document, f'{risk_emoji} 经济面压力测试评级: {risk_level}')
@@ -457,7 +457,7 @@ def generate_chapter(context):
         risk_emoji_extreme = "🟠"
     else:
         extreme_risk_level = "极高风险 - 三重打击下盈利概率低于20%，需极度谨慎"
-        risk_emoji_extreme = "🔴"
+        risk_emoji_extreme = ""
 
     add_paragraph(document, f'{risk_emoji_extreme} 极端情景评级: {extreme_risk_level}')
     add_paragraph(document, '')
@@ -505,13 +505,13 @@ def generate_chapter(context):
     summary_data = [
         ['7.1 PE回归压力测试', f'PE回归至行业Q1({pe_q1:.2f}倍)', f'{return_pe_stress:+.2f}%',
          '估值回归风险' if return_pe_stress < 0 else '估值安全边际充足',
-         '🟢低风险' if return_pe_stress > 0 else '🟡中等风险' if return_pe_stress > -10 else '🔴高风险'],
+         '🟢低风险' if return_pe_stress > 0 else '🟡中等风险' if return_pe_stress > -10 else '高风险'],
         ['7.2 经济面极端情况', f'{scenario_names[worst_scenario_idx]}（股价下跌{int(stress_scenarios[scenario_names[worst_scenario_idx]]["price_drop"]*100)}%）',
          f'{worst_loss_percent:+.2f}%', f'最大亏损{abs(worst_loss):.2f}万元',
-         '🟢低风险' if profit_scenarios >= total_scenarios * 0.7 else '🟡中等风险' if profit_scenarios >= total_scenarios * 0.4 else '🔴高风险'],
+         '🟢低风险' if profit_scenarios >= total_scenarios * 0.7 else '🟡中等风险' if profit_scenarios >= total_scenarios * 0.4 else '高风险'],
         ['7.3 多重敏感性指标极端', '深度溢价+高波动+负向漂移', f'{mean_return_extreme:+.2f}%',
          f'盈利概率{profit_prob_extreme:.1f}%',
-         '🟡中等风险' if profit_prob_extreme >= 40 else '🟠较高风险' if profit_prob_extreme >= 20 else '🔴极高风险']
+         '🟡中等风险' if profit_prob_extreme >= 40 else '🟠较高风险' if profit_prob_extreme >= 20 else '极高风险']
     ]
     add_table_data(document, summary_headers, summary_data)
 
@@ -540,7 +540,7 @@ def generate_chapter(context):
     elif worst_loss_all > -50:
         add_paragraph(document, '🟠 风险评估：在最坏情况下损失幅度为30-50%，风险较高，建议严格控制仓位')
     else:
-        add_paragraph(document, '🔴 风险评估：在最坏情况下可能损失超过50%，风险极高，需极度谨慎或避免参与')
+        add_paragraph(document, '风险评估：在最坏情况下可能损失超过50%，风险极高，需极度谨慎或避免参与')
 
     add_paragraph(document, '')
     add_paragraph(document, '7.4.3 压力测试评分体系说明', bold=True)
@@ -570,7 +570,7 @@ def generate_chapter(context):
         ['< 1.5分', '低风险', '🟢', '各项压力测试表现良好'],
         ['1.5 - 2.5分', '中等风险', '🟡', '部分压力测试存在风险'],
         ['2.5 - 3.5分', '较高风险', '🟠', '多项压力测试风险较高'],
-        ['≥ 3.5分', '高风险', '🔴', '整体风险极高']
+        ['≥ 3.5分', '高风险', '', '整体风险极高']
     ]
     add_table_data(document, ['平均分范围', '风险等级', '标识', '含义'], stress_risk_levels)
 
@@ -621,7 +621,7 @@ def generate_chapter(context):
         risk_recommendation = "项目整体风险较高，建议严格控制仓位并做好风险对冲"
     else:
         overall_risk = "高风险"
-        overall_emoji = "🔴"
+        overall_emoji = ""
         risk_recommendation = "项目整体风险极高，建议谨慎参与或避免投资"
 
     add_paragraph(document, f'{overall_emoji} 综合风险等级: {overall_risk}')
@@ -655,7 +655,7 @@ def generate_chapter(context):
     if profit_prob_extreme >= 30:
         conclusions.append(f'✅ 多重极端叠加：即使三重打击，盈利概率仍达{profit_prob_extreme:.1f}%，具备一定抗风险能力')
     else:
-        conclusions.append(f'🔴 多重极端叠加：三重打击下盈利概率仅{profit_prob_extreme:.1f}%，多重风险叠加后果严重')
+        conclusions.append(f'多重极端叠加：三重打击下盈利概率仅{profit_prob_extreme:.1f}%，多重风险叠加后果严重')
 
     for i, conclusion in enumerate(conclusions, 1):
         add_paragraph(document, f'{i}. {conclusion}')
@@ -683,7 +683,7 @@ def generate_chapter(context):
         add_paragraph(document, '• 如必须参与，务必做好风险对冲')
 
     add_paragraph(document, '')
-    add_paragraph(document, '💡 特别提示：')
+    add_paragraph(document, '特别提示：')
     add_paragraph(document, '压力测试结果仅供参考，实际市场情况可能超出历史极端情景。')
     add_paragraph(document, '投资者应结合自身风险承受能力，审慎决策，并做好充分的风险管理准备。')
     add_paragraph(document, '')
