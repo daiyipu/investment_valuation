@@ -626,37 +626,10 @@ def generate_chapter(context):
             'premium_rate': 0.00  # 0%溢价率（平价）
         })
     else:
-        # 如果没有指数或行业数据，使用原来基于行业数据的情景
-        print(f"⚠️ 指数或行业数据不可用，使用基于行业数据的情景")
+        # 如果没有指数数据，跳过指数情景分析，继续执行后续PE分位数分析
+        print(f"⚠️ 指数数据不可用，跳过指数情景分析")
 
-        # 情景2: 行业乐观情景（高漂移+低波动+深折价）
-        scenarios_config.append({
-            'name': '情景1（行业乐观）',
-            'description': '行业120日窗口漂移率较高、波动率较低、溢价率-20%（深折价）',
-            'volatility': max(0.25, industry_vol_120d * 0.8),
-            'drift': max(0.15, industry_return_120d * 1.5),
-            'premium_rate': -0.20
-        })
-
-        # 情景3: 行业中性情景（中等参数+中等折价）
-        scenarios_config.append({
-            'name': '情景2（行业中性）',
-            'description': '行业120日窗口漂移率中档、波动率中档、溢价率-10%（折价）',
-            'volatility': industry_vol_120d,
-            'drift': industry_return_120d,
-            'premium_rate': -0.10
-        })
-
-        # 情景4: 行业悲观情景（低漂移+高波动+平价）
-        scenarios_config.append({
-            'name': '情景3（行业悲观）',
-            'description': '行业120日窗口漂移率较低、波动率较高、溢价率0%（平价）',
-            'volatility': min(0.45, industry_vol_120d * 1.2),
-            'drift': min(-0.10, industry_return_120d * 0.5),
-            'premium_rate': 0.00
-        })
-
-    # 情景5-7: 基于行业PE分位数的情景（如果有PE数据）
+    # 情景4-6: 基于行业PE分位数的情景（如果有PE数据）
     pe_scenarios = []
     if stock_pe_data is not None and industry_pe_data is not None:
         try:
