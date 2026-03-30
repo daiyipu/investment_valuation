@@ -524,11 +524,20 @@ def generate_chapter(context):
             print(f"   行业数据: {len(industry_pe_data)}条")
             print(f"   行业: {industry_name} ({industry_code})")
 
+            # 保存PE数据到context，供第六章情景分析使用
+            context['stock_pe_data'] = stock_pe_data
+            context['industry_pe_data'] = industry_pe_data
+            context['industry_name'] = industry_name
+            context['industry_code'] = industry_code
+            print(f"✅ 已保存PE数据到context，供第六章情景分析使用")
+
             # 计算个股历史分位数统计
             stock_pe_current = stock_pe_data.iloc[-1]['pe_ttm']
             stock_pe_min = stock_pe_data['pe_ttm'].min()
             stock_pe_max = stock_pe_data['pe_ttm'].max()
             stock_pe_median = stock_pe_data['pe_ttm'].median()
+            stock_pe_25 = stock_pe_data['pe_ttm'].quantile(0.25)
+            stock_pe_75 = stock_pe_data['pe_ttm'].quantile(0.75)
             stock_pe_percentile = (stock_pe_data['pe_ttm'] < stock_pe_current).sum() / len(stock_pe_data) * 100
 
             # 计算申万行业指数历史分位数统计
@@ -536,6 +545,8 @@ def generate_chapter(context):
             sw_index_pe_min = industry_pe_data['pe_ttm'].min()
             sw_index_pe_max = industry_pe_data['pe_ttm'].max()
             sw_index_pe_median = industry_pe_data['pe_ttm'].median()
+            sw_index_pe_25 = industry_pe_data['pe_ttm'].quantile(0.25)
+            sw_index_pe_75 = industry_pe_data['pe_ttm'].quantile(0.75)
             sw_index_pe_percentile = (industry_pe_data['pe_ttm'] < sw_index_pe_current).sum() / len(industry_pe_data) * 100
 
             # 获取同行公司的历史PE数据
@@ -591,6 +602,13 @@ def generate_chapter(context):
                         pe_median = custom_peer_pe_data['pe'].median()
                         custom_peer_pe_median = float(pe_median.iloc[0] if isinstance(pe_median, pd.Series) else pe_median)
 
+                        # 计算25%和75%分位数
+                        pe_25 = custom_peer_pe_data['pe'].quantile(0.25)
+                        custom_peer_pe_25 = float(pe_25.iloc[0] if isinstance(pe_25, pd.Series) else pe_25)
+
+                        pe_75 = custom_peer_pe_data['pe'].quantile(0.75)
+                        custom_peer_pe_75 = float(pe_75.iloc[0] if isinstance(pe_75, pd.Series) else pe_75)
+
                         # 计算百分位
                         pe_percentile_count = (custom_peer_pe_data['pe'] < custom_peer_pe_current).sum()
                         custom_peer_pe_percentile = float(pe_percentile_count.iloc[0] if isinstance(pe_percentile_count, pd.Series) else pe_percentile_count) / len(custom_peer_pe_data) * 100
@@ -613,7 +631,7 @@ def generate_chapter(context):
             # 添加历史分位数统计表格
             if custom_peer_pe_current is not None:
                 # 有自定义同行数据的完整表格
-                pe_history_headers = ['指标', '标的股票', '行业指数<br/>(申万)', '行业指数<br/>(自定义)', '差异<br/>(vs申万)', '差异<br/>(vs自定义)']
+                pe_history_headers = ['指标', '标的股票', '行业指数(申万)', '行业指数(自定义)', '差异(vs申万)', '差异(vs自定义)']
                 pe_history_data = [
                     ['当前PE-TTM',
                      f'{stock_pe_current:.2f}倍',
@@ -627,18 +645,30 @@ def generate_chapter(context):
                      f'{custom_peer_pe_min:.2f}倍',
                      f'{stock_pe_min-sw_index_pe_min:+.2f}倍',
                      f'{stock_pe_min-custom_peer_pe_min:+.2f}倍'],
-                    ['历史最大PE',
-                     f'{stock_pe_max:.2f}倍',
-                     f'{sw_index_pe_max:.2f}倍',
-                     f'{custom_peer_pe_max:.2f}倍',
-                     f'{stock_pe_max-sw_index_pe_max:+.2f}倍',
-                     f'{stock_pe_max-custom_peer_pe_max:+.2f}倍'],
+                    ['25%分位数PE',
+                     f'{stock_pe_25:.2f}倍',
+                     f'{sw_index_pe_25:.2f}倍',
+                     f'{custom_peer_pe_25:.2f}倍',
+                     f'{stock_pe_25-sw_index_pe_25:+.2f}倍',
+                     f'{stock_pe_25-custom_peer_pe_25:+.2f}倍'],
                     ['历史中位数PE',
                      f'{stock_pe_median:.2f}倍',
                      f'{sw_index_pe_median:.2f}倍',
                      f'{custom_peer_pe_median:.2f}倍',
                      f'{stock_pe_median-sw_index_pe_median:+.2f}倍',
                      f'{stock_pe_median-custom_peer_pe_median:+.2f}倍'],
+                    ['75%分位数PE',
+                     f'{stock_pe_75:.2f}倍',
+                     f'{sw_index_pe_75:.2f}倍',
+                     f'{custom_peer_pe_75:.2f}倍',
+                     f'{stock_pe_75-sw_index_pe_75:+.2f}倍',
+                     f'{stock_pe_75-custom_peer_pe_75:+.2f}倍'],
+                    ['历史最大PE',
+                     f'{stock_pe_max:.2f}倍',
+                     f'{sw_index_pe_max:.2f}倍',
+                     f'{custom_peer_pe_max:.2f}倍',
+                     f'{stock_pe_max-sw_index_pe_max:+.2f}倍',
+                     f'{stock_pe_max-custom_peer_pe_max:+.2f}倍'],
                     ['当前分位数',
                      f'{stock_pe_percentile:.1f}%',
                      f'{sw_index_pe_percentile:.1f}%',
@@ -648,12 +678,14 @@ def generate_chapter(context):
                 ]
             else:
                 # 只有申万数据的简化表格
-                pe_history_headers = ['指标', '标的股票', '行业指数<br/>(申万)', '差异']
+                pe_history_headers = ['指标', '标的股票', '行业指数(申万)', '差异']
                 pe_history_data = [
                     ['当前PE-TTM', f'{stock_pe_current:.2f}倍', f'{sw_index_pe_current:.2f}倍', f'{(stock_pe_current/sw_index_pe_current-1)*100:+.1f}%'],
                     ['历史最小PE', f'{stock_pe_min:.2f}倍', f'{sw_index_pe_min:.2f}倍', f'{stock_pe_min-sw_index_pe_min:+.2f}倍'],
-                    ['历史最大PE', f'{stock_pe_max:.2f}倍', f'{sw_index_pe_max:.2f}倍', f'{stock_pe_max-sw_index_pe_max:+.2f}倍'],
+                    ['25%分位数PE', f'{stock_pe_25:.2f}倍', f'{sw_index_pe_25:.2f}倍', f'{stock_pe_25-sw_index_pe_25:+.2f}倍'],
                     ['历史中位数PE', f'{stock_pe_median:.2f}倍', f'{sw_index_pe_median:.2f}倍', f'{stock_pe_median-sw_index_pe_median:+.2f}倍'],
+                    ['75%分位数PE', f'{stock_pe_75:.2f}倍', f'{sw_index_pe_75:.2f}倍', f'{stock_pe_75-sw_index_pe_75:+.2f}倍'],
+                    ['历史最大PE', f'{stock_pe_max:.2f}倍', f'{sw_index_pe_max:.2f}倍', f'{stock_pe_max-sw_index_pe_max:+.2f}倍'],
                     ['当前分位数', f'{stock_pe_percentile:.1f}%', f'{sw_index_pe_percentile:.1f}%', f'{stock_pe_percentile-sw_index_pe_percentile:+.1f}%']
                 ]
 

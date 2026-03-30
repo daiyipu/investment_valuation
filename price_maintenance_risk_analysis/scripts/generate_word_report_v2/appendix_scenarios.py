@@ -58,8 +58,19 @@ def _generate_appendix_scenarios(document, all_scenarios_for_appendix):
 
     for vol_name, vol_min, vol_max in vol_ranges:
         # 筛选当前波动率区间的情景
-        scenarios_in_range = [s for s in all_scenarios_for_appendix
-                             if vol_min <= s['volatility']*100 < vol_max]
+        # 兼容新旧格式：新格式将数据嵌套在'scenario'键中
+        scenarios_in_range = []
+        for s in all_scenarios_for_appendix:
+            # 获取波动率值（兼容嵌套和扁平结构）
+            if 'volatility' in s:
+                vol = s['volatility']
+            elif 'scenario' in s and 'volatility' in s['scenario']:
+                vol = s['scenario']['volatility']
+            else:
+                continue
+
+            if vol_min <= vol*100 < vol_max:
+                scenarios_in_range.append(s)
 
         if not scenarios_in_range:
             continue
@@ -67,8 +78,21 @@ def _generate_appendix_scenarios(document, all_scenarios_for_appendix):
         # 在区间内按漂移率倒序排列，漂移率相同时按溢价率倒序排列
         # 漂移率倒序：从高到低（+30%到-30%）
         # 溢价率倒序：从高到低（+20%到-20%），即从溢价到折价
-        scenarios_sorted = sorted(scenarios_in_range,
-                                 key=lambda x: (-x['drift'], -x['discount']))
+
+        def get_sort_key(x):
+            # 兼容嵌套和扁平结构
+            if 'drift' in x:
+                drift = x['drift']
+                discount = x.get('discount', x.get('premium_rate', 0))
+            elif 'scenario' in x:
+                drift = x['scenario']['drift']
+                discount = x['scenario'].get('discount', x['scenario'].get('premium_rate', 0))
+            else:
+                drift = 0
+                discount = 0
+            return (-drift, -discount)
+
+        scenarios_sorted = sorted(scenarios_in_range, key=get_sort_key)
 
         # 添加区块标题
         add_title(document, f'附表：{vol_name}', level=2)
@@ -76,17 +100,42 @@ def _generate_appendix_scenarios(document, all_scenarios_for_appendix):
         # 生成表格数据
         appendix_data = []
         for i, s in enumerate(scenarios_sorted, 1):
+            # 兼容嵌套和扁平结构
+            if 'drift' in s:
+                # 扁平结构
+                drift = s['drift']
+                volatility = s['volatility']
+                discount = s.get('discount', s.get('premium_rate', 0))
+                issue_price = s.get('issue_price', 0)
+                mean_return = s.get('mean_return', 0)
+                median_return = s.get('median_return', 0)
+                profit_prob = s.get('profit_prob', 0)
+                var_5 = s.get('var_5', 0)
+                var_95 = s.get('var_95', 0)
+            else:
+                # 嵌套结构
+                scenario = s['scenario']
+                drift = scenario['drift']
+                volatility = scenario['volatility']
+                discount = scenario.get('discount', scenario.get('premium_rate', 0))
+                issue_price = scenario.get('issue_price', 0)
+                mean_return = s.get('mean_return', 0)
+                median_return = s.get('median_return', 0)
+                profit_prob = s.get('profit_prob', 0)
+                var_5 = s.get('var_5', 0)
+                var_95 = s.get('var_95', 0)
+
             appendix_data.append([
                 f"{i}",
-                f"{s['drift']*100:+.0f}%",
-                f"{s['volatility']*100:.0f}%",
-                f"{s['discount']*100:+.0f}%",
-                f"{s['issue_price']:.2f}",
-                f"{s['mean_return']*100:+.2f}%",
-                f"{s['median_return']*100:+.2f}%",
-                f"{s['profit_prob']:.1f}%",
-                f"{s['var_5']*100:+.2f}%",
-                f"{s['var_95']*100:+.2f}%"
+                f"{drift*100:+.0f}%",
+                f"{volatility*100:.0f}%",
+                f"{discount*100:+.0f}%",
+                f"{issue_price:.2f}",
+                f"{mean_return*100:+.2f}%",
+                f"{median_return*100:+.2f}%",
+                f"{profit_prob:.1f}%",
+                f"{var_5*100:+.2f}%",
+                f"{var_95*100:+.2f}%"
             ])
 
         appendix_headers = ['排名', '漂移率', '波动率', '溢价率', '发行价(元)', '预期年化收益', '中位数收益', '盈利概率', '5% VaR', '95% VaR']

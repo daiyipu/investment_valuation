@@ -1052,6 +1052,18 @@ def generate_chapter(context):
         percentile_5 = np.percentile(annualized_returns, 5)
         percentile_95 = np.percentile(annualized_returns, 95)
 
+        # 保存基于预测参数的模拟结果到context，供第九章使用
+        context['results']['mc_predicted_120d'] = {
+            'profit_prob': profit_prob / 100,  # 转换为小数
+            'mean_return': mean_return / 100,   # 转换为小数
+            'median_return': median_return / 100,
+            'var_5': percentile_5 / 100,
+            'var_95': percentile_95 / 100,
+            'drift': predicted_drift,
+            'volatility': predicted_vol
+        }
+        print(f"✅ 已保存预测参数模拟结果到context：盈利概率{profit_prob:.1f}%，预期收益{mean_return:.2f}%")
+
         # 添加模拟参数说明
         add_paragraph(document, '模拟参数：', bold=True)
         mc_5_5_params = [

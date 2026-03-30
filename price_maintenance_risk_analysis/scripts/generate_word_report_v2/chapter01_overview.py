@@ -421,59 +421,74 @@ def generate_chapter(context):
             ]
             add_table_data(document, industry_headers, industry_table_data)
 
-            # 1.4.2 行业风险指标分析
+            # 1.4.2 行业风险与技术指标综合分析
             add_paragraph(document, '')
-            add_title(document, '1.4.2 行业风险指标分析', level=3)
+            add_title(document, '1.4.2 行业风险与技术指标综合分析', level=3)
 
-            # 波动率
+            add_paragraph(document, '本节从风险水平、收益率表现、技术位置和胜率四个维度综合分析行业指数特征。')
             add_paragraph(document, '')
-            add_paragraph(document, '📊 行业波动率（风险水平）：')
-            add_paragraph(document, f"• 月度(20日): {industry_data.get('volatility_20d', 0)*100:.2f}%")
-            add_paragraph(document, f"• 季度(60日): {industry_data.get('volatility_60d', 0)*100:.2f}%")
-            add_paragraph(document, f"• 半年(120日): {industry_data.get('volatility_120d', 0)*100:.2f}%")
-            add_paragraph(document, f"• 年度(250日): {industry_data.get('volatility_250d', 0)*100:.2f}%")
 
-            # 收益率
+            # 综合指标表格（风险 + 收益率）
+            risk_return_data = [
+                ['时间窗口', '波动率', '区间收益率', '年化收益率'],
+                ['月度(20日)',
+                 f"{industry_data.get('volatility_20d', 0)*100:.2f}%",
+                 f"{industry_data.get('period_return_20d', 0)*100:+.2f}%",
+                 f"{industry_data.get('annual_return_20d', 0)*100:+.2f}%"],
+                ['季度(60日)',
+                 f"{industry_data.get('volatility_60d', 0)*100:.2f}%",
+                 f"{industry_data.get('period_return_60d', 0)*100:+.2f}%",
+                 f"{industry_data.get('annual_return_60d', 0)*100:+.2f}%"],
+                ['半年(120日)',
+                 f"{industry_data.get('volatility_120d', 0)*100:.2f}%",
+                 f"{industry_data.get('period_return_120d', 0)*100:+.2f}%",
+                 f"{industry_data.get('annual_return_120d', 0)*100:+.2f}%"],
+                ['年度(250日)',
+                 f"{industry_data.get('volatility_250d', 0)*100:.2f}%",
+                 f"{industry_data.get('period_return_250d', 0)*100:+.2f}%",
+                 f"{industry_data.get('annual_return_250d', 0)*100:+.2f}%"],
+            ]
+            add_table_data(document, ['时间窗口', '波动率(风险)', '区间收益率', '年化收益率'], risk_return_data)
+
             add_paragraph(document, '')
-            add_paragraph(document, '📈 行业收益率表现：')
-            add_paragraph(document, f"• 月度区间收益率(20日): {industry_data.get('period_return_20d', 0)*100:+.2f}%")
-            add_paragraph(document, f"• 月度年化收益率(20日): {industry_data.get('annual_return_20d', 0)*100:+.2f}%")
-            add_paragraph(document, f"• 季度区间收益率(60日): {industry_data.get('period_return_60d', 0)*100:+.2f}%")
-            add_paragraph(document, f"• 季度年化收益率(60日): {industry_data.get('annual_return_60d', 0)*100:+.2f}%")
-            add_paragraph(document, f"• 半年区间收益率(120日): {industry_data.get('period_return_120d', 0)*100:+.2f}%")
-            add_paragraph(document, f"• 半年年化收益率(120日): {industry_data.get('annual_return_120d', 0)*100:+.2f}%")
-            add_paragraph(document, f"• 年度区间收益率(250日): {industry_data.get('period_return_250d', 0)*100:+.2f}%")
-            add_paragraph(document, f"• 年度年化收益率(250日): {industry_data.get('annual_return_250d', 0)*100:+.2f}%")
 
-            # 1.4.3 行业技术位置分析
+            # 技术位置与胜率表格
             add_paragraph(document, '')
-            add_title(document, '1.4.3 行业技术位置分析', level=3)
 
-            add_paragraph(document, '')
-            add_paragraph(document, '📊 行业移动平均线（技术位置）：')
-            add_paragraph(document, f"• MA20: {industry_data.get('ma_20', 0):.2f} 点")
-            add_paragraph(document, f"• MA60: {industry_data.get('ma_60', 0):.2f} 点")
-            add_paragraph(document, f"• MA120: {industry_data.get('ma_120', 0):.2f} 点")
-            add_paragraph(document, f"• MA250: {industry_data.get('ma_250', 0):.2f} 点")
-
-            # 胜率
-            add_paragraph(document, '')
-            add_paragraph(document, '🎯 行业胜率（上涨天数占比）：')
-
-            # 获取胜率数据，如果缺少120日和250日，使用60日胜率作为近似值
+            # 获取胜率数据
             win_rate_20d = industry_data.get('win_rate_20d', 0)
             win_rate_60d = industry_data.get('win_rate_60d', 0)
             win_rate_120d = industry_data.get('win_rate_120d', 0)
             win_rate_250d = industry_data.get('win_rate_250d', 0)
 
-            add_paragraph(document, f"• 月度(20日): {win_rate_20d*100:.1f}%")
-            add_paragraph(document, f"• 季度(60日): {win_rate_60d*100:.1f}%")
-            add_paragraph(document, f"• 半年(120日): {win_rate_120d*100:.1f}%")
-            add_paragraph(document, f"• 年度(250日): {win_rate_250d*100:.1f}%")
+            tech_position_data = [
+                ['时间窗口', '移动平均线', '胜率(上涨天数占比)'],
+                ['月度(20日)',
+                 f"{industry_data.get('ma_20', 0):.2f} 点",
+                 f"{win_rate_20d*100:.1f}%"],
+                ['季度(60日)',
+                 f"{industry_data.get('ma_60', 0):.2f} 点",
+                 f"{win_rate_60d*100:.1f}%"],
+                ['半年(120日)',
+                 f"{industry_data.get('ma_120', 0):.2f} 点",
+                 f"{win_rate_120d*100:.1f}%"],
+                ['年度(250日)',
+                 f"{industry_data.get('ma_250', 0):.2f} 点",
+                 f"{win_rate_250d*100:.1f}%"],
+            ]
+            add_table_data(document, ['时间窗口', '移动平均线(技术位置)', '胜率'], tech_position_data)
 
-            # 1.4.4 行业指数图表分析
             add_paragraph(document, '')
-            add_title(document, '1.4.4 行业指数图表分析', level=3)
+            add_paragraph(document, '指标说明：')
+            add_paragraph(document, '• 波动率：反映行业指数的不确定性程度，越高风险越大')
+            add_paragraph(document, '• 区间收益率：时间窗口内的累计涨跌幅')
+            add_paragraph(document, '• 年化收益率：将区间收益率年化后的收益率，便于不同窗口期对比')
+            add_paragraph(document, '• 移动平均线：行业指数在相应时间窗口内的平均价格，反映趋势')
+            add_paragraph(document, '• 胜率：上涨天数占总交易日的比例，反映趋势强度')
+
+            # 1.4.3 行业指数图表分析
+            add_paragraph(document, '')
+            add_title(document, '1.4.3 行业指数图表分析', level=3)
 
             # 生成行业指数图表
             add_paragraph(document, '')
@@ -495,9 +510,9 @@ def generate_chapter(context):
                 add_image(document, industry_charts_paths[2], width=Inches(6.5))
                 add_paragraph(document, '')
 
-            # 1.4.5 个股与行业对比分析
+            # 1.4.4 个股与行业对比分析
             add_paragraph(document, '')
-            add_title(document, '1.4.5 个股与行业对比分析', level=3)
+            add_title(document, '1.4.4 个股与行业对比分析', level=3)
 
             add_paragraph(document, '')
             add_paragraph(document, '📊 个股与行业表现对比（多窗口期）：')

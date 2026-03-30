@@ -141,11 +141,13 @@ echo ""
 echo "⏳ 开始生成报告..."
 echo ""
 
-# 运行报告生成脚本
-python3 scripts/generate_word_report_v2.py \
+# 运行报告生成脚本（使用V3模块化版本）
+cd scripts/generate_word_report_v2 && \
+python3 main.py \
     --stock "$STOCK_CODE" \
-    --output "$OUTPUT_FILE" \
-    --force-update
+    --name "$STOCK_NAME" \
+    --output "$OUTPUT_FILE"
+cd ../..
 
 # 检查是否成功
 if [ $? -eq 0 ]; then

@@ -50,6 +50,10 @@ def generate_chapter(context):
     total_score = context['results'].get('total_score', 50)
     ma20_mc = market_data.get('ma_20', project_params['current_price'])
 
+    # 蒙特卡洛模拟参数（用于风险评估）
+    mc_volatility_120d = market_data.get('volatility_120d', market_data.get('volatility', 0.30))
+    mc_drift_120d = market_data.get('annual_return_120d', market_data.get('drift', 0.08))
+
     # 配置常量（使用context中的IMAGES_DIR）
     # IMAGES_DIR已在context中定义
 
@@ -58,40 +62,6 @@ def generate_chapter(context):
 
     add_paragraph(document, '本章节从风险控制角度，给出盈亏平衡分析、核心指标汇总、最终报价建议和全面的风险提示。')
     add_paragraph(document, '基于保守原则，确保投资决策在合理风险可控范围内进行。')
-    add_paragraph(document, '')
-
-    # ==================== 9.1 核心风险指标汇总 ====================
-    add_title(document, '9.1 核心风险指标汇总', level=2)
-
-    add_paragraph(document, '本节汇总核心风险指标，为投资决策提供全面的量化评估依据。')
-    add_paragraph(document, '')
-
-    # 处理盈利概率和预期收益率的格式
-    profit_prob_display = profit_prob * 100 if profit_prob <= 1 else profit_prob
-    mean_return_display = mean_return * 100 if abs(mean_return) <= 1 else mean_return
-
-    # 统一使用120日窗口参数
-    mc_volatility_120d = market_data.get('volatility_120d', market_data.get('volatility', 0.30))
-    mc_drift_120d = market_data.get('annual_return_120d', market_data.get('drift', 0.08))
-
-    # 计算评估值（避免在f-string中使用嵌套三元运算符）
-    risk_level_eval = "低风险" if total_score >= 80 else "中等风险" if total_score >= 60 else "高风险"
-    profit_level_eval = "较高" if profit_prob >= 0.7 else "中等" if profit_prob >= 0.5 else "较低"
-    issue_type_eval = "折价发行" if discount_premium < 0 else "平价发行" if discount_premium < 5 else "溢价发行"
-
-    summary_data = [
-        ['风险评分', f'{total_score}/100', risk_level_eval],
-        ['盈利概率', f'{profit_prob_display:.1f}%', profit_level_eval],
-        ['发行类型', f'{issue_type}', issue_type_eval],
-        ['溢价率（相对MA20）', f'{discount_premium:+.2f}%', ''],
-        ['预期收益率', f'{mean_return_display:.1f}%', ''],
-        ['95% VaR', f'{var_95*100:.1f}%', ''],
-        ['波动率(120日)', f'{mc_volatility_120d*100:.1f}%', ''],
-        ['年化漂移率(120日)', f'{mc_drift_120d*100:+.2f}%', ''],
-        ['DCF内在价值', f'{intrinsic_value:.2f} 元/股', '']
-    ]
-    add_table_data(document, ['指标', '值', '评估'], summary_data)
-
     add_paragraph(document, '')
 
     # ==================== 9.2 盈亏平衡分析 ====================
@@ -145,6 +115,10 @@ def generate_chapter(context):
     add_paragraph(document, '')
 
     # ==================== 9.3 报价方案建议 ====================
+    add_title(document, '9.3 报价方案建议', level=2)
+    add_paragraph(document, '本节提供不同目标收益率下的报价建议，帮助投资者根据风险偏好选择合适的报价方案。')
+    add_paragraph(document, '')
+
     # 9.3.1 宏观环境评估
     add_title(document, '9.3.1 宏观环境评估', level=3)
     add_paragraph(document, '在制定报价方案前，先评估当前的宏观环境，包括货币政策与财政政策、行业发展周期、二级市场活跃度三个维度。')
@@ -291,7 +265,11 @@ def generate_chapter(context):
 
     # 9.3.2 报价方案建议
     add_title(document, '9.3.2 报价方案建议', level=3)
-    add_paragraph(document, '本节提供不同目标收益率下的报价建议，帮助投资者根据风险偏好选择合适的报价方案。')
+    add_paragraph(document, '本节基于历史收益率和情景分析，提供多角度的报价建议。')
+    add_paragraph(document, '')
+
+    add_paragraph(document, '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    add_paragraph(document, '一、基于历史收益率的报价方案', bold=True)
     add_paragraph(document, '')
 
     # 显示计算参数
@@ -356,10 +334,17 @@ def generate_chapter(context):
     # ==================== 基于情景分析的报价方案筛选 ====================
     add_paragraph(document, '')
     add_paragraph(document, '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    add_paragraph(document, '基于9.1.5情景分析汇总的报价方案筛选', bold=True)
+    add_paragraph(document, '二、基于情景分析的报价方案筛选', bold=True)
+    add_paragraph(document, '')
+    add_paragraph(document, '本节基于第六章情景分析的780种情景，通过严格筛选条件，从风险收益平衡角度推荐最优报价方案。')
     add_paragraph(document, '')
 
     # 筛选条件
+    add_paragraph(document, '📋 筛选范围说明：', bold=True)
+    add_paragraph(document, '情景筛选分为两部分：')
+    add_paragraph(document, '• 基础情景分析（585种）：漂移率13档 × 波动率5档 × 溢价率9档')
+    add_paragraph(document, '• 多维情景分析（195种）：市场指数45种 + 行业指数45种 + 行业PE45种 + 个股PE45种 + DCF估值15种')
+    add_paragraph(document, '')
     add_paragraph(document, '📋 筛选条件（必须全部满足）：', bold=True)
     add_paragraph(document, '1. 溢价率 ≤ -5%（折价至少5%，提供安全边际）')
     add_paragraph(document, '2. 预测中位数收益率 > 8%（年化收益达标）')
@@ -374,8 +359,8 @@ def generate_chapter(context):
     add_paragraph(document, '• 同等情况下选择保守程度更高的方案')
     add_paragraph(document, '')
 
-    # 从context获取comprehensive_results（6.6节的情景分析结果）
-    comprehensive_results = context['results'].get('comprehensive_results', [])
+    # 从context获取all_scenarios（第六章所有情景分析结果）
+    comprehensive_results = context['results'].get('all_scenarios', [])
 
     # 收集所有情景方案
     scenario_options = []
@@ -390,14 +375,17 @@ def generate_chapter(context):
                 profit_prob = result['profit_prob']  # 已经是百分比
                 var_95 = result.get('var_95', 0)  # 已经是百分比
 
+                # 兼容不同格式的issue_price
+                issue_price = result.get('issue_price', scenario_obj.get('issue_price', 0))
+
                 scenario_options.append({
                     'name': scenario_name,
                     'description': scenario_obj.get('description', ''),
                     'median_return': median_return,
                     'profit_prob': profit_prob,
-                    'premium_rate': scenario_obj['premium_rate'] * 100,  # 转为百分比
+                    'premium_rate': scenario_obj.get('premium_rate', scenario_obj.get('discount', 0)) * 100,  # 转为百分比
                     'var_95': var_95,
-                    'issue_price': result['issue_price']
+                    'issue_price': issue_price
                 })
 
     # 如果有情景方案，显示筛选结果
@@ -568,23 +556,28 @@ def generate_chapter(context):
 
     # 3. VaR在险价值风险
     add_paragraph(document, '3. VaR在险价值风险')
-    # var_95可能是小数形式（如0.5140）或百分比形式（如51.40）
-    # 判断方法：如果绝对值>1，说明是百分比形式；否则是小数形式
-    if abs(var_95) > 1:
-        var_95_display = var_95
-    else:
-        var_95_display = var_95 * 100
+    # 使用基于期收益率（锁定期收益率）的VaR，而不是年化VaR
+    # 从context中获取var_results，然后获取120日窗口的var_95
+    var_results = context.get('results', {}).get('var_results', {})
+    var_95_period = var_results.get('120日', {}).get('var_95', 0.5)
+    var_95_display = var_95_period * 100  # 转换为百分比
     add_paragraph(document, f'   • 120日窗口：95%置信水平下最大可能亏损{var_95_display:.1f}%')
     add_paragraph(document, '   • 尾部风险：历史数据显示，小概率极端事件（黑天鹅）可能导致损失超过VaR预测值')
     add_paragraph(document, '')
 
-    # 4. 估值风险
+    # 4. 压力测试风险
+    add_paragraph(document, '4. 压力测试风险')
+    add_paragraph(document, '   • 极端情景风险：需关注PE回归、市场危机、三重打击等极端情景下的潜在损失')
+    add_paragraph(document, '   • 波动率放大风险：当实际波动率超过120日窗口统计值时，风险敞口将显著增加')
+    add_paragraph(document, '')
+
+    # 5. 估值风险
     add_paragraph(document, '4. 估值风险')
     add_paragraph(document, f'   • DCF估值风险：DCF内在价值{intrinsic_value:.2f}元/股基于多个假设，实际业绩可能偏离预测')
     add_paragraph(document, '   • 相对估值风险：PE/PS/PB相对估值基于行业平均水平，行业景气度变化可能导致估值体系重构')
     add_paragraph(document, '')
 
-    # 5. 发行定价风险
+    # 6. 发行定价风险
     add_paragraph(document, '5. 发行定价风险')
     if current_premium < 0:
         discount_amount = abs(current_premium)
@@ -599,7 +592,7 @@ def generate_chapter(context):
     add_paragraph(document, '   • 定价偏离：若发行价显著高于盈亏平衡价格，将大幅降低盈利概率和预期收益')
     add_paragraph(document, '')
 
-    # 6. 其他风险
+    # 7. 其他风险
     add_paragraph(document, '6. 其他风险')
     add_paragraph(document, '   • 行业政策风险：需关注行业监管政策变化')
     add_paragraph(document, '   • 业绩波动风险：需关注公司业绩预告、审计报告等')
