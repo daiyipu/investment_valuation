@@ -1,8 +1,14 @@
 """
-附件：585种情景完整数据表
+附件：情景分析完整数据表
 
-本附件提供完整的585种情景组合数据，供备查参考。
-情景组合：漂移率（-30%~+30%，13档）× 波动率（10%~50%，5档）× 溢价率（-20%~+20%，9档）= 585种
+本附件提供所有情景组合数据，供备查参考。
+包含：
+- 6.1 多参数情景：585种（13×5×9）
+- 6.2.1 市场指数情景：45种（3×3×5）
+- 6.2.2 行业指数情景：45种（3×3×5）
+- 6.3 行业PE情景：45种（3×3×5）
+- 6.4 个股PE情景：45种（3×3×5）
+- 6.5 DCF估值情景：15种（1×3×5）
 """
 
 def generate_chapter(context):
@@ -162,3 +168,112 @@ def _generate_appendix_scenarios(document, all_scenarios_for_appendix):
     add_paragraph(document, '• 根据对未来市场走势的判断（乐观/中性/悲观），在相应漂移率区间查找情景')
     add_paragraph(document, '• 结合当前项目的实际溢价率，找到最接近的情景作为参考基准')
     add_paragraph(document, '• 对比不同情景下的预期收益和盈利概率，评估投资价值')
+    add_paragraph(document, '')
+
+    # ==================== 6.2-6.5节情景数据表 ====================
+    add_title(document, '附表：6.2-6.5节情景数据表', level=2)
+    add_paragraph(document, '本附表展示6.2至6.5节的专项情景分析结果，包括市场指数情景、行业指数情景、行业PE情景、个股PE情景和DCF估值情景。')
+    add_paragraph(document, '')
+
+    # 按情景类型分组展示
+    scenario_groups = {
+        '市场指数情景': '6.2.1',
+        '行业指数情景': '6.2.2',
+        '行业PE情景': '6.3',
+        '个股PE情景': '6.4',
+        'DCF估值情景': '6.5'
+    }
+
+    # 按情景类型分组
+    grouped_scenarios = {}
+    for s in all_scenarios_for_appendix:
+        # 获取情景名称
+        if 'name' in s:
+            scenario_name = s['name']
+        elif 'scenario' in s and 'name' in s['scenario']:
+            scenario_name = s['scenario']['name']
+        else:
+            continue
+
+        # 确定情景类型
+        scenario_type = None
+        for type_name in scenario_groups.keys():
+            if type_name in scenario_name:
+                scenario_type = type_name
+                break
+
+        if scenario_type:
+            if scenario_type not in grouped_scenarios:
+                grouped_scenarios[scenario_type] = []
+            grouped_scenarios[scenario_type].append(s)
+
+    # 为每种情景类型生成表格
+    for scenario_type, scenarios in grouped_scenarios.items():
+        if not scenarios:
+            continue
+
+        # 添加类型标题
+        section_num = scenario_groups[scenario_type]
+        add_title(document, f'附表{section_num}：{scenario_type}数据表', level=3)
+
+        # 按盈利概率排序
+        scenarios_sorted = sorted(scenarios, key=lambda x: x.get('profit_prob', 0), reverse=True)
+
+        # 生成表格数据
+        table_data = []
+        for i, s in enumerate(scenarios_sorted[:20], 1):  # 只展示前20个
+            # 兼容嵌套和扁平结构
+            if 'drift' in s:
+                # 扁平结构
+                drift = s['drift']
+                volatility = s['volatility']
+                discount = s.get('discount', s.get('premium_rate', 0))
+                issue_price = s.get('issue_price', 0)
+                mean_return = s.get('mean_return', 0)
+                median_return = s.get('median_return', 0)
+                profit_prob = s.get('profit_prob', 0)
+                var_5 = s.get('var_5', 0)
+                var_95 = s.get('var_95', 0)
+                scenario_name = s.get('name', '')
+            else:
+                # 嵌套结构
+                scenario = s['scenario']
+                drift = scenario['drift']
+                volatility = scenario['volatility']
+                discount = scenario.get('discount', scenario.get('premium_rate', 0))
+                issue_price = scenario.get('issue_price', 0)
+                mean_return = s.get('mean_return', 0)
+                median_return = s.get('median_return', 0)
+                profit_prob = s.get('profit_prob', 0)
+                var_5 = s.get('var_5', 0)
+                var_95 = s.get('var_95', 0)
+                scenario_name = scenario.get('name', '')
+
+            table_data.append([
+                f"{i}",
+                scenario_name,
+                f"{drift*100:+.1f}%",
+                f"{volatility*100:.1f}%",
+                f"{discount*100:+.0f}%",
+                f"{issue_price:.2f}",
+                f"{median_return*100:+.1f}%",
+                f"{profit_prob:.1f}%"
+            ])
+
+        headers = ['排名', '情景名称', '漂移率', '波动率', '溢价率', '发行价(元)', '中位数收益', '盈利概率']
+        add_table_data(document, headers, table_data)
+
+        if len(scenarios_sorted) > 20:
+            add_paragraph(document, f'注：{scenario_type}共{len(scenarios_sorted)}个情景，此处仅展示前20个（按盈利概率排序）。')
+
+        add_paragraph(document, '')
+
+    add_paragraph(document, '')
+    add_paragraph(document, '附表说明（6.2-6.5）：')
+    add_paragraph(document, '• 本表展示6.2至6.5节的专项情景分析结果')
+    add_paragraph(document, '• 每种情景类型按盈利概率从高到低排序')
+    add_paragraph(document, '• 市场指数情景：基于沪深300、中证500、创业板指、科创50的历史数据')
+    add_paragraph(document, '• 行业指数情景：基于标的股票所属行业指数的历史数据')
+    add_paragraph(document, '• 行业PE情景：基于行业PE分位数的估值回归情景')
+    add_paragraph(document, '• 个股PE情景：基于个股PE分位数的估值回归情景')
+    add_paragraph(document, '• DCF估值情景：基于DCF内在价值的估值情景')

@@ -27,7 +27,7 @@ from utils.analysis_tools import PrivatePlacementRiskAnalyzer
 font_prop = get_font_prop()
 
 
-def generate_scenario_matrix(drift_levels, vol_levels, premium_levels, scenario_name_prefix, drift_source="", project_params=None):
+def generate_scenario_matrix(drift_levels, vol_levels, premium_levels, scenario_name_prefix, drift_source="", project_params=None, start_idx=1):
     """
     生成情景矩阵（3×3×5=45个情景或1×3×5=15个情景）
 
@@ -38,6 +38,7 @@ def generate_scenario_matrix(drift_levels, vol_levels, premium_levels, scenario_
         scenario_name_prefix: 情景名称前缀，如"市场指数"
         drift_source: 漂移率来源说明，如"基于各大指数的120日年化收益率"
         project_params: 项目参数，用于计算发行价
+        start_idx: 起始编号，默认为1
 
     返回:
         scenarios: 情景配置列表
@@ -48,7 +49,7 @@ def generate_scenario_matrix(drift_levels, vol_levels, premium_levels, scenario_
     vol_labels = ['高', '中', '低']
     premium_labels = ['-20%', '-15%', '-10%', '-5%', '0%']
 
-    scenario_idx = 1
+    scenario_idx = start_idx
 
     for i, drift in enumerate(drift_levels):
         for j, vol in enumerate(vol_levels):
@@ -626,18 +627,20 @@ def generate_chapter(context):
 
         # 运行市场指数情景模拟
         index_scenario_results = []
-        for scenario in index_scenarios:
+        for idx, scenario in enumerate(index_scenarios):
             try:
                 sim_result = analyzer.monte_carlo_simulation(
                     n_simulations=5000,
                     time_steps=120,
                     volatility=scenario['volatility'],
                     drift=scenario['drift'],
-                    seed=42
+                    seed=42+idx  # 使用不同的seed确保每个情景的随机性不同
                 )
 
                 final_prices = sim_result.iloc[:, -1].values
-                returns = (final_prices - project_params['issue_price']) / project_params['issue_price']
+                # 使用情景相关的发行价（考虑了溢价率）
+                scenario_issue_price = scenario['issue_price']
+                returns = (final_prices - scenario_issue_price) / scenario_issue_price
                 annualized_returns = returns * (12 / project_params['lockup_period'])
 
                 # 计算VaR
@@ -692,7 +695,7 @@ def generate_chapter(context):
                     f"{scenario['vol_level']}({scenario['volatility']*100:.1f}%)",
                     scenario['premium_level'],
                     f"{scenario_result['profit_prob']:.1f}%",
-                    f"{scenario_result['median_return']:+.1f}%"
+                    f"{scenario_result['median_return']*100:+.1f}%"
                 ])
 
             add_table_data(document, ['情景', '漂移率', '波动率', '溢价率', '盈利概率', '中位数收益'], index_table_data)
@@ -701,8 +704,8 @@ def generate_chapter(context):
             add_paragraph(document, '市场指数情景分析结论：')
             best_scenario = max(index_scenario_results, key=lambda x: x['profit_prob'])
             worst_scenario = min(index_scenario_results, key=lambda x: x['profit_prob'])
-            add_paragraph(document, f'• 最优情景：{best_scenario["scenario"]["name"]}，盈利概率{best_scenario["profit_prob"]:.1f}%，中位数收益{best_scenario["median_return"]:+.1f}%')
-            add_paragraph(document, f'• 最差情景：{worst_scenario["scenario"]["name"]}，盈利概率{worst_scenario["profit_prob"]:.1f}%，中位数收益{worst_scenario["median_return"]:+.1f}%')
+            add_paragraph(document, f'• 最优情景：{best_scenario["scenario"]["name"]}，盈利概率{best_scenario["profit_prob"]:.1f}%，中位数收益{best_scenario["median_return"]*100:+.1f}%')
+            add_paragraph(document, f'• 最差情景：{worst_scenario["scenario"]["name"]}，盈利概率{worst_scenario["profit_prob"]:.1f}%，中位数收益{worst_scenario["median_return"]*100:+.1f}%')
             add_paragraph(document, f'• 投资建议：市场指数环境对定增收益有显著影响，建议关注市场整体趋势，在低波动高增长环境下积极参与')
 
         add_paragraph(document, '')
@@ -767,18 +770,20 @@ def generate_chapter(context):
 
         # 运行行业指数情景模拟
         industry_scenario_results = []
-        for scenario in industry_scenarios:
+        for idx, scenario in enumerate(industry_scenarios):
             try:
                 sim_result = analyzer.monte_carlo_simulation(
                     n_simulations=5000,
                     time_steps=120,
                     volatility=scenario['volatility'],
                     drift=scenario['drift'],
-                    seed=42
+                    seed=42+idx  # 使用不同的seed确保每个情景的随机性不同
                 )
 
                 final_prices = sim_result.iloc[:, -1].values
-                returns = (final_prices - project_params['issue_price']) / project_params['issue_price']
+                # 使用情景相关的发行价（考虑了溢价率）
+                scenario_issue_price = scenario['issue_price']
+                returns = (final_prices - scenario_issue_price) / scenario_issue_price
                 annualized_returns = returns * (12 / project_params['lockup_period'])
 
                 # 计算VaR
@@ -833,7 +838,7 @@ def generate_chapter(context):
                     f"{scenario['vol_level']}({scenario['volatility']*100:.1f}%)",
                     scenario['premium_level'],
                     f"{scenario_result['profit_prob']:.1f}%",
-                    f"{scenario_result['median_return']:+.1f}%"
+                    f"{scenario_result['median_return']*100:+.1f}%"
                 ])
 
             add_table_data(document, ['情景', '漂移率', '波动率', '溢价率', '盈利概率', '中位数收益'], industry_table_data)
@@ -842,8 +847,8 @@ def generate_chapter(context):
             add_paragraph(document, '行业指数情景分析结论：')
             best_scenario = max(industry_scenario_results, key=lambda x: x['profit_prob'])
             worst_scenario = min(industry_scenario_results, key=lambda x: x['profit_prob'])
-            add_paragraph(document, f'• 最优情景：{best_scenario["scenario"]["name"]}，盈利概率{best_scenario["profit_prob"]:.1f}%，中位数收益{best_scenario["median_return"]:+.1f}%')
-            add_paragraph(document, f'• 最差情景：{worst_scenario["scenario"]["name"]}，盈利概率{worst_scenario["profit_prob"]:.1f}%，中位数收益{worst_scenario["median_return"]:+.1f}%')
+            add_paragraph(document, f'• 最优情景：{best_scenario["scenario"]["name"]}，盈利概率{best_scenario["profit_prob"]:.1f}%，中位数收益{best_scenario["median_return"]*100:+.1f}%')
+            add_paragraph(document, f'• 最差情景：{worst_scenario["scenario"]["name"]}，盈利概率{worst_scenario["profit_prob"]:.1f}%，中位数收益{worst_scenario["median_return"]*100:+.1f}%')
             add_paragraph(document, f'• 投资建议：行业景气度对定增收益有重要影响，建议关注行业周期，在行业上升期积极布局')
 
         add_paragraph(document, '')
@@ -924,18 +929,20 @@ def generate_chapter(context):
 
                 # 运行行业PE情景模拟
                 industry_pe_scenario_results = []
-                for scenario in industry_pe_scenarios:
+                for idx, scenario in enumerate(industry_pe_scenarios):
                     try:
                         sim_result = analyzer.monte_carlo_simulation(
                             n_simulations=5000,
                             time_steps=120,
                             volatility=scenario['volatility'],
                             drift=scenario['drift'],
-                            seed=42
+                            seed=42+idx  # 使用不同的seed确保每个情景的随机性不同
                         )
 
                         final_prices = sim_result.iloc[:, -1].values
-                        returns = (final_prices - project_params['issue_price']) / project_params['issue_price']
+                        # 使用情景相关的发行价（考虑了溢价率）
+                        scenario_issue_price = scenario['issue_price']
+                        returns = (final_prices - scenario_issue_price) / scenario_issue_price
                         annualized_returns = returns * (12 / project_params['lockup_period'])
 
                         # 计算VaR
@@ -990,7 +997,7 @@ def generate_chapter(context):
                             f"{scenario['vol_level']}({scenario['volatility']*100:.1f}%)",
                             scenario['premium_level'],
                             f"{scenario_result['profit_prob']:.1f}%",
-                            f"{scenario_result['median_return']:+.1f}%"
+                            f"{scenario_result['median_return']*100:+.1f}%"
                         ])
 
                     add_table_data(document, ['情景', 'PE分位-漂移率', '波动率', '溢价率', '盈利概率', '中位数收益'], industry_pe_table_data, font_size=10.5)
@@ -999,8 +1006,8 @@ def generate_chapter(context):
                     add_paragraph(document, '📊 行业PE情景分析结论：')
                     best_scenario = max(industry_pe_scenario_results, key=lambda x: x['profit_prob'])
                     worst_scenario = min(industry_pe_scenario_results, key=lambda x: x['profit_prob'])
-                    add_paragraph(document, f'• 最优情景：{best_scenario["scenario"]["name"]}，盈利概率{best_scenario["profit_prob"]:.1f}%，中位数收益{best_scenario["median_return"]:+.1f}%')
-                    add_paragraph(document, f'• 最差情景：{worst_scenario["scenario"]["name"]}，盈利概率{worst_scenario["profit_prob"]:.1f}%，中位数收益{worst_scenario["median_return"]:+.1f}%')
+                    add_paragraph(document, f'• 最优情景：{best_scenario["scenario"]["name"]}，盈利概率{best_scenario["profit_prob"]:.1f}%，中位数收益{best_scenario["median_return"]*100:+.1f}%')
+                    add_paragraph(document, f'• 最差情景：{worst_scenario["scenario"]["name"]}，盈利概率{worst_scenario["profit_prob"]:.1f}%，中位数收益{worst_scenario["median_return"]*100:+.1f}%')
                     add_paragraph(document, f'• 投资建议：关注行业估值水平，在个股PE显著低于行业PE分位数时（低估状态）积极布局，估值回归带来超额收益')
 
                 add_paragraph(document, '')
@@ -1086,18 +1093,20 @@ def generate_chapter(context):
 
                 # 运行个股PE情景模拟
                 stock_pe_scenario_results = []
-                for scenario in stock_pe_scenarios:
+                for idx, scenario in enumerate(stock_pe_scenarios):
                     try:
                         sim_result = analyzer.monte_carlo_simulation(
                             n_simulations=5000,
                             time_steps=120,
                             volatility=scenario['volatility'],
                             drift=scenario['drift'],
-                            seed=42
+                            seed=42+idx  # 使用不同的seed确保每个情景的随机性不同
                         )
 
                         final_prices = sim_result.iloc[:, -1].values
-                        returns = (final_prices - project_params['issue_price']) / project_params['issue_price']
+                        # 使用情景相关的发行价（考虑了溢价率）
+                        scenario_issue_price = scenario['issue_price']
+                        returns = (final_prices - scenario_issue_price) / scenario_issue_price
                         annualized_returns = returns * (12 / project_params['lockup_period'])
 
                         # 计算VaR
@@ -1152,7 +1161,7 @@ def generate_chapter(context):
                             f"{scenario['vol_level']}({scenario['volatility']*100:.1f}%)",
                             scenario['premium_level'],
                             f"{scenario_result['profit_prob']:.1f}%",
-                            f"{scenario_result['median_return']:+.1f}%"
+                            f"{scenario_result['median_return']*100:+.1f}%"
                         ])
 
                     add_table_data(document, ['情景', 'PE分位-漂移率', '波动率', '溢价率', '盈利概率', '中位数收益'], stock_pe_table_data, font_size=10.5)
@@ -1161,8 +1170,8 @@ def generate_chapter(context):
                     add_paragraph(document, '📊 个股PE情景分析结论：')
                     best_scenario = max(stock_pe_scenario_results, key=lambda x: x['profit_prob'])
                     worst_scenario = min(stock_pe_scenario_results, key=lambda x: x['profit_prob'])
-                    add_paragraph(document, f'• 最优情景：{best_scenario["scenario"]["name"]}，盈利概率{best_scenario["profit_prob"]:.1f}%，中位数收益{best_scenario["median_return"]:+.1f}%')
-                    add_paragraph(document, f'• 最差情景：{worst_scenario["scenario"]["name"]}，盈利概率{worst_scenario["profit_prob"]:.1f}%，中位数收益{worst_scenario["median_return"]:+.1f}%')
+                    add_paragraph(document, f'• 最优情景：{best_scenario["scenario"]["name"]}，盈利概率{best_scenario["profit_prob"]:.1f}%，中位数收益{best_scenario["median_return"]*100:+.1f}%')
+                    add_paragraph(document, f'• 最差情景：{worst_scenario["scenario"]["name"]}，盈利概率{worst_scenario["profit_prob"]:.1f}%，中位数收益{worst_scenario["median_return"]*100:+.1f}%')
                     add_paragraph(document, f'• 投资建议：关注个股历史估值水平，当前PE处于历史低位时投资价值更高，估值回归带来收益潜力')
 
                 add_paragraph(document, '')
@@ -1234,18 +1243,20 @@ def generate_chapter(context):
 
                 # 运行DCF估值情景模拟
                 dcf_scenario_results = []
-                for scenario in dcf_scenarios:
+                for idx, scenario in enumerate(dcf_scenarios):
                     try:
                         sim_result = analyzer.monte_carlo_simulation(
                             n_simulations=5000,
                             time_steps=120,
                             volatility=scenario['volatility'],
                             drift=scenario['drift'],
-                            seed=42
+                            seed=42+idx  # 使用不同的seed确保每个情景的随机性不同
                         )
 
                         final_prices = sim_result.iloc[:, -1].values
-                        returns = (final_prices - project_params['issue_price']) / project_params['issue_price']
+                        # 使用情景相关的发行价（考虑了溢价率）
+                        scenario_issue_price = scenario['issue_price']
+                        returns = (final_prices - scenario_issue_price) / scenario_issue_price
                         annualized_returns = returns * (12 / project_params['lockup_period'])
 
                         # 计算VaR
@@ -1300,7 +1311,7 @@ def generate_chapter(context):
                             f"{scenario['vol_level']}({scenario['volatility']*100:.1f}%)",
                             scenario['premium_level'],
                             f"{scenario_result['profit_prob']:.1f}%",
-                            f"{scenario_result['median_return']:+.1f}%"
+                            f"{scenario_result['median_return']*100:+.1f}%"
                         ])
 
                     add_table_data(document, ['情景', 'DCF估值', '波动率', '溢价率', '盈利概率', '中位数收益'], dcf_table_data, font_size=10.5)
@@ -1309,8 +1320,8 @@ def generate_chapter(context):
                     add_paragraph(document, '📊 DCF估值情景分析结论：')
                     best_scenario = max(dcf_scenario_results, key=lambda x: x['profit_prob'])
                     worst_scenario = min(dcf_scenario_results, key=lambda x: x['profit_prob'])
-                    add_paragraph(document, f'• 最优情景：{best_scenario["scenario"]["name"]}，盈利概率{best_scenario["profit_prob"]:.1f}%，中位数收益{best_scenario["median_return"]:+.1f}%')
-                    add_paragraph(document, f'• 最差情景：{worst_scenario["scenario"]["name"]}，盈利概率{worst_scenario["profit_prob"]:.1f}%，中位数收益{worst_scenario["median_return"]:+.1f}%')
+                    add_paragraph(document, f'• 最优情景：{best_scenario["scenario"]["name"]}，盈利概率{best_scenario["profit_prob"]:.1f}%，中位数收益{best_scenario["median_return"]*100:+.1f}%')
+                    add_paragraph(document, f'• 最差情景：{worst_scenario["scenario"]["name"]}，盈利概率{worst_scenario["profit_prob"]:.1f}%，中位数收益{worst_scenario["median_return"]*100:+.1f}%')
                     add_paragraph(document, f'• 投资建议：DCF内在价值{intrinsic_value:.2f}元{"高于" if intrinsic_value > current_price_dcf else "低于"}当前价格{current_price_dcf:.2f}元，比值{dcf_ratio:.2f}，估值{"偏低" if dcf_drift > 0 else "偏高"}，需结合安全边际谨慎决策')
 
                 add_paragraph(document, '')
@@ -1324,61 +1335,111 @@ def generate_chapter(context):
         add_paragraph(document, '')
         add_title(document, '6.6 情景综合分析汇总表', level=2)
 
-        add_paragraph(document, '本节汇总所有情景的蒙特卡洛模拟结果，提供综合对比分析。')
-        add_paragraph(document, '通过汇总表可以全面评估不同情景下的风险收益特征，为投资决策提供参考。')
+        add_paragraph(document, '本节对所有情景进行统计分析，汇总各类情景的数量分布和关键指标。')
+        add_paragraph(document, '详细的情景数据请参见报告附件《情景数据表》。')
         add_paragraph(document, '')
 
         # 定义comprehensive_results（兼容旧代码）
         comprehensive_results = all_scenarios
 
-        # 生成表格数据
-        comprehensive_table_data = []
-        for i, result in enumerate(comprehensive_results):
-            # 兼容新旧格式：新格式有'scenario'键，旧格式直接就是情景对象
+        # 统计各类情景数量
+        scenario_type_counts = {}
+        for result in comprehensive_results:
             scenario_obj = result.get('scenario', result)
+            scenario_name = scenario_obj.get('name', '未知')
 
-            # 动态生成分类（基于漂移率水平）
-            if 'drift_level' in scenario_obj:
-                if scenario_obj['drift_level'] == '高':
-                    category = '乐观'
-                elif scenario_obj['drift_level'] == '低':
-                    category = '悲观'
-                else:
-                    category = '中性'
+            # 提取情景类型（市场指数、行业指数、行业PE、个股PE、DCF估值）
+            if '市场指数' in scenario_name:
+                scenario_type = '市场指数情景'
+            elif '行业指数' in scenario_name:
+                scenario_type = '行业指数情景'
+            elif '行业PE' in scenario_name:
+                scenario_type = '行业PE情景'
+            elif '个股PE' in scenario_name:
+                scenario_type = '个股PE情景'
+            elif 'DCF估值' in scenario_name:
+                scenario_type = 'DCF估值情景'
             else:
-                category = '中性'
+                scenario_type = '多参数情景'
 
-            comprehensive_table_data.append([
-                scenario_obj.get('description', scenario_obj.get('name', '')),  # 情景描述
-                f"{scenario_obj['volatility']*100:.2f}%",
-                f"{scenario_obj['drift']*100:+.2f}%",
-                f"{scenario_obj.get('premium_rate', scenario_obj.get('discount', 0))*100:+.0f}%",  # 兼容premium_rate和discount
-                f"{scenario_obj.get('issue_price', result.get('issue_price', 0)):.2f}",
-                f"{result.get('profit_prob', 0):.1f}%",
-                f"{result.get('median_return', 0):+.1f}%",
-                scenario_obj.get('name', scenario_obj.get('description', 'N/A'))  # 情景类型
-            ])
+            scenario_type_counts[scenario_type] = scenario_type_counts.get(scenario_type, 0) + 1
 
-        comprehensive_headers = ['情景描述', '波动率', '漂移率', '溢价率', '发行价(元)', '盈利概率(%)', '收益率中位数(%)', '情景类型']
-        add_table_data(document, comprehensive_headers, comprehensive_table_data, font_size=10.5)  # 五号字体
+        # 计算整体统计指标
+        all_profit_probs = [r.get('profit_prob', 0) for r in comprehensive_results]
+        all_median_returns = [r.get('median_return', 0) for r in comprehensive_results]
+
+        avg_profit_prob = np.mean(all_profit_probs)
+        max_profit_prob = np.max(all_profit_probs)
+        min_profit_prob = np.min(all_profit_probs)
+
+        avg_median_return = np.mean(all_median_returns)
+        max_median_return = np.max(all_median_returns)
+        min_median_return = np.min(all_median_returns)
+
+        # 找出最优和最差情景
+        best_scenario = max(comprehensive_results, key=lambda x: x.get('profit_prob', 0))
+        worst_scenario = min(comprehensive_results, key=lambda x: x.get('profit_prob', 0))
+
+        best_scenario_obj = best_scenario.get('scenario', best_scenario)
+        worst_scenario_obj = worst_scenario.get('scenario', worst_scenario)
+
+        # 生成汇总统计表格
+        summary_data = [
+            ['统计维度', '数值/说明', '备注'],
+            ['情景总数', f'{len(comprehensive_results)}个', '包含所有类型的情景'],
+            ['', '', ''],
+            ['情景类型分布', '', ''],
+        ]
+
+        # 添加各类型情景数量
+        for scenario_type, count in scenario_type_counts.items():
+            summary_data.append([f'• {scenario_type}', f'{count}个', ''])
+
+        # 添加整体统计
+        summary_data.extend([
+            ['', '', ''],
+            ['盈利概率统计', '', ''],
+            [f'• 平均盈利概率', f'{avg_profit_prob:.1f}%', '所有情景的平均值'],
+            [f'• 最高盈利概率', f'{max_profit_prob:.1f}%', f'最优情景：{best_scenario_obj.get("name", "N/A")}'],
+            [f'• 最低盈利概率', f'{min_profit_prob:.1f}%', f'最差情景：{worst_scenario_obj.get("name", "N/A")}'],
+            ['', '', ''],
+            ['收益率中位数统计', '', ''],
+            [f'• 平均收益率', f'{avg_median_return*100:+.1f}%', '年化收益率'],
+            [f'• 最高收益率', f'{max_median_return*100:+.1f}%', f'情景：{best_scenario_obj.get("name", "N/A")}'],
+            [f'• 最低收益率', f'{min_median_return*100:+.1f}%', f'情景：{worst_scenario_obj.get("name", "N/A")}'],
+        ])
+
+        add_table_data(document, ['统计项目', '数值', '说明'], summary_data)
 
         # 添加说明
         add_paragraph(document, '')
-        add_paragraph(document, '情景说明：')
-        add_paragraph(document, '• 当前情景：标的股票120日窗口真实数据，反映项目实际风险收益特征')
-        add_paragraph(document, '• 6.2.1市场指数情景：45个情景（3×3×5矩阵），涵盖各大指数的漂移率、波动率、溢价率组合')
-        add_paragraph(document, '• 6.2.2行业指数情景：45个情景（3×3×5矩阵），涵盖行业指数的漂移率、波动率、溢价率组合')
-        add_paragraph(document, '• 后续章节：基于行业PE、个股PE、DCF估值的情景分析，全面评估不同估值水平的影响')
+        add_paragraph(document, '📊 情景说明：')
+        add_paragraph(document, f'• 6.1多参数情景：{scenario_type_counts.get("多参数情景", 0)}个，涵盖漂移率、波动率、溢价率的全部组合')
+        add_paragraph(document, f'• 6.2.1市场指数情景：{scenario_type_counts.get("市场指数情景", 0)}个（3×3×5矩阵）')
+        add_paragraph(document, f'• 6.2.2行业指数情景：{scenario_type_counts.get("行业指数情景", 0)}个（3×3×5矩阵）')
+        add_paragraph(document, f'• 6.3行业PE情景：{scenario_type_counts.get("行业PE情景", 0)}个（1×3×5矩阵）')
+        add_paragraph(document, f'• 6.4个股PE情景：{scenario_type_counts.get("个股PE情景", 0)}个（1×3×5矩阵）')
+        add_paragraph(document, f'• 6.5 DCF估值情景：{scenario_type_counts.get("DCF估值情景", 0)}个（1×3×5矩阵）')
         add_paragraph(document, '')
+
         add_paragraph(document, '📊 评级说明：')
-        add_paragraph(document, '• 乐观：盈利概率和收益率中位数均较高，投资价值突出')
-        add_paragraph(document, '• 中性：盈利概率和收益率中位数适中，风险可控')
-        add_paragraph(document, '• 悲观：盈利概率或收益率中位数较低，风险较高')
+        add_paragraph(document, f'• 平均盈利概率：{avg_profit_prob:.1f}%，{"较高" if avg_profit_prob >= 70 else "中等" if avg_profit_prob >= 50 else "较低"}')
+        add_paragraph(document, f'• 平均收益率：{avg_median_return*100:+.1f}%，{"表现良好" if avg_median_return >= 0.10 else "表现一般" if avg_median_return >= 0 else "表现不佳"}')
+        add_paragraph(document, f'• 最优情景：{best_scenario_obj.get("name", "N/A")}，盈利概率{best_scenario.get("profit_prob", 0):.1f}%，收益率{best_scenario.get("median_return", 0)*100:+.1f}%')
+        add_paragraph(document, f'• 最差情景：{worst_scenario_obj.get("name", "N/A")}，盈利概率{worst_scenario.get("profit_prob", 0):.1f}%，收益率{worst_scenario.get("median_return", 0)*100:+.1f}%')
         add_paragraph(document, '')
-        add_paragraph(document, '投资建议：')
-        add_paragraph(document, '• 优先选择乐观评级情景，安全边际充足')
-        add_paragraph(document, '• 当前项目定位在"当前情景"，需结合实际参数评估')
-        add_paragraph(document, '• 不同情景反映市场环境变化，建议根据风险偏好选择')
+
+        add_paragraph(document, '💡 投资建议：')
+        if avg_profit_prob >= 70 and avg_median_return >= 10:
+            add_paragraph(document, '• 整体情景分析显示投资价值较高，多数情景下盈利概率和收益率表现良好')
+            add_paragraph(document, '• 建议关注市场环境和行业趋势，选择有利时机参与')
+        elif avg_profit_prob >= 50:
+            add_paragraph(document, '• 整体情景分析显示投资价值中等，需结合具体市场环境谨慎评估')
+            add_paragraph(document, '• 建议要求更高的安全边际（折价率）或等待更好的市场时机')
+        else:
+            add_paragraph(document, '• 整体情景分析显示投资风险较高，多数情景下盈利概率不足')
+            add_paragraph(document, '• 建议谨慎参与或要求显著折价以弥补风险')
+        add_paragraph(document, '• 详细情景数据请参见附件，可根据实际市场情况选择参考情景')
 
     # 生成多维度情景图表（补充分析）
     # 注：波动率×折价率热力图已在6.3章节展示，此处不再重复

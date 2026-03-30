@@ -30,6 +30,12 @@ def generate_chapter(context):
     market_data = context['market_data']
     IMAGES_DIR = context['IMAGES_DIR']
 
+    # 添加第九章主标题
+    add_title(document, '九、风控建议与风险提示', level=1)
+    add_paragraph(document, '本章节从风险控制角度，给出综合评估汇总、盈亏平衡分析、报价方案建议和全面的风险提示。')
+    add_paragraph(document, '基于保守原则，确保投资决策在合理风险可控范围内进行。')
+    add_paragraph(document, '')
+
     # 从context['results']中获取其他章节的计算结果
     all_scenarios = context['results'].get('all_scenarios', [])
     var_95 = context['results'].get('var_95', 0.5)

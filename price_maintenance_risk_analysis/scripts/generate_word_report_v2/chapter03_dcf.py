@@ -33,6 +33,7 @@ PROJECT_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 sys.path.insert(0, PROJECT_DIR)
 
 from utils.font_manager import get_font_prop
+from utils.wacc_calculator import WACCCalculator, calculate_wacc_simple
 from module_utils import (
     add_title,
     add_paragraph,
@@ -375,7 +376,7 @@ def generate_chapter(context):
 
     # 添加历史FCF数据分析
     if 'historical_fcf_data' in project_params and project_params['historical_fcf_data']:
-        add_title(document, '3.3.2 历史FCF数据分析', level=3)
+        add_title(document, '3.3.3 历史FCF数据分析', level=3)
 
         historical_fcf = project_params['historical_fcf_data']
         fcf_data_list = historical_fcf['data']
@@ -433,7 +434,106 @@ def generate_chapter(context):
         else:
             add_paragraph(document, '• ⚠️ FCF为负值，可能由于大额资本支出或营运资金占用')
 
-    wacc_example = 0.10  # 10%
+    # ==================== WACC计算 ====================
+    add_title(document, '3.3.2 WACC（加权平均资本成本）计算', level=3)
+
+    add_paragraph(document, 'WACC是DCF估值中的关键参数，代表投资者要求的必要收益率。本节使用CAPM模型计算WACC。')
+    add_paragraph(document, '')
+
+    # 尝试使用tushare计算WACC
+    wacc_result = None
+    try:
+        ts_token = os.environ.get('TUSHARE_TOKEN', '')
+        if ts_token:
+            import tushare as ts
+            pro = ts.pro_api(ts_token)
+            calculator = WACCCalculator(pro_api=pro)
+
+            # 计算WACC
+            wacc_result = calculator.calculate_wacc(
+                stock_code=stock_code,
+                market_data=project_params  # 传递市场数据
+            )
+
+            # 显示WACC计算详情
+            add_paragraph(document, '📊 WACC计算过程：')
+            add_paragraph(document, '')
+
+            # 资本结构
+            cap_struct = wacc_result['capital_structure']
+            capital_structure_data = [
+                ['资本结构', '数值（亿元）', '占比'],
+                ['股权市值', f'{cap_struct["market_cap"]/1e8:.2f}', f'{cap_struct["equity_ratio"]*100:.1f}%'],
+                ['总债务', f'{cap_struct["total_debt"]/1e8:.2f}', f'{cap_struct["debt_ratio"]*100:.1f}%'],
+                ['', '', ''],
+                ['CAPM模型参数', '', ''],
+                ['无风险利率', f'{wacc_result["parameters"]["risk_free_rate"]*100:.1f}%', '10年期国债收益率'],
+                ['市场风险溢价', f'{wacc_result["parameters"]["market_premium"]*100:.1f}%', '历史平均'],
+                ['Beta系数', f'{wacc_result["beta"]:.3f}', f'{stock_code} 相对沪深300'],
+                ['', '', ''],
+                ['资本成本', '', ''],
+                ['股权成本', f'{wacc_result["cost_of_equity"]*100:.2f}%', 'CAPM计算'],
+                ['债务成本（税前）', f'{wacc_result["cost_of_debt"]*100:.1f}%', '无风险利率+2%'],
+                ['债务成本（税后）', f'{wacc_result["cost_of_debt_after_tax"]*100:.2f}%', f'扣除{wacc_result["parameters"]["tax_rate"]:.0%}所得税'],
+                ['', '', ''],
+                ['WACC结果', '', ''],
+                ['WACC', f'{wacc_result["wacc"]*100:.2f}%', '加权平均资本成本']
+            ]
+            add_table_data(document, ['', '', ''], capital_structure_data)
+
+            # 使用计算得到的WACC
+            wacc_example = wacc_result['wacc']
+
+            add_paragraph(document, '')
+            add_paragraph(document, '✅ WACC计算完成')
+            add_paragraph(document, f'• 计算方式：CAPM模型 + 资本结构加权')
+            add_paragraph(document, f'• Beta系数：{wacc_result["beta"]:.3f}（{wacc_result.get("parameters", {}).get("beta_window", 120)}天窗口）')
+            add_paragraph(document, f'• WACC结果：{wacc_example*100:.2f}%')
+
+            if wacc_result.get('beta_industry'):
+                add_paragraph(document, f'• 行业Beta：{wacc_result["beta_industry"]:.3f}（参考）')
+
+        else:
+            raise ValueError("未设置TUSHARE_TOKEN环境变量")
+    except Exception as e:
+        print(f"⚠️ WACC自动计算失败: {e}，使用简化计算")
+        add_paragraph(document, '⚠️ WACC自动计算失败，使用简化计算方法（默认参数）')
+        add_paragraph(document, '')
+
+        # 使用简化计算
+        beta_from_config = project_params.get('beta', 1.0)
+        wacc_example = calculate_wacc_simple(beta=beta_from_config)
+
+        wacc_result = {
+            'wacc': wacc_example,
+            'cost_of_equity': 0.03 + beta_from_config * 0.07,
+            'cost_of_debt': 0.05,
+            'beta': beta_from_config,
+            'capital_structure': {
+                'market_cap': 10_000_000_000,
+                'total_debt': 3_000_000_000,
+                'equity_ratio': 0.7,
+                'debt_ratio': 0.3
+            },
+            'parameters': {
+                'risk_free_rate': 0.03,
+                'market_premium': 0.07,
+                'tax_rate': 0.25
+            }
+        }
+
+        # 显示简化计算的参数
+        add_paragraph(document, '📊 简化计算参数：')
+        add_paragraph(document, f'• Beta系数：{beta_from_config:.2f}（来自配置文件）')
+        add_paragraph(document, f'• 无风险利率：3.0%（默认值）')
+        add_paragraph(document, f'• 市场风险溢价：7.0%（默认值）')
+        add_paragraph(document, f'• 股权占比：70%（默认值）')
+        add_paragraph(document, f'• 债务占比：30%（默认值）')
+        add_paragraph(document, f'• 企业所得税率：25%（默认值）')
+        add_paragraph(document, f'• WACC结果：{wacc_example*100:.2f}%')
+
+    add_paragraph(document, '')
+
     growth_example = 0.025  # 2.5% 永续增长率
 
     # 计算示例 - 使用真实FCF数据（如果有）
@@ -493,7 +593,7 @@ def generate_chapter(context):
         fcf_sources = [f"预测（增长{fcf_growth_example*100:.1f}%）" for _ in range(10)]
 
     # 添加逐年FCF预测和折现计算
-    add_title(document, '3.3.3 逐年FCF预测与折现计算', level=3)
+    add_title(document, '3.3.4 逐年FCF预测与折现计算', level=3)
 
     add_paragraph(document, f'基于WACC={wacc_example*100:.1f}%，预测期FCF增长率={fcf_growth_example*100:.1f}%，永续增长率={growth_example*100:.1f}%：')
     add_paragraph(document, '')
@@ -523,7 +623,7 @@ def generate_chapter(context):
     add_paragraph(document, f'预测期FCF现值合计：{pv_fcfs_detail/100000000:.2f} 亿元')
 
     # 添加终值计算详细过程
-    add_title(document, '3.3.4 终值（Terminal Value）计算', level=3)
+    add_title(document, '3.3.5 终值（Terminal Value）计算', level=3)
 
     terminal_fcf = fcfs[-1] * (1 + growth_example)
     terminal_value = terminal_fcf / (wacc_example - growth_example)
@@ -545,7 +645,7 @@ def generate_chapter(context):
     add_paragraph(document, f'          = {pv_terminal/100000000:.2f} 亿元')
 
     # 添加企业价值和股权价值计算
-    add_title(document, '3.3.5 企业价值与股权价值计算', level=3)
+    add_title(document, '3.3.6 企业价值与股权价值计算', level=3)
 
     enterprise_value = pv_fcfs_detail + pv_terminal  # 使用详细计算的现值
 
