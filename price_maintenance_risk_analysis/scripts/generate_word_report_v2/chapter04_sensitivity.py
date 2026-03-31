@@ -837,6 +837,90 @@ def generate_chapter(context):
     add_paragraph(document, f'• 锁定期：{project_params["lockup_period"]}个月')
     add_paragraph(document, '')
 
+    # 添加折扣率敏感性分析表
+    add_paragraph(document, '【发行价折扣敏感性分析表】')
+    add_paragraph(document, '')
+
+    # 定义折扣率情景（从折价20%到溢价20%）
+    discount_scenarios = [
+        (-0.20, "深度折价"),
+        (-0.15, "较大折价"),
+        (-0.10, "适中折价"),
+        (-0.05, "小幅折价"),
+        (0.00, "平价发行"),
+        (0.05, "小幅溢价"),
+        (0.10, "适中溢价"),
+        (0.15, "较大溢价"),
+        (0.20, "高溢价")
+    ]
+
+    # 使用120日窗口的波动率和漂移率
+    current_vol = risk_params["volatility"]
+    current_drift = risk_params["drift"]
+    lockup_months = project_params['lockup_period']
+    current_price = project_params['current_price']
+    base_ma20 = ma120  # 使用MA120作为基准（定价基准）
+
+    discount_analysis_data = []
+
+    # 定义盈利目标
+    profit_targets_pct = [0, 5, 10, 15, 20]
+
+    for discount, scenario_name in discount_scenarios:
+        # 计算发行价
+        issue_price_scenario = base_ma20 * (1 + discount)
+
+        # 判断发行类型和盈利阈值
+        if discount < 0:
+            # 折价发行，盈利阈值 = 发行价
+            threshold = issue_price_scenario
+        else:
+            # 溢价发行，盈利阈值 = max(MA20, 发行价×1.02)
+            threshold = max(base_ma20, issue_price_scenario * 1.02)
+
+        # 计算锁定期的漂移率和波动率
+        lockup_drift = current_drift * (lockup_months / 12)
+        lockup_vol = current_vol * np.sqrt(lockup_months / 12)
+
+        # 计算基础盈利概率（保本，0%）- 使用对数正态分布
+        prob = calculate_profit_probability_lognormal(
+            target_price=threshold,
+            current_price=current_price,
+            drift=current_drift,
+            volatility=current_vol,
+            period_months=lockup_months
+        )
+
+        # 计算期望收益率（基于对数正态分布）
+        expected_future_price = current_price * np.exp(lockup_drift + lockup_vol**2 / 2)
+        expected_return = (expected_future_price - issue_price_scenario) / issue_price_scenario * 100
+
+        # 计算不同盈利目标的概率 - 使用对数正态分布
+        profit_probs = []
+        for target_pct in profit_targets_pct:
+            target_price = issue_price_scenario * (1 + target_pct/100)
+            prob_target = calculate_profit_probability_lognormal(
+                target_price=target_price,
+                current_price=current_price,
+                drift=current_drift,
+                volatility=current_vol,
+                period_months=lockup_months
+            )
+            profit_probs.append(f'{prob_target:.1f}%')
+
+        discount_analysis_data.append([
+            f'{discount*100:+.0f}%',
+            scenario_name,
+            f'{prob:.1f}%',
+            f'{expected_return:+.1f}%',
+            f'/'.join(profit_probs)
+        ])
+
+    # 添加表格
+    add_table_data(document, ['折扣率', '情景', '保本概率', '期望收益率', '盈利目标概率(0/5/10/15/20%)'], discount_analysis_data)
+
+    add_paragraph(document, '')
+
     # 分析结论
     add_paragraph(document, '')
     add_paragraph(document, '发行价折扣情景分析结论：')
