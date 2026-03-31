@@ -347,12 +347,12 @@ def generate_chapter(context):
     add_paragraph(document, '• 不同窗口期的参数差异会影响蒙特卡洛模拟结果，5.2节将对比分析')
     add_paragraph(document, '')
 
-    # 默认使用250日窗口参数
-    mc_volatility = mc_volatility_250d
-    mc_drift = mc_drift_250d
+    # 默认使用120日窗口参数（平衡稳定性和时效性）
+    mc_volatility = mc_volatility_120d
+    mc_drift = mc_drift_120d
 
     # ==================== 模拟结果 ====================
-    add_paragraph(document, '2. 模拟结果（250日窗口基准）', bold=True)
+    add_paragraph(document, '2. 模拟结果（120日窗口基准）', bold=True)
 
     # 运行简化模拟
     lockup_days = project_params['lockup_period'] * 30
@@ -455,8 +455,8 @@ def generate_chapter(context):
 
     add_paragraph(document, '')
     add_paragraph(document, '参数说明：')
-    add_paragraph(document, '• 年化漂移率反映股价的长期趋势，正值表示上升趋势（基于250日窗口历史数据）')
-    add_paragraph(document, '• 年化波动率反映股价的不确定性，值越大风险越高（基于250日窗口历史数据）')
+    add_paragraph(document, '• 年化漂移率反映股价的长期趋势，正值表示上升趋势（基于120日窗口历史数据）')
+    add_paragraph(document, '• 年化波动率反映股价的不确定性，值越大风险越高（基于120日窗口历史数据）')
     add_paragraph(document, '• 模拟基于几何布朗运动（GBM）模型，假设股价服从对数正态分布')
     add_paragraph(document, '• 锁定期内的收益率 = 漂移率×时间 + 波动率×√时间×随机因子')
 
