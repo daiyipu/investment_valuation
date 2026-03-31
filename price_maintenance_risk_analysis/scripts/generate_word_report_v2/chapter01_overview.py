@@ -350,29 +350,24 @@ def generate_chapter(context):
                 add_image(document, indices_charts_paths[2], width=Inches(6))
                 add_paragraph(document, '')
 
-            add_paragraph(document, '图表 1.7: 各指数技术位置对比 (60日窗口)')
-            if len(indices_charts_paths) > 3 and os.path.exists(indices_charts_paths[3]):
-                add_image(document, indices_charts_paths[3], width=Inches(6))
-                add_paragraph(document, '')
-
             # 添加图表 - 120日窗口（半年线）
-            add_paragraph(document, '图表 1.8: 各指数波动率对比 (120日窗口/半年线)')
+            add_paragraph(document, '图表 1.7: 各指数波动率对比 (120日窗口/半年线)')
             if len(indices_charts_paths) > 4 and os.path.exists(indices_charts_paths[4]):
                 add_image(document, indices_charts_paths[4], width=Inches(6))
                 add_paragraph(document, '')
 
-            add_paragraph(document, '图表 1.9: 各指数年化收益率对比 (120日窗口/半年线)')
+            add_paragraph(document, '图表 1.8: 各指数年化收益率对比 (120日窗口/半年线)')
             if len(indices_charts_paths) > 5 and os.path.exists(indices_charts_paths[5]):
                 add_image(document, indices_charts_paths[5], width=Inches(6))
                 add_paragraph(document, '')
 
             # 添加图表 - 250日窗口
-            add_paragraph(document, '图表 1.10: 各指数波动率对比 (250日年线窗口)')
+            add_paragraph(document, '图表 1.9: 各指数波动率对比 (250日年线窗口)')
             if len(indices_charts_paths) > 6 and os.path.exists(indices_charts_paths[6]):
                 add_image(document, indices_charts_paths[6], width=Inches(6.3))
                 add_paragraph(document, '')
 
-            add_paragraph(document, '图表 1.11: 各指数年化收益率对比 (250日年线窗口)')
+            add_paragraph(document, '图表 1.10: 各指数年化收益率对比 (250日年线窗口)')
             if len(indices_charts_paths) > 7 and os.path.exists(indices_charts_paths[7]):
                 add_image(document, indices_charts_paths[7], width=Inches(6.3))
                 add_paragraph(document, '')
