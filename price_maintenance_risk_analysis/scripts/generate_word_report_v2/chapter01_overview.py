@@ -130,11 +130,11 @@ def generate_chapter(context):
         ['发行价格', f'{issue_price:.2f} 元/股'],
         ['发行数量', f'{project_params["issue_shares"]:,} 股'],
         ['锁定期', f'{lockup_period} 个月'],
-        ['投资金额（固定）', f'{project_params["financing_amount"] / 100000000:.2f} 亿元'],
+        ['投资金额（模拟）', f'{project_params["financing_amount"] / 100000000:.2f} 亿元'],
         ['当前价格', f'{current_price:.2f} 元/股'],
         ['MA20价格', f'{ma20:.2f} 元/股'],
         ['发行类型', issue_type],
-        ['安全边际/溢价率', f'{discount_premium:.2f}%']
+        ['安全边际/溢价率（模拟）', f'{discount_premium:.2f}%']
     ]
     add_table_data(document, project_headers, project_data)
 
