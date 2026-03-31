@@ -1071,10 +1071,17 @@ def generate_chapter(context):
 
         # 添加模拟参数说明
         add_paragraph(document, '模拟参数：', bold=True)
+
+        # 计算名义溢价率和实际溢价率
+        pricing_ma20 = project_params.get('pricing_ma20', market_data.get('ma_20', project_params['current_price']))
+        nominal_premium = (project_params['issue_price'] - pricing_ma20) / pricing_ma20 * 100  # 名义溢价率（相对MA20）
+        actual_premium = (project_params['issue_price'] - project_params['current_price']) / project_params['current_price'] * 100  # 实际溢价率（相对当前价）
+
         mc_5_5_params = [
             ['当前价格', f'{project_params["current_price"]:.2f}元'],
             ['发行价格', f'{project_params["issue_price"]:.2f}元'],
-            ['溢价率', f'{(project_params["issue_price"]/project_params["current_price"]-1)*100:+.2f}%'],
+            ['名义溢价率', f'{nominal_premium:+.2f}%（相对MA20: {pricing_ma20:.2f}元）'],
+            ['实际溢价率', f'{actual_premium:+.2f}%（相对当前价）'],
             ['预测漂移率', f'{predicted_drift*100:.2f}%（来自5.3节ARIMA预测）'],
             ['预测波动率', f'{predicted_vol*100:.2f}%（来自5.4节GARCH预测）'],
             ['模拟期数', f'{time_steps}日（120个交易日，约半年）'],
