@@ -439,9 +439,17 @@ def generate_chapter(context):
 
     add_paragraph(document, 'WACC是DCF估值中的关键参数，代表投资者要求的必要收益率。本节使用CAPM模型计算WACC。')
     add_paragraph(document, '')
+    add_paragraph(document, '【参数说明】')
+    add_paragraph(document, '• 无风险利率（Rf）：1.85%（十年期国债收益率，2025年末数据）')
+    add_paragraph(document, '• 市场收益率（Rm）：8.0%（沪深300预期收益率）')
+    add_paragraph(document, '• 市场风险溢价（Rm-Rf）：6.15%')
+    add_paragraph(document, '• 债务成本：无风险利率 × (1 + 50%) = 1.85% × 1.5 = 2.78%')
+    add_paragraph(document, '• Beta系数：使用行业Beta（行业内成分股相对沪深300的Beta中位数）')
+    add_paragraph(document, '')
 
     # 尝试使用tushare计算WACC
     wacc_result = None
+    industry_code = None
     try:
         ts_token = os.environ.get('TUSHARE_TOKEN', '')
         if ts_token:
@@ -449,49 +457,88 @@ def generate_chapter(context):
             pro = ts.pro_api(ts_token)
             calculator = WACCCalculator(pro_api=pro)
 
-            # 计算WACC
+            # 获取申万行业代码
+            try:
+                df_industry = pro.index_member(
+                    index_code='801010.SI',  # 申万一级行业
+                    fields='con_code,index_code,in_date'
+                )
+                # 查找股票所属的申万一级行业
+                df_stock_industry = pro.daily_basic(
+                    ts_code=stock_code,
+                    fields='ts_code,industry'
+                )
+                if not df_stock_industry.empty:
+                    industry = df_stock_industry['industry'].iloc[0]
+                    print(f"   股票所属行业：{industry}")
+            except Exception as e:
+                print(f"   获取行业代码失败: {e}")
+
+            # 计算WACC（使用行业Beta）
             wacc_result = calculator.calculate_wacc(
                 stock_code=stock_code,
-                market_data=project_params  # 传递市场数据
+                market_data=project_params,  # 传递市场数据
+                industry_code='801010.SI',   # 申万一级行业代码（电子）
+                use_industry_beta=True       # 使用行业Beta
             )
 
             # 显示WACC计算详情
-            add_paragraph(document, ' WACC计算过程：')
+            add_paragraph(document, '【WACC计算结果】')
             add_paragraph(document, '')
 
-            # 资本结构
+            # 构建详细表格
             cap_struct = wacc_result['capital_structure']
+            params = wacc_result['parameters']
+
+            # 第一部分：参数说明
             capital_structure_data = [
-                ['资本结构', '数值（亿元）', '占比'],
+                ['【参数说明】', '', ''],
+                ['无风险利率（Rf）', f'{params["risk_free_rate"]*100:.2f}%', '十年期国债收益率（2025年末数据）'],
+                ['市场收益率（Rm）', f'{params.get("market_return", (params["risk_free_rate"] + params["market_premium"]))*100:.1f}%', '沪深300预期收益率'],
+                ['市场风险溢价（Rm-Rf）', f'{params["market_premium"]*100:.2f}%', '= 8.0% - 1.85%'],
+                ['企业所得税率', f'{params["tax_rate"]:.0%}', '法定税率'],
+                ['', '', ''],
+                ['【Beta系数】', '', ''],
+                ['个股Beta', f'{wacc_result.get("beta_stock", 1.0):.3f}', f'{stock_code} 相对沪深300（{params["beta_window"]}天窗口）'],
+                ['行业Beta', f'{wacc_result.get("beta_industry", 1.0):.3f}', '行业内成分股Beta中位数'],
+                ['采用Beta', f'{wacc_result["beta"]:.3f}', '使用行业Beta（更稳健）'],
+                ['', '', ''],
+                ['【资本结构】', '数值（亿元）', '占比'],
                 ['股权市值', f'{cap_struct["market_cap"]/1e8:.2f}', f'{cap_struct["equity_ratio"]*100:.1f}%'],
-                ['总债务', f'{cap_struct["total_debt"]/1e8:.2f}', f'{cap_struct["debt_ratio"]*100:.1f}%'],
-                ['', '', ''],
-                ['CAPM模型参数', '', ''],
-                ['无风险利率', f'{wacc_result["parameters"]["risk_free_rate"]*100:.1f}%', '10年期国债收益率'],
-                ['市场风险溢价', f'{wacc_result["parameters"]["market_premium"]*100:.1f}%', '历史平均'],
-                ['Beta系数', f'{wacc_result["beta"]:.3f}', f'{stock_code} 相对沪深300'],
-                ['', '', ''],
-                ['资本成本', '', ''],
-                ['股权成本', f'{wacc_result["cost_of_equity"]*100:.2f}%', 'CAPM计算'],
-                ['债务成本（税前）', f'{wacc_result["cost_of_debt"]*100:.1f}%', '无风险利率+2%'],
-                ['债务成本（税后）', f'{wacc_result["cost_of_debt_after_tax"]*100:.2f}%', f'扣除{wacc_result["parameters"]["tax_rate"]:.0%}所得税'],
-                ['', '', ''],
-                ['WACC结果', '', ''],
-                ['WACC', f'{wacc_result["wacc"]*100:.2f}%', '加权平均资本成本']
+                ['有息负债', f'{cap_struct.get("interest_bearing_debt", cap_struct.get("total_debt", 0))/1e8:.2f}', f'{cap_struct["debt_ratio"]*100:.1f}%'],
             ]
+
+            # 如果有有息负债明细，添加到表格
+            if cap_struct.get('debt_breakdown'):
+                debt_breakdown = cap_struct['debt_breakdown']
+                capital_structure_data.extend([
+                    ['  - 短期借款', f'{debt_breakdown.get("短期借款", 0)/1e8:.2f}', ''],
+                    ['  - 长期借款', f'{debt_breakdown.get("长期借款", 0)/1e8:.2f}', ''],
+                    ['  - 应付债券', f'{debt_breakdown.get("应付债券", 0)/1e8:.2f}', ''],
+                    ['  - 一年内到期非流动负债', f'{debt_breakdown.get("一年内到期非流动负债", 0)/1e8:.2f}', ''],
+                ])
+
+            capital_structure_data.extend([
+                ['', '', ''],
+                ['【资本成本】', '', ''],
+                ['股权成本（Re）', f'{wacc_result["cost_of_equity"]*100:.2f}%', 'CAPM计算：Rf + β × (Rm-Rf)'],
+                ['债务成本（税前）', f'{wacc_result["cost_of_debt"]*100:.2f}%', f'无风险利率 × (1 + {params["debt_premium"]*100:.0f}%)'],
+                ['债务成本（税后）', f'{wacc_result["cost_of_debt_after_tax"]*100:.2f}%', f'扣除{params["tax_rate"]:.0%}所得税'],
+                ['', '', ''],
+                ['【WACC结果】', '', ''],
+                ['WACC', f'{wacc_result["wacc"]*100:.2f}%', '加权平均资本成本'],
+            ])
+
             add_table_data(document, ['', '', ''], capital_structure_data)
 
             # 使用计算得到的WACC
             wacc_example = wacc_result['wacc']
 
             add_paragraph(document, '')
-            add_paragraph(document, ' WACC计算完成')
-            add_paragraph(document, f'• 计算方式：CAPM模型 + 资本结构加权')
-            add_paragraph(document, f'• Beta系数：{wacc_result["beta"]:.3f}（{wacc_result.get("parameters", {}).get("beta_window", 120)}天窗口）')
-            add_paragraph(document, f'• WACC结果：{wacc_example*100:.2f}%')
-
-            if wacc_result.get('beta_industry'):
-                add_paragraph(document, f'• 行业Beta：{wacc_result["beta_industry"]:.3f}（参考）')
+            add_paragraph(document, '【WACC计算公式】')
+            add_paragraph(document, f'WACC = 股权占比 × 股权成本 + 债务占比 × 税后债务成本')
+            add_paragraph(document, f'     = {cap_struct["equity_ratio"]:.1%} × {wacc_result["cost_of_equity"]*100:.2f}% + {cap_struct["debt_ratio"]:.1%} × {wacc_result["cost_of_debt_after_tax"]*100:.2f}%')
+            add_paragraph(document, f'     = {wacc_example*100:.2f}%')
 
         else:
             raise ValueError("未设置TUSHARE_TOKEN环境变量")
@@ -506,8 +553,8 @@ def generate_chapter(context):
 
         wacc_result = {
             'wacc': wacc_example,
-            'cost_of_equity': 0.03 + beta_from_config * 0.07,
-            'cost_of_debt': 0.05,
+            'cost_of_equity': 0.0185 + beta_from_config * 0.0615,
+            'cost_of_debt': 0.0185 * 1.5,
             'beta': beta_from_config,
             'capital_structure': {
                 'market_cap': 10_000_000_000,
@@ -516,8 +563,8 @@ def generate_chapter(context):
                 'debt_ratio': 0.3
             },
             'parameters': {
-                'risk_free_rate': 0.03,
-                'market_premium': 0.07,
+                'risk_free_rate': 0.0185,
+                'market_premium': 0.0615,
                 'tax_rate': 0.25
             }
         }
@@ -525,8 +572,9 @@ def generate_chapter(context):
         # 显示简化计算的参数
         add_paragraph(document, ' 简化计算参数：')
         add_paragraph(document, f'• Beta系数：{beta_from_config:.2f}（来自配置文件）')
-        add_paragraph(document, f'• 无风险利率：3.0%（默认值）')
-        add_paragraph(document, f'• 市场风险溢价：7.0%（默认值）')
+        add_paragraph(document, f'• 无风险利率：1.85%（十年期国债收益率）')
+        add_paragraph(document, f'• 市场收益率：8.0%（沪深300预期收益率）')
+        add_paragraph(document, f'• 市场风险溢价：6.15%（= 8.0% - 1.85%）')
         add_paragraph(document, f'• 股权占比：70%（默认值）')
         add_paragraph(document, f'• 债务占比：30%（默认值）')
         add_paragraph(document, f'• 企业所得税率：25%（默认值）')

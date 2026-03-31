@@ -21,10 +21,10 @@ class WACCCalculator:
 
     # 默认参数
     DEFAULT_PARAMS = {
-        'risk_free_rate': 0.03,      # Rf: 无风险利率 3%（10年期国债收益率）
-        'market_return': 0.10,       # Rm: 市场收益率 10%（沪深300预期收益率）
-        'market_premium': 0.07,      # Rm - Rf: 市场风险溢价 7% (= 10% - 3%)
-        'cost_of_debt': 0.05,        # 债务成本 5%（无风险利率 + 2%）
+        'risk_free_rate': 0.0185,    # Rf: 无风险利率 1.85%（10年期国债收益率，2025年末）
+        'market_return': 0.08,       # Rm: 市场收益率 8%（沪深300预期收益率）
+        'market_premium': 0.0615,    # Rm - Rf: 市场风险溢价 6.15% (= 8% - 1.85%)
+        'debt_premium': 0.50,        # 债务成本上浮比例 50%（相对于无风险利率）
         'tax_rate': 0.25,            # 企业所得税率 25%
         'beta_window': 500,          # Beta计算窗口（交易日，约2年）
     }
@@ -231,7 +231,7 @@ class WACCCalculator:
         market_data: Optional[Dict] = None
     ) -> Dict:
         """
-        获取资本结构（股权市值和债务市值）
+        获取资本结构（股权市值和有息债务）
 
         参数:
             stock_code: 股票代码
@@ -239,11 +239,12 @@ class WACCCalculator:
 
         返回:
             {
-                'market_cap': float,      # 股权市值（元）
-                'total_debt': float,      # 总债务（元）
-                'total_equity': float,    # 总权益（元）
-                'debt_ratio': float,      # 债务占比
-                'equity_ratio': float     # 股权占比
+                'market_cap': float,           # 股权市值（元）
+                'interest_bearing_debt': float,# 有息债务（元）
+                'total_equity': float,         # 总权益（元）
+                'debt_ratio': float,           # 债务占比
+                'equity_ratio': float,         # 股权占比
+                'debt_breakdown': dict         # 有息债务明细
             }
         """
         # 如果提供了market_data，从中获取市值
@@ -266,55 +267,84 @@ class WACCCalculator:
                     # 如果没有最新数据，使用默认值
                     market_cap = 10_000_000_000  # 100亿
             except Exception as e:
-                print(f"⚠️ 获取市值失败: {e}，使用默认值")
+                print(f"   获取市值失败: {e}，使用默认值")
                 market_cap = 10_000_000_000
         else:
             # 使用默认值
             market_cap = 10_000_000_000
 
-        # 获取债务和权益数据
+        # 获取有息债务和权益数据
         if self.pro is not None:
             try:
                 # 从balancesheet获取最新数据
-                # 注意：字段名是 total_liab（负债合计）和 total_hldr_eqy_inc_min_int（股东权益合计）
+                # 有息负债包括：短期借款、长期借款、应付债券、一年内到期的非流动负债
                 df_bs = self.pro.balancesheet(
                     ts_code=stock_code,
                     period='20241231',  # 使用最新年报
-                    fields='ts_code,end_date,total_liab,total_hldr_eqy_inc_min_int'
+                    fields='ts_code,end_date,st_borr,lt_borr,bond_payable,non_cur_liab_due_1y,total_hldr_eqy_inc_min_int'
                 )
 
                 if not df_bs.empty and len(df_bs) > 0:
                     # 取最新一期数据
                     latest_bs = df_bs.iloc[-1]
-                    total_debt = latest_bs['total_liab']
+
+                    # 有息负债明细
+                    st_borr = latest_bs.get('st_borr', 0) or 0  # 短期借款
+                    lt_borr = latest_bs.get('lt_borr', 0) or 0  # 长期借款
+                    bond_payable = latest_bs.get('bond_payable', 0) or 0  # 应付债券
+                    non_cur_liab_due_1y = latest_bs.get('non_cur_liab_due_1y', 0) or 0  # 一年内到期的非流动负债
+
+                    # 合计有息负债
+                    interest_bearing_debt = st_borr + lt_borr + bond_payable + non_cur_liab_due_1y
                     total_equity = latest_bs['total_hldr_eqy_inc_min_int']
-                    print(f"   ✅ 成功获取资产负债表数据（{latest_bs['end_date']}）")
+
+                    debt_breakdown = {
+                        '短期借款': st_borr,
+                        '长期借款': lt_borr,
+                        '应付债券': bond_payable,
+                        '一年内到期非流动负债': non_cur_liab_due_1y,
+                        '有息负债合计': interest_bearing_debt
+                    }
+
+                    print(f"   成功获取资产负债表数据（{latest_bs['end_date']}）")
+                    print(f"   有息负债明细：")
+                    print(f"     - 短期借款: {st_borr/1e8:.2f} 亿元")
+                    print(f"     - 长期借款: {lt_borr/1e8:.2f} 亿元")
+                    print(f"     - 应付债券: {bond_payable/1e8:.2f} 亿元")
+                    print(f"     - 一年内到期非流动负债: {non_cur_liab_due_1y/1e8:.2f} 亿元")
+                    print(f"     - 有息负债合计: {interest_bearing_debt/1e8:.2f} 亿元")
+
                 else:
-                    print(f"   ⚠️ 未获取到资产负债表数据，使用默认值")
+                    print(f"   未获取到资产负债表数据，使用默认值")
                     # 使用默认值
-                    total_debt = market_cap * 0.3  # 假设债务占市值30%
+                    interest_bearing_debt = market_cap * 0.3  # 假设有息债务占市值30%
                     total_equity = market_cap
+                    debt_breakdown = {}
 
             except Exception as e:
-                print(f"⚠️ 获取债务数据失败: {e}，使用默认值")
-                total_debt = market_cap * 0.3
+                print(f"   获取债务数据失败: {e}，使用默认值")
+                interest_bearing_debt = market_cap * 0.3
                 total_equity = market_cap
+                debt_breakdown = {}
         else:
             # 使用默认值
-            total_debt = market_cap * 0.3
+            interest_bearing_debt = market_cap * 0.3
             total_equity = market_cap
+            debt_breakdown = {}
 
         # 计算占比
-        total_value = market_cap + total_debt
-        debt_ratio = total_debt / total_value if total_value > 0 else 0.3
+        total_value = market_cap + interest_bearing_debt
+        debt_ratio = interest_bearing_debt / total_value if total_value > 0 else 0.3
         equity_ratio = market_cap / total_value if total_value > 0 else 0.7
 
         return {
             'market_cap': market_cap,
-            'total_debt': total_debt,
+            'interest_bearing_debt': interest_bearing_debt,
+            'total_debt': interest_bearing_debt,  # 兼容旧字段名
             'total_equity': total_equity,
             'debt_ratio': round(debt_ratio, 3),
-            'equity_ratio': round(equity_ratio, 3)
+            'equity_ratio': round(equity_ratio, 3),
+            'debt_breakdown': debt_breakdown
         }
 
     def calculate_wacc(
@@ -323,17 +353,19 @@ class WACCCalculator:
         beta: Optional[float] = None,
         market_data: Optional[Dict] = None,
         industry_code: Optional[str] = None,
-        custom_params: Optional[Dict] = None
+        custom_params: Optional[Dict] = None,
+        use_industry_beta: bool = True
     ) -> Dict:
         """
         计算WACC（加权平均资本成本）
 
         参数:
             stock_code: 股票代码
-            beta: Beta系数（如果为None，则自动计算）
+            beta: Beta系数（如果为None且use_industry_beta=False，则自动计算个股Beta）
             market_data: 市场数据字典（可选）
-            industry_code: 申万行业代码（可选，用于计算行业Beta）
+            industry_code: 申万行业代码（必须，用于计算行业Beta）
             custom_params: 自定义参数（可选，覆盖默认值）
+            use_industry_beta: 是否使用行业Beta（默认True）
 
         返回:
             {
@@ -341,7 +373,8 @@ class WACCCalculator:
                 'cost_of_equity': float,          # 股权成本
                 'cost_of_debt': float,            # 债务成本
                 'beta': float,                    # 使用的Beta
-                'beta_industry': float,           # 行业Beta（如果计算）
+                'beta_industry': float,           # 行业Beta
+                'beta_stock': float,              # 个股Beta
                 'capital_structure': dict,        # 资本结构
                 'parameters': dict,               # 使用的参数
                 'calculation_details': str        # 计算说明
@@ -353,94 +386,127 @@ class WACCCalculator:
             params.update(custom_params)
 
         print(f"\n{'='*60}")
-        print(f"📊 WACC计算：{stock_code}")
+        print(f"WACC计算：{stock_code}")
         print(f"{'='*60}")
 
-        # 1. 计算或使用提供的Beta
-        if beta is None:
-            print(f"\n1️⃣ 计算Beta系数...")
-            beta_result = self.calculate_beta_from_api(
-                stock_code,
-                window=params['beta_window']
-            )
-            beta = beta_result.get('beta', 1.0)
-            if 'error' in beta_result:
-                print(f"   ⚠️ {beta_result['error']}")
-            else:
-                print(f"   ✅ 个股Beta = {beta:.3f}（{beta_result['window']}天窗口）")
+        # 1. 计算个股Beta（用于对比）
+        print(f"\n1. 计算个股Beta系数...")
+        beta_stock_result = self.calculate_beta_from_api(
+            stock_code,
+            window=params['beta_window']
+        )
+        beta_stock = beta_stock_result.get('beta', 1.0)
+        if 'error' in beta_stock_result:
+            print(f"   {beta_stock_result['error']}")
         else:
-            print(f"\n1️⃣ 使用提供的Beta = {beta:.3f}")
+            print(f"   个股Beta = {beta_stock:.3f}（{beta_stock_result['window']}天窗口）")
 
-        # 2. 计算行业Beta（如果提供了行业代码）
-        beta_industry = None
+        # 2. 计算行业Beta（优先使用）
+        beta_industry = 1.0
         if industry_code:
-            print(f"\n2️⃣ 计算行业Beta...")
-            industry_result = self.calculate_industry_beta(industry_code)
+            print(f"\n2. 计算行业Beta系数...")
+            industry_result = self.calculate_industry_beta(industry_code, window=params['beta_window'])
             beta_industry = industry_result.get('industry_beta', 1.0)
             if 'error' not in industry_result:
-                print(f"   ✅ 行业Beta = {beta_industry:.3f}（{industry_result['stock_count']}只成分股）")
-                # 可以选择使用个股Beta和行业Beta的平均值
-                # beta = (beta + beta_industry) / 2
+                print(f"   行业Beta = {beta_industry:.3f}（{industry_result['stock_count']}只成分股）")
+                if 'beta_range' in industry_result:
+                    print(f"   Beta范围：{industry_result['beta_range'][0]:.3f} ~ {industry_result['beta_range'][1]:.3f}")
+            else:
+                print(f"   {industry_result['error']}")
+                beta_industry = beta_stock  # 降级使用个股Beta
 
-        # 3. 获取资本结构
-        print(f"\n3️⃣ 获取资本结构...")
+        # 3. 确定使用的Beta
+        if use_industry_beta and industry_code:
+            beta = beta_industry
+            print(f"\n3. Beta系数选择：使用行业Beta = {beta:.3f}")
+        else:
+            beta = beta if beta is not None else beta_stock
+            print(f"\n3. Beta系数选择：{'使用提供的Beta' if beta is not None else '使用个股Beta'} = {beta:.3f}")
+
+        # 4. 获取资本结构
+        print(f"\n4. 获取资本结构...")
         capital_structure = self.get_capital_structure(stock_code, market_data)
-        print(f"   股权市值: {capital_structure['market_cap']/1e8:.2f} 亿元")
-        print(f"   总债务: {capital_structure['total_debt']/1e8:.2f} 亿元")
-        print(f"   股权占比: {capital_structure['equity_ratio']*100:.1f}%")
-        print(f"   债务占比: {capital_structure['debt_ratio']*100:.1f}%")
 
-        # 4. CAPM计算股权成本
-        print(f"\n4️⃣ CAPM模型计算股权成本...")
+        # 5. CAPM计算股权成本
+        print(f"\n5. CAPM模型计算股权成本...")
         cost_of_equity = params['risk_free_rate'] + beta * params['market_premium']
-        print(f"   无风险利率（Rf）: {params['risk_free_rate']*100:.1f}%")
-        print(f"   市场收益率（Rm）: {params.get('market_return', (params['risk_free_rate'] + params['market_premium']))*100:.1f}%")
-        print(f"   市场风险溢价（Rm - Rf）: {params['market_premium']*100:.1f}%")
-        print(f"   Beta系数（β）: {beta:.3f}")
+        print(f"   无风险利率（Rf）：{params['risk_free_rate']*100:.2f}%（十年期国债收益率）")
+        print(f"   市场收益率（Rm）：{params.get('market_return', (params['risk_free_rate'] + params['market_premium']))*100:.1f}%（沪深300预期收益率）")
+        print(f"   市场风险溢价（Rm - Rf）：{params['market_premium']*100:.2f}%")
+        print(f"   Beta系数（β）：{beta:.3f}（{'行业Beta' if use_industry_beta else '个股Beta'}）")
         print(f"   股权成本（Re）= Rf + β × (Rm - Rf)")
-        print(f"                = {params['risk_free_rate']*100:.1f}% + {beta:.3f} × {params['market_premium']*100:.1f}%")
+        print(f"                = {params['risk_free_rate']*100:.2f}% + {beta:.3f} × {params['market_premium']*100:.2f}%")
         print(f"                = {cost_of_equity*100:.2f}%")
 
-        # 5. 债务成本
-        cost_of_debt = params['cost_of_debt']
-        print(f"\n5️⃣ 债务成本: {cost_of_debt*100:.1f}%")
+        # 6. 计算债务成本（税前）
+        print(f"\n6. 计算债务成本...")
+        cost_of_debt = params['risk_free_rate'] * (1 + params['debt_premium'])
+        print(f"   无风险利率：{params['risk_free_rate']*100:.2f}%")
+        print(f"   债务成本上浮比例：{params['debt_premium']*100:.0f}%")
+        print(f"   税前债务成本 = {params['risk_free_rate']*100:.2f}% × (1 + {params['debt_premium']*100:.0f}%)")
+        print(f"                = {cost_of_debt*100:.2f}%")
 
-        # 6. 计算WACC
-        print(f"\n6️⃣ 计算WACC...")
+        # 7. 计算WACC
+        print(f"\n7. 计算WACC...")
+        cost_of_debt_after_tax = cost_of_debt * (1 - params['tax_rate'])
         wacc = (
             capital_structure['equity_ratio'] * cost_of_equity +
-            capital_structure['debt_ratio'] * cost_of_debt * (1 - params['tax_rate'])
+            capital_structure['debt_ratio'] * cost_of_debt_after_tax
         )
 
-        print(f"   WACC = 股权占比 × 股权成本 + 债务占比 × 债务成本 × (1 - 税率)")
-        print(f"       = {capital_structure['equity_ratio']:.1%} × {cost_of_equity*100:.2f}% + {capital_structure['debt_ratio']:.1%} × {cost_of_debt*100:.1f}% × (1 - {params['tax_rate']:.0%})")
+        print(f"   企业所得税率：{params['tax_rate']:.0%}")
+        print(f"   税后债务成本：{cost_of_debt_after_tax*100:.2f}%")
+        print(f"   WACC = 股权占比 × 股权成本 + 债务占比 × 税后债务成本")
+        print(f"       = {capital_structure['equity_ratio']:.1%} × {cost_of_equity*100:.2f}% + {capital_structure['debt_ratio']:.1%} × {cost_of_debt_after_tax*100:.2f}%")
         print(f"       = {wacc*100:.2f}%")
 
-        # 7. 生成计算说明
+        # 8. 生成计算说明
         details = f"""
 WACC计算详情：
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 资本结构
+【参数说明】
+   无风险利率（Rf）：{params['risk_free_rate']*100:.2f}%（十年期国债收益率，2025年末数据）
+   市场收益率（Rm）：{params.get('market_return', (params['risk_free_rate'] + params['market_premium']))*100:.1f}%（沪深300预期收益率）
+   市场风险溢价（Rm - Rf）：{params['market_premium']*100:.2f}%
+   企业所得税率：{params['tax_rate']:.0%}
+   债务成本上浮比例：{params['debt_premium']*100:.0f}%
+
+【Beta系数】
+   个股Beta：{beta_stock:.3f}（{params['beta_window']}天窗口）
+   行业Beta：{beta_industry:.3f}（行业成分股中位数）
+   采用Beta：{beta:.3f}（{'行业Beta' if use_industry_beta else '个股Beta'}）
+
+【资本结构】
    股权市值：{capital_structure['market_cap']/1e8:.2f} 亿元
-   总债务：{capital_structure['total_debt']/1e8:.2f} 亿元
+   有息负债：{capital_structure['interest_bearing_debt']/1e8:.2f} 亿元"""
+
+        if capital_structure.get('debt_breakdown'):
+            details += f"""
+   有息负债明细：
+     - 短期借款：{capital_structure['debt_breakdown'].get('短期借款', 0)/1e8:.2f} 亿元
+     - 长期借款：{capital_structure['debt_breakdown'].get('长期借款', 0)/1e8:.2f} 亿元
+     - 应付债券：{capital_structure['debt_breakdown'].get('应付债券', 0)/1e8:.2f} 亿元
+     - 一年内到期非流动负债：{capital_structure['debt_breakdown'].get('一年内到期非流动负债', 0)/1e8:.2f} 亿元"""
+
+        details += f"""
    股权占比：{capital_structure['equity_ratio']*100:.1f}%
    债务占比：{capital_structure['debt_ratio']*100:.1f}%
 
-📈 CAPM模型（股权成本）
+【CAPM模型（股权成本）】
    Re = Rf + β × (Rm - Rf)
-   无风险利率（Rf）：{params['risk_free_rate']*100:.1f}%
-   市场收益率（Rm）：{params.get('market_return', (params['risk_free_rate'] + params['market_premium']))*100:.1f}%
-   市场风险溢价（Rm - Rf）：{params['market_premium']*100:.1f}%
-   Beta系数（β）：{beta:.3f}
-   股权成本（Re）：{cost_of_equity*100:.2f}%
+       = {params['risk_free_rate']*100:.2f}% + {beta:.3f} × {params['market_premium']*100:.2f}%
+       = {cost_of_equity*100:.2f}%
 
-💰 债务成本
-   税前债务成本：{cost_of_debt*100:.1f}%
-   企业所得税率：{params['tax_rate']:.0%}
-   税后债务成本：{cost_of_debt*(1-params['tax_rate'])*100:.2f}%
+【债务成本】
+   税前债务成本 = Rf × (1 + 上浮比例)
+                = {params['risk_free_rate']*100:.2f}% × (1 + {params['debt_premium']*100:.0f}%)
+                = {cost_of_debt*100:.2f}%
+   税后债务成本 = {cost_of_debt*100:.2f}% × (1 - {params['tax_rate']:.0%})
+                = {cost_of_debt_after_tax*100:.2f}%
 
-🎯 WACC结果
-   WACC = {capital_structure['equity_ratio']:.1%} × {cost_of_equity*100:.2f}% + {capital_structure['debt_ratio']:.1%} × {cost_of_debt*(1-params['tax_rate'])*100:.2f}%
+【WACC结果】
+   WACC = 股权占比 × 股权成本 + 债务占比 × 税后债务成本
+        = {capital_structure['equity_ratio']:.1%} × {cost_of_equity*100:.2f}% + {capital_structure['debt_ratio']:.1%} × {cost_of_debt_after_tax*100:.2f}%
         = {wacc*100:.2f}%
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
@@ -449,8 +515,9 @@ WACC计算详情：
             'wacc': round(wacc, 4),
             'cost_of_equity': round(cost_of_equity, 4),
             'cost_of_debt': round(cost_of_debt, 4),
-            'cost_of_debt_after_tax': round(cost_of_debt * (1 - params['tax_rate']), 4),
+            'cost_of_debt_after_tax': round(cost_of_debt_after_tax, 4),
             'beta': beta,
+            'beta_stock': beta_stock,
             'beta_industry': beta_industry,
             'capital_structure': capital_structure,
             'parameters': params,
@@ -463,9 +530,9 @@ def calculate_wacc_simple(
     beta: float = 1.0,
     equity_ratio: float = 0.7,
     debt_ratio: float = 0.3,
-    risk_free_rate: float = 0.03,
-    market_premium: float = 0.07,
-    cost_of_debt: float = 0.05,
+    risk_free_rate: float = 0.0185,
+    market_premium: float = 0.0615,
+    debt_premium: float = 0.50,
     tax_rate: float = 0.25
 ) -> float:
     """
@@ -475,15 +542,16 @@ def calculate_wacc_simple(
         beta: Beta系数
         equity_ratio: 股权占比
         debt_ratio: 债务占比
-        risk_free_rate: 无风险利率
-        market_premium: 市场风险溢价
-        cost_of_debt: 债务成本
+        risk_free_rate: 无风险利率（默认1.85%，十年期国债收益率）
+        market_premium: 市场风险溢价（默认6.15%）
+        debt_premium: 债务成本上浮比例（默认50%）
         tax_rate: 所得税率
 
     返回:
         WACC（小数形式，如0.10表示10%）
     """
     cost_of_equity = risk_free_rate + beta * market_premium
+    cost_of_debt = risk_free_rate * (1 + debt_premium)
     wacc = (
         equity_ratio * cost_of_equity +
         debt_ratio * cost_of_debt * (1 - tax_rate)
@@ -493,12 +561,13 @@ def calculate_wacc_simple(
 
 if __name__ == '__main__':
     # 测试代码
-    print("📊 WACC计算器测试\n")
+    print("WACC计算器测试\n")
 
     # 测试简化计算
-    print("1️⃣ 简化计算测试：")
+    print("1. 简化计算测试：")
     wacc_simple = calculate_wacc_simple(beta=1.2)
-    print(f"   Beta=1.2时的WACC = {wacc_simple*100:.2f}%\n")
+    print(f"   Beta=1.2时的WACC = {wacc_simple*100:.2f}%")
+    print(f"   （使用新参数：Rf=1.85%, Rm=8.0%, 债务成本=Rf×1.5）\n")
 
     # 测试完整计算（需要tushare API）
     try:
@@ -506,9 +575,13 @@ if __name__ == '__main__':
         pro = ts.pro_api()
         calculator = WACCCalculator(pro_api=pro)
 
-        print("2️⃣ 完整计算测试（光弘科技 300735.SZ）：")
-        result = calculator.calculate_wacc('300735.SZ')
+        print("2. 完整计算测试（光弘科技 300735.SZ）：")
+        result = calculator.calculate_wacc(
+            '300735.SZ',
+            industry_code='801010.SI',  # 电子行业
+            use_industry_beta=True
+        )
         print(result['calculation_details'])
 
     except ImportError:
-        print("⚠️ 未安装tushare，跳过完整计算测试")
+        print("   未安装tushare，跳过完整计算测试")
