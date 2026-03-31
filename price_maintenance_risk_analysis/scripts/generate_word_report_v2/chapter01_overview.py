@@ -227,7 +227,7 @@ def generate_chapter(context):
                 add_paragraph(document, f'• 60日年化波动率为{market_data.get("volatility_60d", 0)*100:.2f}%，{"高于" if market_data.get("volatility_60d", 0) > 0.3 else "低于"}市场平均水平')
                 add_paragraph(document, f'• 60日年化收益率为{market_data.get("annual_return_60d", 0)*100:.2f}%，{"表现良好" if market_data.get("annual_return_60d", 0) > 0 else "表现不佳"}')
     except Exception as e:
-        print(f"⚠️ 生成个股市场数据图表失败: {e}")
+        print(f" 生成个股市场数据图表失败: {e}")
 
     # 1.3 市场指数分析
     add_paragraph(document, '')
@@ -243,7 +243,7 @@ def generate_chapter(context):
 
     # 优先使用新数据
     if os.path.exists(indices_data_file_v2):
-        print("✅ 使用新方法计算的指数数据（修复后的年化收益率公式）")
+        print(" 使用新方法计算的指数数据（修复后的年化收益率公式）")
         indices_data_file = indices_data_file_v2
 
     if os.path.exists(indices_data_file):
@@ -380,10 +380,10 @@ def generate_chapter(context):
             add_paragraph(document, '• 当前市场环境下，建议关注指数技术位置对个股表现的影响')
 
         except Exception as e:
-            print(f"⚠️ 加载指数数据失败: {e}")
-            add_paragraph(document, '⚠️ 指数数据暂未加载，请先运行07_market_data_analysis.ipynb生成数据')
+            print(f" 加载指数数据失败: {e}")
+            add_paragraph(document, ' 指数数据暂未加载，请先运行07_market_data_analysis.ipynb生成数据')
     else:
-        add_paragraph(document, '⚠️ 指数数据文件不存在，请先运行07_market_data_analysis.ipynb生成数据')
+        add_paragraph(document, ' 指数数据文件不存在，请先运行07_market_data_analysis.ipynb生成数据')
 
     # 1.4 行业数据分析
     add_paragraph(document, '')
@@ -399,7 +399,7 @@ def generate_chapter(context):
             with open(industry_data_file, 'r', encoding='utf-8') as f:
                 industry_data = json.load(f)
 
-            print(f"✅ 已加载行业数据: {industry_data_file}")
+            print(f" 已加载行业数据: {industry_data_file}")
 
             # 1.4.1 行业基本信息
             add_paragraph(document, '')
@@ -510,7 +510,7 @@ def generate_chapter(context):
             add_title(document, '1.4.4 个股与行业对比分析', level=3)
 
             add_paragraph(document, '')
-            add_paragraph(document, '📊 个股与行业表现对比（多窗口期）：')
+            add_paragraph(document, ' 个股与行业表现对比（多窗口期）：')
 
             # 定义窗口期
             windows = [
@@ -571,12 +571,12 @@ def generate_chapter(context):
             add_paragraph(document, '• 不同窗口期反映不同时间维度的市场表现，短期波动较大，长期趋势相对稳定')
 
         else:
-            print(f"⚠️ 行业数据文件不存在: {industry_data_file}")
-            add_paragraph(document, '⚠️ 行业数据暂未加载，请先运行update_market_data.py生成数据')
+            print(f" 行业数据文件不存在: {industry_data_file}")
+            add_paragraph(document, ' 行业数据暂未加载，请先运行update_market_data.py生成数据')
 
     except Exception as e:
-        print(f"⚠️ 加载行业数据失败: {e}")
-        add_paragraph(document, f'⚠️ 行业数据加载失败: {e}')
+        print(f" 加载行业数据失败: {e}")
+        add_paragraph(document, f' 行业数据加载失败: {e}')
 
     add_section_break(document)
 

@@ -307,7 +307,7 @@ def generate_chapter(context):
         add_paragraph(document, f'• 绿色实线：盈亏平衡点（0%）')
 
     except Exception as e:
-        print(f"⚠️ 生成收益率分布图失败: {e}")
+        print(f" 生成收益率分布图失败: {e}")
 
     # ==================== 8.4 CVaR（条件风险价值）分析 ====================
     add_title(document, '8.4 CVaR（条件风险价值）分析', level=2)
@@ -456,12 +456,12 @@ def generate_chapter(context):
 
     # 计算综合风险评级
     risk_rating, risk_emoji, risk_description = get_comprehensive_risk_level(var_95, cvar_95)
-    print(f"✅ 风险评级: {risk_rating} ({risk_emoji})")
+    print(f" 风险评级: {risk_rating} ({risk_emoji})")
 
     add_paragraph(document, '8.7.3 VaR分析的局限性', bold=True)
     add_paragraph(document, '')
 
-    add_paragraph(document, '⚠️ VaR分析的重要提示：')
+    add_paragraph(document, ' VaR分析的重要提示：')
     add_paragraph(document, '• VaR基于历史数据，无法预测黑天鹅事件')
     add_paragraph(document, '• VaR假设正态分布，实际市场可能出现肥尾效应')
     add_paragraph(document, f'• {recommended_window}窗口的VaR为{var_95*100:.2f}%，但实际损失可能超过此值')

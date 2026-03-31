@@ -146,7 +146,7 @@ def generate_chapter(context):
                 net_debt = total_liab_value - cash_equivalents
                 cash_assets = cash_equivalents
 
-                print(f"✅ 从Tushare获取资产负债表数据成功，期间: {balancesheet['report_date']}")
+                print(f" 从Tushare获取资产负债表数据成功，期间: {balancesheet['report_date']}")
                 print(f"   总负债: {total_liab_value:.2f} 亿元")
                 print(f"   货币资金: {cash_equivalents:.2f} 亿元")
                 if net_debt > 0:
@@ -158,7 +158,7 @@ def generate_chapter(context):
             income = financial.get_latest_income()
             if income:
                 net_income = income['net_income']
-                print(f"✅ 从Tushare获取利润表数据成功，期间: {income['report_date']}")
+                print(f" 从Tushare获取利润表数据成功，期间: {income['report_date']}")
                 print(f"   净利润: {net_income/100000000:.2f} 亿元")
 
                 # 更新项目参数
@@ -176,7 +176,7 @@ def generate_chapter(context):
 
                 if start_income > 0 and end_income > 0:
                     net_income_cagr = (end_income / start_income) ** (1 / n_years) - 1
-                    print(f"✅ 计算净利润历史CAGR（备选）:")
+                    print(f" 计算净利润历史CAGR（备选）:")
                     print(f"   起始净利润: {start_income/100000000:.2f} 亿元")
                     print(f"   最新净利润: {end_income/100000000:.2f} 亿元")
                     print(f"   历史年数: {n_years} 年")
@@ -187,7 +187,7 @@ def generate_chapter(context):
             historical_fcf_data = financial.get_historical_fcf_for_dcf(max_years=15)
             if historical_fcf_data:
                 project_params['historical_fcf_data'] = historical_fcf_data
-                print(f"✅ 已保存历史FCF数据到项目参数")
+                print(f" 已保存历史FCF数据到项目参数")
 
     except Exception as e:
         print(f"从Tushare获取财务数据失败: {e}")
@@ -198,7 +198,7 @@ def generate_chapter(context):
         cash_equivalents = project_params.get('cash_equivalents', 0)
         net_debt = (total_debt - cash_equivalents) / 100000000  # 转亿元
         cash_assets = cash_equivalents / 100000000
-        print(f"⚠️ 使用参数文件中的财务数据")
+        print(f" 使用参数文件中的财务数据")
         print(f"   净债务: {net_debt:.2f} 亿元")
 
     # 生成并插入 DCF 热力图
@@ -232,7 +232,7 @@ def generate_chapter(context):
         historical_fcf = project_params['historical_fcf_data']
         historical_fcf_years = historical_fcf['years']
 
-        print(f"\n📊 历史FCF数据分析:")
+        print(f"\n 历史FCF数据分析:")
         print(f"   总年数: {historical_fcf_years}")
         print(f"{'年份':<6} {'营收(亿)':<12} {'NOPAT(亿)':<12} {'FCF(亿)':<12}")
         print("-"*50)
@@ -250,11 +250,11 @@ def generate_chapter(context):
         if latest_fcf > 0:
             base_fcf = latest_fcf
             using_net_income_as_fcf = False
-            print(f"   ✅ 使用最新FCF作为基准")
+            print(f"    使用最新FCF作为基准")
         else:
             base_fcf = net_income  # 使用净利润作为基准
             using_net_income_as_fcf = True
-            print(f"   ⚠️ 最新FCF为负，使用净利润作为基准")
+            print(f"    最新FCF为负，使用净利润作为基准")
 
         # 计算历史FCF复合增长率（CAGR）- 优先使用
         # 只计算正FCF年份
@@ -276,11 +276,11 @@ def generate_chapter(context):
             # 限制增长率在合理范围（-5%到30%）
             fcf_cagr = max(-0.05, min(0.30, fcf_cagr))
 
-            print(f"   ✅ FCF历史CAGR: {fcf_cagr*100:.2f}%（从{first_year_data['year']}年{first_fcf_val:.2f}亿到{last_year_data['year']}年{last_fcf_val:.2f}亿，{years_count}年）")
-            print(f"   ✅ 将使用FCF的CAGR作为增长率基准")
+            print(f"    FCF历史CAGR: {fcf_cagr*100:.2f}%（从{first_year_data['year']}年{first_fcf_val:.2f}亿到{last_year_data['year']}年{last_fcf_val:.2f}亿，{years_count}年）")
+            print(f"    将使用FCF的CAGR作为增长率基准")
         else:
             fcf_cagr = None
-            print(f"   ⚠️ 正值FCF年数少于2年，无法计算FCF的CAGR")
+            print(f"    正值FCF年数少于2年，无法计算FCF的CAGR")
             if net_income_cagr is not None:
                 print(f"   ℹ️  将使用净利润的CAGR作为备选: {net_income_cagr*100:.2f}%")
 
@@ -297,14 +297,14 @@ def generate_chapter(context):
         if fcf_growth_example > 0.30:  # 限制最高30%
             fcf_growth_example = 0.30
         fcf_growth_source = f"基于历史{historical_fcf_years}年FCF数据（CAGR: {fcf_cagr*100:.1f}%）"
-        print(f"\n✅ 最终采用FCF增长率: {fcf_growth_example*100:.1f}%（数据源: FCF历史CAGR）")
+        print(f"\n 最终采用FCF增长率: {fcf_growth_example*100:.1f}%（数据源: FCF历史CAGR）")
     # 如果FCF的CAGR不可用，使用净利润的CAGR作为备选
     elif net_income_cagr is not None:
         fcf_growth_example = max(net_income_cagr, 0.05)  # 至少5%
         if fcf_growth_example > 0.30:  # 限制最高30%
             fcf_growth_example = 0.30
         fcf_growth_source = f"基于历史净利润CAGR（CAGR: {net_income_cagr*100:.1f}%）"
-        print(f"\n⚠️ 最终采用净利润增长率: {fcf_growth_example*100:.1f}%（数据源: 净利润历史CAGR，因无足够正FCF数据）")
+        print(f"\n 最终采用净利润增长率: {fcf_growth_example*100:.1f}%（数据源: 净利润历史CAGR，因无足够正FCF数据）")
 
     # 计算真实数据年数和预测年数
     actual_data_years = min(historical_fcf_years, 10) if historical_fcf_years > 0 else 0
@@ -430,9 +430,9 @@ def generate_chapter(context):
         add_paragraph(document, f'• 最新年度FCF（{recent_fcf[-1]["year"]}年）：{latest_fcf:.2f} 亿元')
 
         if latest_fcf > 0:
-            add_paragraph(document, '• ✅ FCF为正值，说明公司具备良好的现金生成能力')
+            add_paragraph(document, '•  FCF为正值，说明公司具备良好的现金生成能力')
         else:
-            add_paragraph(document, '• ⚠️ FCF为负值，可能由于大额资本支出或营运资金占用')
+            add_paragraph(document, '•  FCF为负值，可能由于大额资本支出或营运资金占用')
 
     # ==================== WACC计算 ====================
     add_title(document, '3.3.2 WACC（加权平均资本成本）计算', level=3)
@@ -456,7 +456,7 @@ def generate_chapter(context):
             )
 
             # 显示WACC计算详情
-            add_paragraph(document, '📊 WACC计算过程：')
+            add_paragraph(document, ' WACC计算过程：')
             add_paragraph(document, '')
 
             # 资本结构
@@ -485,7 +485,7 @@ def generate_chapter(context):
             wacc_example = wacc_result['wacc']
 
             add_paragraph(document, '')
-            add_paragraph(document, '✅ WACC计算完成')
+            add_paragraph(document, ' WACC计算完成')
             add_paragraph(document, f'• 计算方式：CAPM模型 + 资本结构加权')
             add_paragraph(document, f'• Beta系数：{wacc_result["beta"]:.3f}（{wacc_result.get("parameters", {}).get("beta_window", 120)}天窗口）')
             add_paragraph(document, f'• WACC结果：{wacc_example*100:.2f}%')
@@ -496,8 +496,8 @@ def generate_chapter(context):
         else:
             raise ValueError("未设置TUSHARE_TOKEN环境变量")
     except Exception as e:
-        print(f"⚠️ WACC自动计算失败: {e}，使用简化计算")
-        add_paragraph(document, '⚠️ WACC自动计算失败，使用简化计算方法（默认参数）')
+        print(f" WACC自动计算失败: {e}，使用简化计算")
+        add_paragraph(document, ' WACC自动计算失败，使用简化计算方法（默认参数）')
         add_paragraph(document, '')
 
         # 使用简化计算
@@ -523,7 +523,7 @@ def generate_chapter(context):
         }
 
         # 显示简化计算的参数
-        add_paragraph(document, '📊 简化计算参数：')
+        add_paragraph(document, ' 简化计算参数：')
         add_paragraph(document, f'• Beta系数：{beta_from_config:.2f}（来自配置文件）')
         add_paragraph(document, f'• 无风险利率：3.0%（默认值）')
         add_paragraph(document, f'• 市场风险溢价：7.0%（默认值）')
@@ -565,9 +565,9 @@ def generate_chapter(context):
         # 注意：实际使用 fcf_growth_example（已在前面计算，优先使用FCF CAGR）
         # 这里不重新计算，保持与前面的一致性
 
-        add_paragraph(document, f'✅ 使用最新历史数据（{latest_year}年FCF {latest_fcf/100000000:.2f}亿元）作为基准，正向预测未来10年')
+        add_paragraph(document, f' 使用最新历史数据（{latest_year}年FCF {latest_fcf/100000000:.2f}亿元）作为基准，正向预测未来10年')
         add_paragraph(document, '')
-        add_paragraph(document, f'📊 历史FCF增长率分析：')
+        add_paragraph(document, f' 历史FCF增长率分析：')
 
         # 显示最近5年FCF数据
         recent_5 = historical_fcf[-5:]

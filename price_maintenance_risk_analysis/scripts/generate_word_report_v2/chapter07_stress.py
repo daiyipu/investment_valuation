@@ -204,11 +204,11 @@ def generate_chapter(context):
     # 风险提示
     add_paragraph(document, '风险评估：', bold=True)
     if return_q1 > 0:
-        add_paragraph(document, f'✅ 即使在PE回归到行业Q1的极端情况下，预期收益仍为正({return_q1:+.2f}%)，估值安全边际较高')
+        add_paragraph(document, f' 即使在PE回归到行业Q1的极端情况下，预期收益仍为正({return_q1:+.2f}%)，估值安全边际较高')
     elif return_q1 > -10:
-        add_paragraph(document, f'⚠️ 在PE回归到行业Q1的极端情况下，预期收益为负({return_q1:+.2f}%)，存在一定估值回调风险，但风险可控')
+        add_paragraph(document, f' 在PE回归到行业Q1的极端情况下，预期收益为负({return_q1:+.2f}%)，存在一定估值回调风险，但风险可控')
     else:
-        add_paragraph(document, f'❌ 在PE回归到行业Q1的极端情况下，预期收益大幅为负({return_q1:+.2f}%)，估值回调风险较高，需谨慎投资')
+        add_paragraph(document, f' 在PE回归到行业Q1的极端情况下，预期收益大幅为负({return_q1:+.2f}%)，估值回调风险较高，需谨慎投资')
 
     add_paragraph(document, '')
 
@@ -219,9 +219,9 @@ def generate_chapter(context):
     add_paragraph(document, f'• 发行价：{issue_price:.2f}元')
     add_paragraph(document, f'• PE回归Q1后的定增收益率：{return_pe_stress:+.2f}%')
     if return_pe_stress < 0:
-        add_paragraph(document, f'• ⚠️ 估值回归将导致定增亏损{abs(return_pe_stress):.2f}%')
+        add_paragraph(document, f'•  估值回归将导致定增亏损{abs(return_pe_stress):.2f}%')
     else:
-        add_paragraph(document, f'• ✅ 估值回归后定增仍能保持盈利')
+        add_paragraph(document, f'•  估值回归后定增仍能保持盈利')
 
     # ==================== 7.2 经济面极端情况压力测试 ====================
     add_paragraph(document, '')
@@ -471,7 +471,7 @@ def generate_chapter(context):
     add_paragraph(document, '')
 
     if profit_prob_extreme < 20:
-        add_paragraph(document, '⚠️ 风险提示：')
+        add_paragraph(document, ' 风险提示：')
         add_paragraph(document, '  在多重极端情况叠加下，项目面临极高的亏损风险。')
         add_paragraph(document, '  建议采取以下风险控制措施：')
         add_paragraph(document, '  1. 严格控制仓位，建议不超过总资产的5-10%')
@@ -479,14 +479,14 @@ def generate_chapter(context):
         add_paragraph(document, '  3. 考虑购买看跌期权进行对冲')
         add_paragraph(document, '  4. 分批建仓，避免一次性大额投入')
     elif profit_prob_extreme < 40:
-        add_paragraph(document, '⚠️ 风险提示：')
+        add_paragraph(document, ' 风险提示：')
         add_paragraph(document, '  在多重极端情况叠加下，项目风险显著上升。')
         add_paragraph(document, '  建议采取以下风险控制措施：')
         add_paragraph(document, '  1. 适度控制仓位')
         add_paragraph(document, '  2. 设置止损线（如-20%）')
         add_paragraph(document, '  3. 密切监控市场动态')
     else:
-        add_paragraph(document, '✅ 风险评估：')
+        add_paragraph(document, ' 风险评估：')
         add_paragraph(document, '  即使在多重极端情况下，项目仍保持一定的抗风险能力。')
         add_paragraph(document, '  但仍需警惕市场风险，做好仓位管理。')
 
@@ -529,14 +529,14 @@ def generate_chapter(context):
     worst_scenario_all = min(worst_results, key=worst_results.get)
     worst_loss_all = worst_results[worst_scenario_all]
 
-    add_paragraph(document, f'⚠️ 全局最坏风险情景：{worst_scenario_all}')
+    add_paragraph(document, f' 全局最坏风险情景：{worst_scenario_all}')
     add_paragraph(document, f'   在所有压力测试中，最严重的损失情景为"{worst_scenario_all}"，预期年化收益率为{worst_loss_all:+.2f}%')
     add_paragraph(document, '')
 
     if worst_loss_all > -10:
-        add_paragraph(document, '✅ 风险评估：即使在最坏情况下，损失幅度相对可控（<10%），项目具备较强的抗风险能力')
+        add_paragraph(document, ' 风险评估：即使在最坏情况下，损失幅度相对可控（<10%），项目具备较强的抗风险能力')
     elif worst_loss_all > -30:
-        add_paragraph(document, '⚠️ 风险评估：在最坏情况下损失幅度为10-30%，风险可控但需做好仓位管理')
+        add_paragraph(document, ' 风险评估：在最坏情况下损失幅度为10-30%，风险可控但需做好仓位管理')
     elif worst_loss_all > -50:
         add_paragraph(document, '🟠 风险评估：在最坏情况下损失幅度为30-50%，风险较高，建议严格控制仓位')
     else:
@@ -641,19 +641,19 @@ def generate_chapter(context):
 
     # PE回归结论
     if return_pe_stress > 0:
-        conclusions.append(f'✅ 估值回归：即使PE回归至行业Q1分位，定增收益仍为正({return_pe_stress:+.2f}%)，估值安全边际充足')
+        conclusions.append(f' 估值回归：即使PE回归至行业Q1分位，定增收益仍为正({return_pe_stress:+.2f}%)，估值安全边际充足')
     else:
-        conclusions.append(f'⚠️ 估值回归：PE回归至行业Q1分位将导致亏损({return_pe_stress:+.2f}%)，需警惕估值回调风险')
+        conclusions.append(f' 估值回归：PE回归至行业Q1分位将导致亏损({return_pe_stress:+.2f}%)，需警惕估值回调风险')
 
     # 经济面结论
     if profit_scenarios >= total_scenarios * 0.6:
-        conclusions.append(f'✅ 经济面危机：在{total_scenarios}种经济面极端情景中，有{profit_scenarios}种情景盈利，抗风险能力较强')
+        conclusions.append(f' 经济面危机：在{total_scenarios}种经济面极端情景中，有{profit_scenarios}种情景盈利，抗风险能力较强')
     else:
-        conclusions.append(f'⚠️ 经济面危机：在{total_scenarios}种经济面极端情景中，仅{profit_scenarios}种情景盈利，抗风险能力较弱')
+        conclusions.append(f' 经济面危机：在{total_scenarios}种经济面极端情景中，仅{profit_scenarios}种情景盈利，抗风险能力较弱')
 
     # 多重极端结论
     if profit_prob_extreme >= 30:
-        conclusions.append(f'✅ 多重极端叠加：即使三重打击，盈利概率仍达{profit_prob_extreme:.1f}%，具备一定抗风险能力')
+        conclusions.append(f' 多重极端叠加：即使三重打击，盈利概率仍达{profit_prob_extreme:.1f}%，具备一定抗风险能力')
     else:
         conclusions.append(f'多重极端叠加：三重打击下盈利概率仅{profit_prob_extreme:.1f}%，多重风险叠加后果严重')
 

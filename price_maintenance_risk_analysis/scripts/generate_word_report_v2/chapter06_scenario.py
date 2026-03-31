@@ -154,7 +154,7 @@ def add_image(document, image_path, width=Inches(5)):
         last_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         return True
     else:
-        print(f"⚠️ 图片不存在: {image_path}")
+        print(f" 图片不存在: {image_path}")
         return False
 
 
@@ -556,11 +556,11 @@ def generate_chapter(context):
     add_paragraph(document, '')
     add_paragraph(document, '投资建议：')
     if current_drift < 0:
-        add_paragraph(document, f'⚠️ 当前漂移率为{current_drift*100:+.2f}%（负值），建议要求较高折价（更负的溢价率）以补偿下行风险')
+        add_paragraph(document, f' 当前漂移率为{current_drift*100:+.2f}%（负值），建议要求较高折价（更负的溢价率）以补偿下行风险')
     if current_discount > -0.10:
-        add_paragraph(document, f'⚠️ 当前溢价率仅为{current_discount*100:+.2f}%，建议提高至-15%以下（更深的折价）')
+        add_paragraph(document, f' 当前溢价率仅为{current_discount*100:+.2f}%，建议提高至-15%以下（更深的折价）')
     else:
-        add_paragraph(document, f'✅ 当前溢价率{current_discount*100:+.2f}%较为合理，提供了一定的安全边际')
+        add_paragraph(document, f' 当前溢价率{current_discount*100:+.2f}%较为合理，提供了一定的安全边际')
 
     # 保存all_scenarios供附件使用
     all_scenarios_for_appendix = all_scenarios.copy()
@@ -594,10 +594,10 @@ def generate_chapter(context):
 
             if index_vol_values and index_return_values:
                 indices_data_available = True
-                print(f"✅ 已加载指数数据: {indices_data_file}")
+                print(f" 已加载指数数据: {indices_data_file}")
                 print(f"   涵盖指数: {', '.join(major_indices)}")
     except Exception as e:
-        print(f"⚠️ 无法加载指数数据，使用默认值: {e}")
+        print(f" 无法加载指数数据，使用默认值: {e}")
 
     # 如果指数数据可用，进行情景分析
     if indices_data_available:
@@ -623,7 +623,7 @@ def generate_chapter(context):
             project_params=project_params
         )
 
-        print(f"✅ 生成市场指数情景矩阵: {len(index_scenarios)}个情景")
+        print(f" 生成市场指数情景矩阵: {len(index_scenarios)}个情景")
 
         # 运行市场指数情景模拟
         index_scenario_results = []
@@ -660,7 +660,7 @@ def generate_chapter(context):
 
                 index_scenario_results.append(scenario_result)
             except Exception as e:
-                print(f"⚠️ 情景{scenario['name']}模拟失败: {e}")
+                print(f" 情景{scenario['name']}模拟失败: {e}")
 
         # 添加到汇总列表
         all_scenarios.extend(index_scenario_results)
@@ -736,11 +736,11 @@ def generate_chapter(context):
 
             if industry_vol_values and industry_return_values:
                 industry_data_available = True
-                print(f"✅ 已加载行业数据: {industry_data_file}")
+                print(f" 已加载行业数据: {industry_data_file}")
                 print(f"   行业波动率: {industry_vol_values[0]*100:.2f}%")
                 print(f"   行业收益率: {industry_return_values[0]*100:+.2f}%")
     except Exception as e:
-        print(f"⚠️ 无法加载行业数据: {e}")
+        print(f" 无法加载行业数据: {e}")
 
     # 如果行业数据可用，进行情景分析
     if industry_data_available:
@@ -766,7 +766,7 @@ def generate_chapter(context):
             project_params=project_params
         )
 
-        print(f"✅ 生成行业指数情景矩阵: {len(industry_scenarios)}个情景")
+        print(f" 生成行业指数情景矩阵: {len(industry_scenarios)}个情景")
 
         # 运行行业指数情景模拟
         industry_scenario_results = []
@@ -803,7 +803,7 @@ def generate_chapter(context):
 
                 industry_scenario_results.append(scenario_result)
             except Exception as e:
-                print(f"⚠️ 情景{scenario['name']}模拟失败: {e}")
+                print(f" 情景{scenario['name']}模拟失败: {e}")
 
         # 添加到汇总列表
         all_scenarios.extend(industry_scenario_results)
@@ -895,7 +895,7 @@ def generate_chapter(context):
                 drift_pe_50 = max(-0.50, min(1.00, drift_pe_50))
                 drift_pe_25 = max(-0.50, min(1.00, drift_pe_25))
 
-                print(f"✅ 行业PE分位数漂移率计算完成:")
+                print(f" 行业PE分位数漂移率计算完成:")
                 print(f"   标的个股当前PE: {stock_pe_current:.2f}倍")
                 print(f"   行业PE 75%分位数: {pe_75:.1f}倍, 比值={ratio_75:.2f}, 漂移率={drift_pe_75*100:+.2f}%")
                 print(f"   行业PE 50%分位数: {pe_50:.1f}倍, 比值={ratio_50:.2f}, 漂移率={drift_pe_50*100:+.2f}%")
@@ -925,7 +925,7 @@ def generate_chapter(context):
                     project_params=project_params
                 )
 
-                print(f"✅ 生成行业PE情景矩阵: {len(industry_pe_scenarios)}个情景")
+                print(f" 生成行业PE情景矩阵: {len(industry_pe_scenarios)}个情景")
 
                 # 运行行业PE情景模拟
                 industry_pe_scenario_results = []
@@ -962,7 +962,7 @@ def generate_chapter(context):
 
                         industry_pe_scenario_results.append(scenario_result)
                     except Exception as e:
-                        print(f"⚠️ 情景{scenario['name']}模拟失败: {e}")
+                        print(f" 情景{scenario['name']}模拟失败: {e}")
 
                 # 添加到汇总列表
                 all_scenarios.extend(industry_pe_scenario_results)
@@ -1003,7 +1003,7 @@ def generate_chapter(context):
                     add_table_data(document, ['情景', 'PE分位-漂移率', '波动率', '溢价率', '盈利概率', '中位数收益'], industry_pe_table_data, font_size=10.5)
 
                     add_paragraph(document, '')
-                    add_paragraph(document, '📊 行业PE情景分析结论：')
+                    add_paragraph(document, ' 行业PE情景分析结论：')
                     best_scenario = max(industry_pe_scenario_results, key=lambda x: x['profit_prob'])
                     worst_scenario = min(industry_pe_scenario_results, key=lambda x: x['profit_prob'])
                     add_paragraph(document, f'• 最优情景：{best_scenario["scenario"]["name"]}，盈利概率{best_scenario["profit_prob"]:.1f}%，中位数收益{best_scenario["median_return"]*100:+.1f}%')
@@ -1012,11 +1012,11 @@ def generate_chapter(context):
 
                 add_paragraph(document, '')
             except Exception as e:
-                print(f"⚠️ 行业PE数据计算失败: {e}")
-                add_paragraph(document, '⚠️ 行业PE数据不可用，跳过本节分析')
+                print(f" 行业PE数据计算失败: {e}")
+                add_paragraph(document, ' 行业PE数据不可用，跳过本节分析')
         else:
-            print("⚠️ 行业PE数据不可用，跳过6.3节")
-            add_paragraph(document, '⚠️ 行业PE数据不可用，跳过本节分析')
+            print(" 行业PE数据不可用，跳过6.3节")
+            add_paragraph(document, ' 行业PE数据不可用，跳过本节分析')
 
         # ==================== 6.4 基于个股PE分位数的情景分析 ====================
         add_paragraph(document, '')
@@ -1059,7 +1059,7 @@ def generate_chapter(context):
                 stock_drift_50 = max(-0.50, min(1.00, stock_drift_50))
                 stock_drift_25 = max(-0.50, min(1.00, stock_drift_25))
 
-                print(f"✅ 个股PE分位数漂移率计算完成:")
+                print(f" 个股PE分位数漂移率计算完成:")
                 print(f"   个股当前PE: {stock_pe_current:.2f}倍")
                 print(f"   个股PE 75%分位数: {stock_pe_75:.1f}倍, 比值={stock_ratio_75:.2f}, 漂移率={stock_drift_75*100:+.2f}%")
                 print(f"   个股PE 50%分位数: {stock_pe_50:.1f}倍, 比值={stock_ratio_50:.2f}, 漂移率={stock_drift_50*100:+.2f}%")
@@ -1089,7 +1089,7 @@ def generate_chapter(context):
                     project_params=project_params
                 )
 
-                print(f"✅ 生成个股PE情景矩阵: {len(stock_pe_scenarios)}个情景")
+                print(f" 生成个股PE情景矩阵: {len(stock_pe_scenarios)}个情景")
 
                 # 运行个股PE情景模拟
                 stock_pe_scenario_results = []
@@ -1126,7 +1126,7 @@ def generate_chapter(context):
 
                         stock_pe_scenario_results.append(scenario_result)
                     except Exception as e:
-                        print(f"⚠️ 情景{scenario['name']}模拟失败: {e}")
+                        print(f" 情景{scenario['name']}模拟失败: {e}")
 
                 # 添加到汇总列表
                 all_scenarios.extend(stock_pe_scenario_results)
@@ -1167,7 +1167,7 @@ def generate_chapter(context):
                     add_table_data(document, ['情景', 'PE分位-漂移率', '波动率', '溢价率', '盈利概率', '中位数收益'], stock_pe_table_data, font_size=10.5)
 
                     add_paragraph(document, '')
-                    add_paragraph(document, '📊 个股PE情景分析结论：')
+                    add_paragraph(document, ' 个股PE情景分析结论：')
                     best_scenario = max(stock_pe_scenario_results, key=lambda x: x['profit_prob'])
                     worst_scenario = min(stock_pe_scenario_results, key=lambda x: x['profit_prob'])
                     add_paragraph(document, f'• 最优情景：{best_scenario["scenario"]["name"]}，盈利概率{best_scenario["profit_prob"]:.1f}%，中位数收益{best_scenario["median_return"]*100:+.1f}%')
@@ -1176,11 +1176,11 @@ def generate_chapter(context):
 
                 add_paragraph(document, '')
             except Exception as e:
-                print(f"⚠️ 个股PE数据计算失败: {e}")
-                add_paragraph(document, '⚠️ 个股PE数据不可用，跳过本节分析')
+                print(f" 个股PE数据计算失败: {e}")
+                add_paragraph(document, ' 个股PE数据不可用，跳过本节分析')
         else:
-            print("⚠️ 个股PE数据不可用，跳过6.4节")
-            add_paragraph(document, '⚠️ 个股PE数据不可用，跳过本节分析')
+            print(" 个股PE数据不可用，跳过6.4节")
+            add_paragraph(document, ' 个股PE数据不可用，跳过本节分析')
 
 
         # ==================== 6.5 基于DCF估值的情景分析 ====================
@@ -1208,7 +1208,7 @@ def generate_chapter(context):
                 # 限制漂移率在合理范围内（-50%到+100%）
                 dcf_drift = max(-0.50, min(1.00, dcf_drift))
 
-                print(f"✅ DCF估值漂移率计算完成:")
+                print(f" DCF估值漂移率计算完成:")
                 print(f"   DCF内在价值: {intrinsic_value:.2f}元")
                 print(f"   当前价格: {current_price_dcf:.2f}元")
                 print(f"   比值: {dcf_ratio:.2f}")
@@ -1239,7 +1239,7 @@ def generate_chapter(context):
                     project_params=project_params
                 )
 
-                print(f"✅ 生成DCF估值情景矩阵: {len(dcf_scenarios)}个情景")
+                print(f" 生成DCF估值情景矩阵: {len(dcf_scenarios)}个情景")
 
                 # 运行DCF估值情景模拟
                 dcf_scenario_results = []
@@ -1276,7 +1276,7 @@ def generate_chapter(context):
 
                         dcf_scenario_results.append(scenario_result)
                     except Exception as e:
-                        print(f"⚠️ 情景{scenario['name']}模拟失败: {e}")
+                        print(f" 情景{scenario['name']}模拟失败: {e}")
 
                 # 添加到汇总列表
                 all_scenarios.extend(dcf_scenario_results)
@@ -1317,7 +1317,7 @@ def generate_chapter(context):
                     add_table_data(document, ['情景', 'DCF估值', '波动率', '溢价率', '盈利概率', '中位数收益'], dcf_table_data, font_size=10.5)
 
                     add_paragraph(document, '')
-                    add_paragraph(document, '📊 DCF估值情景分析结论：')
+                    add_paragraph(document, ' DCF估值情景分析结论：')
                     best_scenario = max(dcf_scenario_results, key=lambda x: x['profit_prob'])
                     worst_scenario = min(dcf_scenario_results, key=lambda x: x['profit_prob'])
                     add_paragraph(document, f'• 最优情景：{best_scenario["scenario"]["name"]}，盈利概率{best_scenario["profit_prob"]:.1f}%，中位数收益{best_scenario["median_return"]*100:+.1f}%')
@@ -1326,11 +1326,11 @@ def generate_chapter(context):
 
                 add_paragraph(document, '')
             except Exception as e:
-                print(f"⚠️ DCF估值计算失败: {e}")
-                add_paragraph(document, '⚠️ DCF估值数据不可用，跳过本节分析')
+                print(f" DCF估值计算失败: {e}")
+                add_paragraph(document, ' DCF估值数据不可用，跳过本节分析')
         else:
-            print("⚠️ DCF内在价值数据不可用，跳过6.5节")
-            add_paragraph(document, '⚠️ DCF估值数据不可用，跳过本节分析')
+            print(" DCF内在价值数据不可用，跳过6.5节")
+            add_paragraph(document, ' DCF估值数据不可用，跳过本节分析')
         # ==================== 6.6 情景综合分析汇总表 ====================
         add_paragraph(document, '')
         add_title(document, '6.6 情景综合分析汇总表', level=2)
@@ -1413,7 +1413,7 @@ def generate_chapter(context):
 
         # 添加说明
         add_paragraph(document, '')
-        add_paragraph(document, '📊 情景说明：')
+        add_paragraph(document, ' 情景说明：')
         add_paragraph(document, f'• 6.1多参数情景：{scenario_type_counts.get("多参数情景", 0)}个，涵盖漂移率、波动率、溢价率的全部组合')
         add_paragraph(document, f'• 6.2.1市场指数情景：{scenario_type_counts.get("市场指数情景", 0)}个（3×3×5矩阵）')
         add_paragraph(document, f'• 6.2.2行业指数情景：{scenario_type_counts.get("行业指数情景", 0)}个（3×3×5矩阵）')
@@ -1422,14 +1422,14 @@ def generate_chapter(context):
         add_paragraph(document, f'• 6.5 DCF估值情景：{scenario_type_counts.get("DCF估值情景", 0)}个（1×3×5矩阵）')
         add_paragraph(document, '')
 
-        add_paragraph(document, '📊 评级说明：')
+        add_paragraph(document, ' 评级说明：')
         add_paragraph(document, f'• 平均盈利概率：{avg_profit_prob:.1f}%，{"较高" if avg_profit_prob >= 70 else "中等" if avg_profit_prob >= 50 else "较低"}')
         add_paragraph(document, f'• 平均收益率：{avg_median_return*100:+.1f}%，{"表现良好" if avg_median_return >= 0.10 else "表现一般" if avg_median_return >= 0 else "表现不佳"}')
         add_paragraph(document, f'• 最优情景：{best_scenario_obj.get("name", "N/A")}，盈利概率{best_scenario.get("profit_prob", 0):.1f}%，收益率{best_scenario.get("median_return", 0)*100:+.1f}%')
         add_paragraph(document, f'• 最差情景：{worst_scenario_obj.get("name", "N/A")}，盈利概率{worst_scenario.get("profit_prob", 0):.1f}%，收益率{worst_scenario.get("median_return", 0)*100:+.1f}%')
         add_paragraph(document, '')
 
-        add_paragraph(document, '💡 投资建议：')
+        add_paragraph(document, ' 投资建议：')
         if avg_profit_prob >= 70 and avg_median_return >= 10:
             add_paragraph(document, '• 整体情景分析显示投资价值较高，多数情景下盈利概率和收益率表现良好')
             add_paragraph(document, '• 建议关注市场环境和行业趋势，选择有利时机参与')
@@ -1455,7 +1455,7 @@ def generate_chapter(context):
             add_paragraph(document, '')
 
     except Exception as e:
-        print(f"⚠️ 生成多维度图表失败: {e}")
+        print(f" 生成多维度图表失败: {e}")
         import traceback
         traceback.print_exc()
 
@@ -1464,6 +1464,6 @@ def generate_chapter(context):
     # 保存all_scenarios到context供附件使用
     if 'all_scenarios' in locals() and len(all_scenarios) > 0:
         context['results']['all_scenarios'] = all_scenarios
-        print(f"✅ 已保存{len(all_scenarios)}个情景到context，供附件使用")
+        print(f" 已保存{len(all_scenarios)}个情景到context，供附件使用")
 
     return context

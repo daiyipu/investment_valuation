@@ -103,7 +103,7 @@ def add_image(document, image_path, width=Inches(5)):
         last_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         return True
     else:
-        print(f"⚠️ 图片不存在: {image_path}")
+        print(f" 图片不存在: {image_path}")
         return False
 
 
@@ -243,7 +243,7 @@ def generate_chapter(context):
     add_paragraph(document, '蒙特卡洛模拟是一种基于随机采样的数值计算方法，通过大量重复随机试验来估计复杂系统的行为。')
     add_paragraph(document, '')
 
-    add_paragraph(document, '📊 本项目采用的模型：几何布朗运动（Geometric Brownian Motion, GBM）')
+    add_paragraph(document, ' 本项目采用的模型：几何布朗运动（Geometric Brownian Motion, GBM）')
     add_paragraph(document, '')
 
     add_paragraph(document, '模型假设：')
@@ -269,7 +269,7 @@ def generate_chapter(context):
     add_paragraph(document, '• ε：标准正态分布随机变量，ε ~ N(0,1)')
     add_paragraph(document, '')
 
-    add_paragraph(document, '🔄 模拟步骤：')
+    add_paragraph(document, ' 模拟步骤：')
     add_paragraph(document, '1. **参数估计**：根据历史数据计算年化漂移率（μ）和波动率（σ）')
     add_paragraph(document, '2. **时间离散化**：将锁定期T分割为n个时间步长（Δt = T/n）')
     add_paragraph(document, '3. **生成随机数**：对每个时间步长生成标准正态分布随机数 ε ~ N(0,1)')
@@ -285,7 +285,7 @@ def generate_chapter(context):
     add_paragraph(document, '• 中心极限定理保证样本均值近似服从正态分布')
     add_paragraph(document, '')
 
-    add_paragraph(document, '📈 收益率计算说明：')
+    add_paragraph(document, ' 收益率计算说明：')
     add_paragraph(document, '• **锁定期收益率**（单利）：R = (S(T) - 发行价) / 发行价')
     add_paragraph(document, '• **年化收益率**（单利）：年化R = R × (12 / 锁定期月数)')
     add_paragraph(document, '• **预期收益率**：所有模拟路径年化收益率的算术平均值')
@@ -426,7 +426,7 @@ def generate_chapter(context):
     plt.savefig(path_chart_path, dpi=300, bbox_inches='tight')
     plt.close()
 
-    print(f"✅ 已生成蒙特卡洛路径可视化图表: {path_chart_path}")
+    print(f" 已生成蒙特卡洛路径可视化图表: {path_chart_path}")
 
     # 保存图表（拆分版）
     mc_chart_paths = generate_monte_carlo_charts_split(
@@ -818,8 +818,8 @@ def generate_chapter(context):
         add_paragraph(document, '• 综合参考多个窗口期的结果，避免单一窗口期的偏差')
 
     except Exception as e:
-        print(f"⚠️ 生成多窗口期图表失败: {e}")
-        add_paragraph(document, f'⚠️ 多窗口期图表生成失败: {e}')
+        print(f" 生成多窗口期图表失败: {e}")
+        add_paragraph(document, f' 多窗口期图表生成失败: {e}')
 
     # ==================== 5.3 ARIMA预测漂移率 ====================
     add_title(document, '5.3 ARIMA时间序列预测漂移率', level=2)
@@ -840,7 +840,7 @@ def generate_chapter(context):
 
     if not prices_list or len(prices_list) < 100:
         print("\n" + "="*70)
-        print("❌ 错误：price_series数据不足或缺失")
+        print(" 错误：price_series数据不足或缺失")
         print("="*70)
         print(f"   当前数据量: {len(prices_list) if prices_list else 0} 条")
         print(f"   需要数据量: 至少 100 条")
@@ -855,7 +855,7 @@ def generate_chapter(context):
         skip_time_series = True
     else:
         skip_time_series = False
-        print(f"✅ 从market_data加载price_series: {len(prices_list)}个交易日")
+        print(f" 从market_data加载price_series: {len(prices_list)}个交易日")
 
     # 创建时间序列预测器
     if not skip_time_series:
@@ -874,7 +874,7 @@ def generate_chapter(context):
                     ['模型类型', 'ARIMA(1,1,1)'],
                     ['预测期数', '120日（半年）'],
                     ['数据量', f'{len(prices_series)}个交易日'],
-                    ['拟合状态', '✅ 成功' if arima_result['model_fitted'] else '⚠️ 失败（使用历史平均）']
+                    ['拟合状态', ' 成功' if arima_result['model_fitted'] else ' 失败（使用历史平均）']
                 ]
                 if arima_result['model_fitted']:
                     arima_params.append(['AIC准则', f"{arima_result['aic']:.2f}"])
@@ -889,7 +889,7 @@ def generate_chapter(context):
 
                 if not arima_result['model_fitted']:
                     add_paragraph(document, '')
-                    add_paragraph(document, '⚠️ 注：ARIMA模型拟合失败，使用历史平均收益率作为预测值。这可能是因为：')
+                    add_paragraph(document, ' 注：ARIMA模型拟合失败，使用历史平均收益率作为预测值。这可能是因为：')
                     add_paragraph(document, '   - 数据量不足（建议至少250个交易日）')
                     add_paragraph(document, '   - 序列平稳性不足')
                     add_paragraph(document, '   - 存在异常值或结构断点')
@@ -905,20 +905,20 @@ def generate_chapter(context):
                 ]
                 add_table_data(document, ['数据来源', '年化漂移率'], historical_drifts)
 
-                print(f"✅ ARIMA预测完成：{arima_result['forecast_drift']*100:.2f}%")
+                print(f" ARIMA预测完成：{arima_result['forecast_drift']*100:.2f}%")
 
             else:
-                add_paragraph(document, '⚠️ 价格序列数据不足，无法进行ARIMA预测（需要至少100个交易日数据）')
-                print("⚠️ 价格序列数据不足，跳过ARIMA预测")
+                add_paragraph(document, ' 价格序列数据不足，无法进行ARIMA预测（需要至少100个交易日数据）')
+                print(" 价格序列数据不足，跳过ARIMA预测")
                 arima_result = {'forecast_drift': mc_drift_120d, 'model_fitted': False}
 
         except Exception as e:
-            add_paragraph(document, f'⚠️ ARIMA预测失败: {e}')
-            print(f"⚠️ ARIMA预测失败: {e}")
+            add_paragraph(document, f' ARIMA预测失败: {e}')
+            print(f" ARIMA预测失败: {e}")
             arima_result = {'forecast_drift': mc_drift_120d, 'model_fitted': False}
     else:
         # 跳过5.3-5.5节（数据不足）
-        print("⚠️ 数据不足，跳过5.3-5.5节时间序列预测")
+        print(" 数据不足，跳过5.3-5.5节时间序列预测")
         arima_result = {'forecast_drift': mc_drift_120d, 'model_fitted': False}
         garch_result = {'forecast_volatility': mc_volatility_120d, 'model_fitted': False}
 
@@ -951,7 +951,7 @@ def generate_chapter(context):
                     ['模型类型', 'GARCH(1,1)'],
                     ['预测期数', '120日（半年）'],
                     ['数据量', f'{len(prices_series)}个交易日'],
-                    ['拟合状态', '✅ 成功' if garch_result['model_fitted'] else '⚠️ 失败（使用历史波动率）']
+                    ['拟合状态', ' 成功' if garch_result['model_fitted'] else ' 失败（使用历史波动率）']
                 ]
                 add_table_data(document, ['参数', '值'], garch_params)
 
@@ -982,7 +982,7 @@ def generate_chapter(context):
 
                 if not garch_result['model_fitted']:
                     add_paragraph(document, '')
-                    add_paragraph(document, '⚠️ 注：GARCH模型拟合失败，使用历史波动率作为预测值。')
+                    add_paragraph(document, ' 注：GARCH模型拟合失败，使用历史波动率作为预测值。')
 
                 # 对比历史波动率
                 add_paragraph(document, '')
@@ -995,16 +995,16 @@ def generate_chapter(context):
                 ]
                 add_table_data(document, ['数据来源', '年化波动率'], historical_vols)
 
-                print(f"✅ GARCH预测完成：{garch_result['forecast_volatility']*100:.2f}%")
+                print(f" GARCH预测完成：{garch_result['forecast_volatility']*100:.2f}%")
 
             else:
-                add_paragraph(document, '⚠️ 无法创建预测器，跳过GARCH预测')
-                print("⚠️ 无法创建预测器，跳过GARCH预测")
+                add_paragraph(document, ' 无法创建预测器，跳过GARCH预测')
+                print(" 无法创建预测器，跳过GARCH预测")
                 garch_result = {'forecast_volatility': mc_volatility_120d, 'model_fitted': False}
 
         except Exception as e:
-            add_paragraph(document, f'⚠️ GARCH预测失败: {e}')
-            print(f"⚠️ GARCH预测失败: {e}")
+            add_paragraph(document, f' GARCH预测失败: {e}')
+            print(f" GARCH预测失败: {e}")
             garch_result = {'forecast_volatility': mc_volatility_120d, 'model_fitted': False}
 
     add_section_break(document)
@@ -1062,7 +1062,7 @@ def generate_chapter(context):
             'drift': predicted_drift,
             'volatility': predicted_vol
         }
-        print(f"✅ 已保存预测参数模拟结果到context：盈利概率{profit_prob:.1f}%，预期收益{mean_return:.2f}%")
+        print(f" 已保存预测参数模拟结果到context：盈利概率{profit_prob:.1f}%，预期收益{mean_return:.2f}%")
 
         # 添加模拟参数说明
         add_paragraph(document, '模拟参数：', bold=True)
@@ -1120,7 +1120,7 @@ def generate_chapter(context):
             add_image(document, mc_5_5_charts[3])
 
         except Exception as e:
-            print(f"⚠️ 生成图表失败: {e}")
+            print(f" 生成图表失败: {e}")
 
         # 与历史参数方法对比
         add_paragraph(document, '')
@@ -1183,13 +1183,13 @@ def generate_chapter(context):
         add_paragraph(document, '投资建议：', bold=True)
 
         if mean_return > mean_return_hist and profit_prob > profit_prob_hist:
-            add_paragraph(document, f'✅ 基于预测参数的模拟结果优于历史参数，预期收益更高且盈利概率更大，建议积极考虑投资。')
+            add_paragraph(document, f' 基于预测参数的模拟结果优于历史参数，预期收益更高且盈利概率更大，建议积极考虑投资。')
         elif mean_return > mean_return_hist:
-            add_paragraph(document, f'⚠️ 基于预测参数的预期收益高于历史参数，但盈利概率{"略高" if profit_prob > profit_prob_hist else "略低"}，需结合其他因素综合判断。')
+            add_paragraph(document, f' 基于预测参数的预期收益高于历史参数，但盈利概率{"略高" if profit_prob > profit_prob_hist else "略低"}，需结合其他因素综合判断。')
         elif profit_prob > profit_prob_hist:
-            add_paragraph(document, f'⚠️ 基于预测参数的盈利概率高于历史参数，但预期收益{"略高" if mean_return > mean_return_hist else "略低"}，安全性较好但收益空间有限。')
+            add_paragraph(document, f' 基于预测参数的盈利概率高于历史参数，但预期收益{"略高" if mean_return > mean_return_hist else "略低"}，安全性较好但收益空间有限。')
         else:
-            add_paragraph(document, f'⚠️ 基于预测参数的模拟结果全面劣于历史参数，建议谨慎投资或要求更高的折价率。')
+            add_paragraph(document, f' 基于预测参数的模拟结果全面劣于历史参数，建议谨慎投资或要求更高的折价率。')
 
         add_paragraph(document, '')
         add_paragraph(document, '说明：')
@@ -1197,7 +1197,7 @@ def generate_chapter(context):
         add_paragraph(document, '• 历史参数基于过去250个交易日的统计，反映长期平均水平')
         add_paragraph(document, '• 两种方法各有优劣，建议结合使用，互为验证')
 
-        print(f"✅ 5.5节完成：盈利概率{profit_prob:.1f}%，预期收益{mean_return*100:.2f}%")
+        print(f" 5.5节完成：盈利概率{profit_prob:.1f}%，预期收益{mean_return*100:.2f}%")
 
         add_section_break(document)
 
@@ -1205,6 +1205,6 @@ def generate_chapter(context):
     context['results']['arima_result'] = arima_result
     context['results']['garch_result'] = garch_result
     context['results']['multi_window_mc_results'] = multi_window_mc_results
-    print(f"✅ 已保存multi_window_mc_results到context，共{len(multi_window_mc_results)}个窗口期")
+    print(f" 已保存multi_window_mc_results到context，共{len(multi_window_mc_results)}个窗口期")
 
     return context

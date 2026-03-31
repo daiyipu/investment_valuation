@@ -71,7 +71,7 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技'):
         document: Word文档对象
     """
     print("="*70)
-    print("🚀 定增风险分析报告生成器（模块化版本 V2.0）")
+    print(" 定增风险分析报告生成器（模块化版本 V2.0）")
     print("="*70)
     print(f"股票代码: {stock_code}")
     print(f"股票名称: {stock_name}")
@@ -83,7 +83,7 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技'):
     utils.setup_chinese_font(document)
 
     # 加载配置数据
-    print("\n📊 加载配置数据...")
+    print("\n 加载配置数据...")
     project_params, risk_params, market_data = load_placement_config(stock_code)
     industry_data = _load_industry_data(stock_code)
 
@@ -116,53 +116,53 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技'):
 
     # ==================== 依次调用各章节 ====================
     # 第一章：项目概况（包含封面和目录）
-    print("\n📊 生成第一章：项目概况...")
+    print("\n 生成第一章：项目概况...")
     context = chapter01_overview.generate_chapter(context)
 
     # 第二章：相对估值分析
-    print("\n📊 生成第二章：相对估值分析...")
+    print("\n 生成第二章：相对估值分析...")
     context = chapter02_valuation.generate_chapter(context)
 
     # 第三章：DCF估值分析
-    print("\n📊 生成第三章：DCF估值分析...")
+    print("\n 生成第三章：DCF估值分析...")
     context = chapter03_dcf.generate_chapter(context)
 
     # 第四章：敏感性分析
-    print("\n📊 生成第四章：敏感性分析...")
+    print("\n 生成第四章：敏感性分析...")
     context = chapter04_sensitivity.generate_chapter(context)
 
     # 第五章：蒙特卡洛模拟
-    print("\n📊 生成第五章：蒙特卡洛模拟...")
+    print("\n 生成第五章：蒙特卡洛模拟...")
     context = chapter05_montecarlo.generate_chapter(context)
 
     # 第六章：情景分析
-    print("\n📊 生成第六章：情景分析...")
+    print("\n 生成第六章：情景分析...")
     context = chapter06_scenario.generate_chapter(context)
 
     # 第七章：压力测试
-    print("\n📊 生成第七章：压力测试...")
+    print("\n 生成第七章：压力测试...")
     context = chapter07_stress.generate_chapter(context)
 
     # 第八章：VaR风险度量
-    print("\n📊 生成第八章：VaR风险度量...")
+    print("\n 生成第八章：VaR风险度量...")
     context = chapter08_var.generate_chapter(context)
 
     # 第九章：风控建议与风险提示
-    print("\n📊 生成第九章：风控建议与风险提示...")
+    print("\n 生成第九章：风控建议与风险提示...")
 
     # 9.1 综合评估汇总
-    print("\n📊 生成第九章第一节：综合评估汇总...")
+    print("\n 生成第九章第一节：综合评估汇总...")
     context = chapter09_01_evaluation.generate_chapter(context)
 
     # 9.2-9.9 风控建议与风险提示
     context = chapter09_advice.generate_chapter(context)
 
     # 附件：情景数据表
-    print("\n📊 生成附件：情景数据表...")
+    print("\n 生成附件：情景数据表...")
     context = appendix_scenarios.generate_chapter(context)
 
     print("\n" + "="*70)
-    print("✅ 报告生成完成！")
+    print(" 报告生成完成！")
     print("="*70)
 
     return document
@@ -177,7 +177,7 @@ def _load_industry_data(stock_code):
         with open(industry_data_file, 'r', encoding='utf-8') as f:
             return json.load(f)
     else:
-        print(f"⚠️ 未找到行业数据文件: {industry_data_file}")
+        print(f" 未找到行业数据文件: {industry_data_file}")
         return None
 
 
@@ -188,7 +188,7 @@ def save_report(document, stock_code, stock_name):
     output_path = os.path.join(OUTPUTS_DIR, filename)
 
     document.save(output_path)
-    print(f"\n✅ 报告已保存到: {output_path}")
+    print(f"\n 报告已保存到: {output_path}")
     return output_path
 
 
@@ -209,6 +209,6 @@ if __name__ == '__main__':
     if args.output:
         output_path = os.path.join(OUTPUTS_DIR, args.output)
         doc.save(output_path)
-        print(f"\n✅ 报告已保存到: {output_path}")
+        print(f"\n 报告已保存到: {output_path}")
     else:
         save_report(doc, args.stock, args.name)

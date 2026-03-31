@@ -620,7 +620,7 @@ def generate_chapter(context):
         # 优先使用已保存的market_data文件中的数据
         if market_data and 'total_days' in market_data:
             total_days = market_data['total_days']
-            print(f"✅ 使用已保存的市场数据（共{total_days}个交易日）")
+            print(f" 使用已保存的市场数据（共{total_days}个交易日）")
 
             # 从market_data中提取时间窗口数据
             windows = [20, 60, 120, 250]
@@ -629,8 +629,8 @@ def generate_chapter(context):
             price_series_list = market_data.get('price_series', [])
 
             if len(price_series_list) < 250:
-                print(f"⚠️ 价格数据不足（{len(price_series_list)}条），需要至少250条")
-                add_paragraph(document, '⚠️ 当前历史数据不足以进行时间窗口分析')
+                print(f" 价格数据不足（{len(price_series_list)}条），需要至少250条")
+                add_paragraph(document, ' 当前历史数据不足以进行时间窗口分析')
             else:
                 import pandas as pd
                 price_series = pd.Series(price_series_list)
@@ -695,7 +695,7 @@ def generate_chapter(context):
                 valid_indices = [i for i in range(len(time_window_results['window'])) if time_window_results['volatility'][i] > 0]
 
                 if len(valid_indices) == 0:
-                    add_paragraph(document, '⚠️ 当前历史数据不足以进行时间窗口分析')
+                    add_paragraph(document, ' 当前历史数据不足以进行时间窗口分析')
                 else:
                     # 只保留有数据的窗口
                     filtered_results = {
@@ -754,9 +754,9 @@ def generate_chapter(context):
                     add_paragraph(document, f'  - 结论：120日窗口平衡了数据稳定性和时效性，更能反映中期趋势')
 
                     if vol_20 > vol_60 * 1.3:
-                        add_paragraph(document, f'• ⚠️ 短期波动率显著高于长期，需注意短期风险')
+                        add_paragraph(document, f'•  短期波动率显著高于长期，需注意短期风险')
                     else:
-                        add_paragraph(document, f'• ✅ 波动率相对稳定，市场较为理性')
+                        add_paragraph(document, f'•  波动率相对稳定，市场较为理性')
                 else:
                     add_paragraph(document, f'ℹ️ 基于当前可用的{len(filtered_results["window"])}个时间窗口进行分析：')
 
@@ -767,7 +767,7 @@ def generate_chapter(context):
 
     except Exception as e:
         print(f"时间窗口分析失败: {e}")
-        add_paragraph(document, '⚠️ 时间窗口分析暂时无法执行')
+        add_paragraph(document, ' 时间窗口分析暂时无法执行')
 
     # ==================== 4.2 发行价折扣敏感性分析 ====================
     add_title(document, '4.2 发行价折扣敏感性分析', level=2)
@@ -799,7 +799,7 @@ def generate_chapter(context):
     add_paragraph(document, '')
 
     if abs(nominal_premium - actual_premium) > 10:
-        add_paragraph(document, f'⚠️ 注意：名义溢价率与实际溢价率差异较大（{abs(nominal_premium - actual_premium):.1f}个百分点）')
+        add_paragraph(document, f' 注意：名义溢价率与实际溢价率差异较大（{abs(nominal_premium - actual_premium):.1f}个百分点）')
         add_paragraph(document, f'   原因：当前价（{project_params["current_price"]:.2f}元）已偏离定价MA20（{pricing_ma20:.2f}元）')
         add_paragraph(document, f'   建议：重点关注实际溢价率（相对当前价），更符合模型预测逻辑')
         add_paragraph(document, '')
@@ -1283,7 +1283,7 @@ def generate_chapter(context):
         add_paragraph(document, '• 红色区域（盈利概率<40%）：高风险区域，建议规避或要求更高折价')
 
     except Exception as e:
-        print(f"⚠️ 生成热力图失败: {e}")
+        print(f" 生成热力图失败: {e}")
 
     # ==================== 4.6.2 漂移率 × 溢价率热力图 ====================
     add_paragraph(document, '')
@@ -1375,7 +1375,7 @@ def generate_chapter(context):
         add_paragraph(document, f'• 当前市场波动率: {current_vol_drift*100:.2f}%')
 
     except Exception as e:
-        print(f"⚠️ 生成漂移率热力图失败: {e}")
+        print(f" 生成漂移率热力图失败: {e}")
 
     # ==================== 4.6.3 三维敏感性分析（气泡图） ====================
     add_paragraph(document, '')
@@ -1490,7 +1490,7 @@ def generate_chapter(context):
         add_paragraph(document, f'• 波动率: {current_vol_3d*100:.2f}%')
 
     except Exception as e:
-        print(f"⚠️ 生成三维气泡图失败: {e}")
+        print(f" 生成三维气泡图失败: {e}")
 
     add_paragraph(document, '')
     add_paragraph(document, '复合敏感性分析结论：')

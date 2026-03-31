@@ -86,7 +86,7 @@ def generate_chapter(context):
                 'pb': df_target.iloc[0]['pb'],
                 'ps': df_target.iloc[0]['ps_ttm']
             }
-            print(f"✅ 获取相对估值数据成功，交易日期: {trade_date}")
+            print(f" 获取相对估值数据成功，交易日期: {trade_date}")
 
             # 获取申万三级行业分类的同行公司（与 notebook 一致）
             df_industry = pro.index_member_all(ts_code=stock_code)
@@ -100,7 +100,7 @@ def generate_chapter(context):
 
             # 显示所有行业分类记录，方便调试
             df_industry = df_industry.sort_values('in_date', ascending=False)
-            print(f"✅ 获取到{len(df_industry)}条行业分类记录:")
+            print(f" 获取到{len(df_industry)}条行业分类记录:")
 
             for idx, row in df_industry.head(5).iterrows():
                 print(f"   [{idx}] {row['in_date']}: 一级={row.get('index_name', 'N/A')}, L1={row.get('l1_name', 'N/A')}, L2={row.get('l2_name', 'N/A')}, L3={row.get('l3_name', 'N/A')}")
@@ -109,7 +109,7 @@ def generate_chapter(context):
             latest_industry = df_industry.iloc[0]
 
             # 调试输出
-            print(f"\n✅ 使用最新记录:")
+            print(f"\n 使用最新记录:")
             print(f"   股票代码: {stock_code}")
             print(f"   申万一级: {latest_industry.get('index_name', 'N/A')}")
             print(f"   申万三级代码: {latest_industry['l3_code']}")
@@ -119,16 +119,16 @@ def generate_chapter(context):
             target_industry_l3 = latest_industry['l3_name']  # 行业名称
 
             # 获取该三级行业的所有成分股
-            print(f"\n✅ 正在使用指数代码 {target_index_code} 查询成分股...")
+            print(f"\n 正在使用指数代码 {target_index_code} 查询成分股...")
 
             df_peers = pro.index_member_all(l3_code=target_index_code)
-            print(f"✅ 获取到 {len(df_peers)} 条成分股记录")
+            print(f" 获取到 {len(df_peers)} 条成分股记录")
 
             df_peers = df_peers[df_peers['ts_code'] != stock_code]
 
             # 获取同行公司基本信息
             peer_codes = df_peers['ts_code'].unique().tolist()
-            print(f"✅ 过滤后剩余 {len(peer_codes)} 个同行公司")
+            print(f" 过滤后剩余 {len(peer_codes)} 个同行公司")
 
             peer_basic = pro.stock_basic(ts_code=','.join(peer_codes[:30]),
                                        fields='ts_code,name,market')
@@ -164,7 +164,7 @@ def generate_chapter(context):
             sw_index_pb = None
             sw_index_ps = None
             try:
-                print(f"✅ 正在获取申万行业指数PE数据: {target_index_code}")
+                print(f" 正在获取申万行业指数PE数据: {target_index_code}")
                 # 获取最近5天的数据，取最新的一条
                 end_date = datetime.now().strftime('%Y%m%d')
                 start_date = (datetime.now() - timedelta(days=10)).strftime('%Y%m%d')
@@ -180,11 +180,11 @@ def generate_chapter(context):
                     sw_index_pb = latest.get('pb', None)
                     sw_index_ps = latest.get('ps_ttm', None)  # sw_daily可能没有ps_ttm
                     if sw_index_pe:
-                        print(f"✅ 申万行业指数PE数据获取成功: PE={sw_index_pe:.2f}, PB={sw_index_pb:.2f}")
+                        print(f" 申万行业指数PE数据获取成功: PE={sw_index_pe:.2f}, PB={sw_index_pb:.2f}")
                 else:
-                    print(f"⚠️ 申万行业指数PE数据为空")
+                    print(f" 申万行业指数PE数据为空")
             except Exception as e:
-                print(f"⚠️ 获取申万行业指数PE数据失败: {e}")
+                print(f" 获取申万行业指数PE数据失败: {e}")
 
             if peer_data_list:
                 peer_companies_val = pd.concat(peer_data_list, ignore_index=True)
@@ -399,15 +399,15 @@ def generate_chapter(context):
         add_paragraph(document, '')
 
         # 对比分析
-        add_paragraph(document, '📊 对比分析：', bold=True)
+        add_paragraph(document, ' 对比分析：', bold=True)
         if abs(current_metrics_val['pe'] - sw_index_pe) / sw_index_pe < 0.1:
-            add_paragraph(document, f'✅ 个股PE({current_metrics_val["pe"]:.2f}倍)与申万行业指数PE({sw_index_pe:.2f}倍)基本一致，估值合理')
+            add_paragraph(document, f' 个股PE({current_metrics_val["pe"]:.2f}倍)与申万行业指数PE({sw_index_pe:.2f}倍)基本一致，估值合理')
         elif current_metrics_val['pe'] < sw_index_pe:
-            add_paragraph(document, f'✅ 个股PE({current_metrics_val["pe"]:.2f}倍)低于申万行业指数PE({sw_index_pe:.2f}倍)，相对行业指数低估')
+            add_paragraph(document, f' 个股PE({current_metrics_val["pe"]:.2f}倍)低于申万行业指数PE({sw_index_pe:.2f}倍)，相对行业指数低估')
         else:
-            add_paragraph(document, f'⚠️ 个股PE({current_metrics_val["pe"]:.2f}倍)高于申万行业指数PE({sw_index_pe:.2f}倍)，相对行业指数高估')
+            add_paragraph(document, f' 个股PE({current_metrics_val["pe"]:.2f}倍)高于申万行业指数PE({sw_index_pe:.2f}倍)，相对行业指数高估')
     else:
-        add_paragraph(document, f'⚠️ 申万行业指数"{target_industry_l3}"的估值数据暂时无法获取')
+        add_paragraph(document, f' 申万行业指数"{target_industry_l3}"的估值数据暂时无法获取')
         add_paragraph(document, '可能原因：指数代码不正确或数据源暂时不可用')
 
     add_paragraph(document, '')
@@ -433,23 +433,23 @@ def generate_chapter(context):
 
     # PE分位数分析
     if current_metrics_val['pe'] > industry_stats_val['pe']['q3']:
-        add_paragraph(document, f'⚠️ PE({current_metrics_val["pe"]:.2f}倍)高于行业Q3({industry_stats_val["pe"]["q3"]:.2f}倍)，处于行业高位，估值偏高')
+        add_paragraph(document, f' PE({current_metrics_val["pe"]:.2f}倍)高于行业Q3({industry_stats_val["pe"]["q3"]:.2f}倍)，处于行业高位，估值偏高')
     elif current_metrics_val['pe'] < industry_stats_val['pe']['q1']:
-        add_paragraph(document, f'✅ PE({current_metrics_val["pe"]:.2f}倍)低于行业Q1({industry_stats_val["pe"]["q1"]:.2f}倍)，处于行业低位，估值偏低')
+        add_paragraph(document, f' PE({current_metrics_val["pe"]:.2f}倍)低于行业Q1({industry_stats_val["pe"]["q1"]:.2f}倍)，处于行业低位，估值偏低')
     else:
         add_paragraph(document, f'ℹ️ PE({current_metrics_val["pe"]:.2f}倍)介于行业Q1({industry_stats_val["pe"]["q1"]:.2f}倍)和Q3({industry_stats_val["pe"]["q3"]:.2f}倍)之间，估值合理')
 
     # PB分位数分析
     if current_metrics_val['pb'] > industry_stats_val['pb']['q3']:
-        add_paragraph(document, f'⚠️ PB({current_metrics_val["pb"]:.2f}倍)高于行业Q3({industry_stats_val["pb"]["q3"]:.2f}倍)，市净率偏高')
+        add_paragraph(document, f' PB({current_metrics_val["pb"]:.2f}倍)高于行业Q3({industry_stats_val["pb"]["q3"]:.2f}倍)，市净率偏高')
     elif current_metrics_val['pb'] < industry_stats_val['pb']['q1']:
-        add_paragraph(document, f'✅ PB({current_metrics_val["pb"]:.2f}倍)低于行业Q1({industry_stats_val["pb"]["q1"]:.2f}倍)，市净率偏低')
+        add_paragraph(document, f' PB({current_metrics_val["pb"]:.2f}倍)低于行业Q1({industry_stats_val["pb"]["q1"]:.2f}倍)，市净率偏低')
 
     # PS分位数分析
     if current_metrics_val['ps'] > industry_stats_val['ps']['q3']:
-        add_paragraph(document, f'⚠️ PS({current_metrics_val["ps"]:.2f}倍)高于行业Q3({industry_stats_val["ps"]["q3"]:.2f}倍)，市销率偏高')
+        add_paragraph(document, f' PS({current_metrics_val["ps"]:.2f}倍)高于行业Q3({industry_stats_val["ps"]["q3"]:.2f}倍)，市销率偏高')
     elif current_metrics_val['ps'] < industry_stats_val['ps']['q1']:
-        add_paragraph(document, f'✅ PS({current_metrics_val["ps"]:.2f}倍)低于行业Q1({industry_stats_val["ps"]["q1"]:.2f}倍)，市销率偏低')
+        add_paragraph(document, f' PS({current_metrics_val["ps"]:.2f}倍)低于行业Q1({industry_stats_val["ps"]["q1"]:.2f}倍)，市销率偏低')
 
     # 2.2.2 与申万行业指数对比
     if sw_index_pe is not None:
@@ -472,20 +472,20 @@ def generate_chapter(context):
 
         # PE申万指数对比分析
         if abs(pe_dev_sw) < 10:
-            add_paragraph(document, f'✅ PE({current_metrics_val["pe"]:.2f}倍)与申万行业指数PE({sw_index_pe:.2f}倍)基本一致，偏离度{pe_dev_sw:+.1f}%')
+            add_paragraph(document, f' PE({current_metrics_val["pe"]:.2f}倍)与申万行业指数PE({sw_index_pe:.2f}倍)基本一致，偏离度{pe_dev_sw:+.1f}%')
         elif pe_dev_sw > 0:
-            add_paragraph(document, f'⚠️ PE({current_metrics_val["pe"]:.2f}倍)高于申万行业指数PE({sw_index_pe:.2f}倍)，溢价{pe_dev_sw:+.1f}%')
+            add_paragraph(document, f' PE({current_metrics_val["pe"]:.2f}倍)高于申万行业指数PE({sw_index_pe:.2f}倍)，溢价{pe_dev_sw:+.1f}%')
         else:
-            add_paragraph(document, f'✅ PE({current_metrics_val["pe"]:.2f}倍)低于申万行业指数PE({sw_index_pe:.2f}倍)，折价{pe_dev_sw:+.1f}%')
+            add_paragraph(document, f' PE({current_metrics_val["pe"]:.2f}倍)低于申万行业指数PE({sw_index_pe:.2f}倍)，折价{pe_dev_sw:+.1f}%')
 
         # PB申万指数对比分析
         if pb_dev_sw is not None:
             if abs(pb_dev_sw) < 10:
-                add_paragraph(document, f'✅ PB({current_metrics_val["pb"]:.2f}倍)与申万行业指数PB({sw_index_pb:.2f}倍)基本一致')
+                add_paragraph(document, f' PB({current_metrics_val["pb"]:.2f}倍)与申万行业指数PB({sw_index_pb:.2f}倍)基本一致')
             elif pb_dev_sw > 0:
-                add_paragraph(document, f'⚠️ PB({current_metrics_val["pb"]:.2f}倍)高于申万行业指数PB({sw_index_pb:.2f}倍)，溢价{pb_dev_sw:+.1f}%')
+                add_paragraph(document, f' PB({current_metrics_val["pb"]:.2f}倍)高于申万行业指数PB({sw_index_pb:.2f}倍)，溢价{pb_dev_sw:+.1f}%')
             else:
-                add_paragraph(document, f'✅ PB({current_metrics_val["pb"]:.2f}倍)低于申万行业指数PB({sw_index_pb:.2f}倍)，折价{pb_dev_sw:+.1f}%')
+                add_paragraph(document, f' PB({current_metrics_val["pb"]:.2f}倍)低于申万行业指数PB({sw_index_pb:.2f}倍)，折价{pb_dev_sw:+.1f}%')
 
         add_paragraph(document, '')
         add_paragraph(document, '申万行业指数说明：')
@@ -519,7 +519,7 @@ def generate_chapter(context):
         industry_name, industry_code, industry_pe_data = pe_analyzer.get_industry_pe_history(stock_code, days=1825)
 
         if stock_pe_data is not None and industry_pe_data is not None:
-            print(f"✅ 成功获取历史PE数据")
+            print(f" 成功获取历史PE数据")
             print(f"   个股数据: {len(stock_pe_data)}条")
             print(f"   行业数据: {len(industry_pe_data)}条")
             print(f"   行业: {industry_name} ({industry_code})")
@@ -529,7 +529,7 @@ def generate_chapter(context):
             context['industry_pe_data'] = industry_pe_data
             context['industry_name'] = industry_name
             context['industry_code'] = industry_code
-            print(f"✅ 已保存PE数据到context，供第六章情景分析使用")
+            print(f" 已保存PE数据到context，供第六章情景分析使用")
 
             # 计算个股历史分位数统计
             stock_pe_current = stock_pe_data.iloc[-1]['pe_ttm']
@@ -614,19 +614,19 @@ def generate_chapter(context):
                         custom_peer_pe_percentile = float(pe_percentile_count.iloc[0] if isinstance(pe_percentile_count, pd.Series) else pe_percentile_count) / len(custom_peer_pe_data) * 100
 
                     except Exception as e:
-                        print(f"  ⚠️ 计算统计指标时出错: {e}")
-                        print(f"  ⚠️ custom_peer_pe_data形状: {custom_peer_pe_data.shape}")
-                        print(f"  ⚠️ custom_peer_pe_data列: {custom_peer_pe_data.columns.tolist()}")
+                        print(f"   计算统计指标时出错: {e}")
+                        print(f"   custom_peer_pe_data形状: {custom_peer_pe_data.shape}")
+                        print(f"   custom_peer_pe_data列: {custom_peer_pe_data.columns.tolist()}")
                         raise
 
-                    print(f"  ✅ 同行公司历史PE计算成功:")
+                    print(f"   同行公司历史PE计算成功:")
                     print(f"     当前PE: {custom_peer_pe_current:.2f}倍")
                     print(f"     数据点数: {len(custom_peer_pe_data)}")
                 else:
-                    print(f"  ⚠️ 未获取到同行公司历史PE数据")
+                    print(f"   未获取到同行公司历史PE数据")
 
             except Exception as e:
-                print(f"  ❌ 获取同行公司历史PE失败: {e}")
+                print(f"   获取同行公司历史PE失败: {e}")
 
             # 添加历史分位数统计表格
             if custom_peer_pe_current is not None:
@@ -765,7 +765,7 @@ def generate_chapter(context):
                 stock_comment = f"当前PE处于历史{stock_pe_percentile:.1f}%分位数，属于历史中低位，估值相对偏低"
             else:
                 stock_valuation_level = "历史低位"
-                stock_emoji = "✅"
+                stock_emoji = ""
                 stock_comment = f"当前PE处于历史{stock_pe_percentile:.1f}%分位数，属于历史低位，估值偏低，安全边际较高"
 
             add_paragraph(document, f'{stock_emoji} 个股估值水平：{stock_valuation_level}')
@@ -775,10 +775,10 @@ def generate_chapter(context):
             # 与行业对比
             if stock_pe_percentile > sw_index_pe_percentile + 20:
                 relative_comment = f"个股分位数({stock_pe_percentile:.1f}%)显著高于行业({sw_index_pe_percentile:.1f}%)，相对行业估值偏高"
-                relative_emoji = "⚠️"
+                relative_emoji = ""
             elif stock_pe_percentile < sw_index_pe_percentile - 20:
                 relative_comment = f"个股分位数({stock_pe_percentile:.1f}%)显著低于行业({sw_index_pe_percentile:.1f}%)，相对行业估值偏低，安全边际较高"
-                relative_emoji = "✅"
+                relative_emoji = ""
             else:
                 relative_comment = f"个股分位数({stock_pe_percentile:.1f}%)与行业({sw_index_pe_percentile:.1f}%)基本持平"
                 relative_emoji = "ℹ️"
@@ -806,18 +806,18 @@ def generate_chapter(context):
                 add_paragraph(document, f'• 建议等待估值回落至历史中低位再考虑参与')
 
         else:
-            print("⚠️ PE历史数据获取不完整，跳过趋势图生成")
-            add_paragraph(document, '⚠️ PE历史分位数趋势图暂时无法生成，可能原因：')
+            print(" PE历史数据获取不完整，跳过趋势图生成")
+            add_paragraph(document, ' PE历史分位数趋势图暂时无法生成，可能原因：')
             add_paragraph(document, '   • tushare数据缺失或API调用限制')
             add_paragraph(document, '   • 股票或行业历史数据不足')
 
     except ImportError as e:
-        print(f"⚠️ PE历史分析器导入失败: {e}")
-        add_paragraph(document, '⚠️ PE历史分位数趋势分析功能暂不可用')
+        print(f" PE历史分析器导入失败: {e}")
+        add_paragraph(document, ' PE历史分位数趋势分析功能暂不可用')
 
     except Exception as e:
-        print(f"❌ PE历史分位数趋势分析失败: {e}")
-        add_paragraph(document, f'⚠️ PE历史分位数趋势分析执行失败: {e}')
+        print(f" PE历史分位数趋势分析失败: {e}")
+        add_paragraph(document, f' PE历史分位数趋势分析执行失败: {e}')
 
     add_paragraph(document, '')
 

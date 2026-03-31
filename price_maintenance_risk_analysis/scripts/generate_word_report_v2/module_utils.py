@@ -26,7 +26,7 @@ try:
     from utils.analysis_tools import calculate_profit_probability_lognormal
     font_prop = get_font_prop()
 except Exception as e:
-    print(f"⚠️ 无法加载中文字体: {e}")
+    print(f" 无法加载中文字体: {e}")
     font_prop = None
 
 
@@ -91,7 +91,7 @@ def add_image(document, image_path, width=Inches(5)):
         last_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         return True
     else:
-        print(f"⚠️ 图片不存在: {image_path}")
+        print(f" 图片不存在: {image_path}")
         return False
 
 
@@ -1597,12 +1597,12 @@ def generate_industry_index_charts(industry_data, save_dir):
         # 重新获取行业指数历史数据用于绘图
         index_code = industry_data.get('index_code')
         if not index_code:
-            print("⚠️ 缺少行业指数代码，无法生成图表")
+            print(" 缺少行业指数代码，无法生成图表")
             return paths
 
         ts_token = os.environ.get('TUSHARE_TOKEN', '')
         if not ts_token:
-            print("⚠️ 未设置TUSHARE_TOKEN，无法获取行业指数数据")
+            print(" 未设置TUSHARE_TOKEN，无法获取行业指数数据")
             return paths
 
         pro = ts.pro_api(ts_token)
@@ -1614,7 +1614,7 @@ def generate_industry_index_charts(industry_data, save_dir):
         df = pro.sw_daily(ts_code=index_code, start_date=start_date, end_date=end_date)
 
         if df is None or df.empty:
-            print(f"⚠️ 未获取到{index_code}的历史数据")
+            print(f" 未获取到{index_code}的历史数据")
             return paths
 
         # 按日期排序
@@ -1723,10 +1723,10 @@ def generate_industry_index_charts(industry_data, save_dir):
         plt.close()
         paths.append(path3)
 
-        print(f"✅ 成功生成 {len(paths)} 个行业指数图表")
+        print(f" 成功生成 {len(paths)} 个行业指数图表")
 
     except Exception as e:
-        print(f"⚠️ 生成行业指数图表失败: {e}")
+        print(f" 生成行业指数图表失败: {e}")
         import traceback
         traceback.print_exc()
 
@@ -2027,7 +2027,7 @@ def generate_market_turnover_chart(market_turnover_data, save_path):
     try:
         historical_data = market_turnover_data.get('historical_data', [])
         if not historical_data:
-            print("⚠️ 没有历史换手率数据，跳过图表生成")
+            print(" 没有历史换手率数据，跳过图表生成")
             return None
 
         # 提取数据
@@ -2090,11 +2090,11 @@ def generate_market_turnover_chart(market_turnover_data, save_path):
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
         plt.close()
 
-        print(f"✅ 换手率曲线图已保存: {save_path}")
+        print(f" 换手率曲线图已保存: {save_path}")
         return save_path
 
     except Exception as e:
-        print(f"⚠️ 生成换手率曲线图失败: {e}")
+        print(f" 生成换手率曲线图失败: {e}")
         import traceback
         traceback.print_exc()
         return None

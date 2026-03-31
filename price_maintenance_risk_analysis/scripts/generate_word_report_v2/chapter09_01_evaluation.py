@@ -83,7 +83,7 @@ def generate_chapter(context):
     add_table_data(document, ma_comparison_data[0], [ma_comparison_data[1]])
 
     add_paragraph(document, '')
-    add_paragraph(document, '📊 技术位置解读：', bold=True)
+    add_paragraph(document, ' 技术位置解读：', bold=True)
     add_paragraph(document, f'• 当前价格：{current_price:.2f}元')
     add_paragraph(document, f'• 相对MA20：{((current_price/ma20 - 1) * 100):+.2f}%')
     add_paragraph(document, f'• 相对MA120：{((current_price/ma120 - 1) * 100):+.2f}%')
@@ -154,13 +154,13 @@ def generate_chapter(context):
         add_table_data(document, valuation_summary_data[0], valuation_summary_data[1:])
 
         add_paragraph(document, '')
-        add_paragraph(document, '📊 相对估值解读：', bold=True)
+        add_paragraph(document, ' 相对估值解读：', bold=True)
         add_paragraph(document, f'• PE相对行业：{pe_premium:+.1f}%（{pe_eval}）')
         if current_pb > 0 and industry_pb > 0:
             add_paragraph(document, f'• PB相对行业：{pb_premium:+.1f}%')
         add_paragraph(document, '')
     else:
-        add_paragraph(document, '⚠️ PE/PB数据暂时不可用，请参见第二章"相对估值分析"获取详细信息。')
+        add_paragraph(document, ' PE/PB数据暂时不可用，请参见第二章"相对估值分析"获取详细信息。')
         add_paragraph(document, '')
 
     # ==================== 9.1.3 DCF估值分析汇总 ====================
@@ -195,12 +195,12 @@ def generate_chapter(context):
         add_table_data(document, dcf_summary_data[0], [dcf_summary_data[1]])
 
         add_paragraph(document, '')
-        add_paragraph(document, '📊 DCF估值解读：', bold=True)
+        add_paragraph(document, ' DCF估值解读：', bold=True)
         add_paragraph(document, f'• 内在价值：{intrinsic_value:.2f}元')
         add_paragraph(document, f'• 相对当前价：{dcf_discount:+.1f}%（{dcf_eval}）')
         add_paragraph(document, '')
     else:
-        add_paragraph(document, '⚠️ DCF估值不可用（内在价值为负或无法计算），请参见第三章"DCF估值分析"了解详情。')
+        add_paragraph(document, ' DCF估值不可用（内在价值为负或无法计算），请参见第三章"DCF估值分析"了解详情。')
         add_paragraph(document, '')
 
     # ==================== 9.1.4 蒙特卡洛模拟结果汇总 ====================
@@ -242,7 +242,7 @@ def generate_chapter(context):
             add_table_data(document, ['指标', '历史参数模拟', '预测参数模拟(ARIMA+GARCH)', '差异'], mc_comparison_data)
 
             add_paragraph(document, '')
-            add_paragraph(document, '📊 模拟结果解读：', bold=True)
+            add_paragraph(document, ' 模拟结果解读：', bold=True)
             add_paragraph(document, f'• 历史参数模拟：基于250日历史数据的漂移率({mc_drift*100:+.2f}%)和波动率({mc_volatility*100:.2f}%)')
             add_paragraph(document, f'• 预测参数模拟：基于ARIMA预测的漂移率({drift_predicted*100:+.2f}%)和GARCH预测的波动率({vol_predicted*100:.2f}%)')
             add_paragraph(document, f'• 盈利概率差异：{profit_prob_predicted-profit_prob_historical:+.1f}个百分点（{"预测更高" if profit_prob_predicted > profit_prob_historical else "历史更高"}）')
@@ -266,10 +266,10 @@ def generate_chapter(context):
             add_table_data(document, mc_summary_data[0], mc_summary_data[1:])
 
             add_paragraph(document, '')
-            add_paragraph(document, '📊 说明：预测参数模拟结果不可用，仅显示基于历史参数的模拟结果。')
+            add_paragraph(document, ' 说明：预测参数模拟结果不可用，仅显示基于历史参数的模拟结果。')
             add_paragraph(document, '')
     else:
-        add_paragraph(document, '⚠️ 蒙特卡洛模拟结果不可用，请参见第五章"蒙特卡洛模拟"获取详细信息。')
+        add_paragraph(document, ' 蒙特卡洛模拟结果不可用，请参见第五章"蒙特卡洛模拟"获取详细信息。')
         add_paragraph(document, '')
 
     # ==================== 9.1.5 情景分析汇总 ====================
@@ -363,7 +363,7 @@ def generate_chapter(context):
         add_table_data(document, stress_data[0], stress_data[1:])
 
         add_paragraph(document, '')
-        add_paragraph(document, '📊 压力测试解读：', bold=True)
+        add_paragraph(document, ' 压力测试解读：', bold=True)
         add_paragraph(document, f'• 压力测试情景：{scenario_name_display}')
         add_paragraph(document, f'• 盈利概率：{stress_prob:.1f}%')
         add_paragraph(document, f'• 中位数收益：{stress_median:+.2f}%')
@@ -371,7 +371,7 @@ def generate_chapter(context):
             add_paragraph(document, f'• 与基准差异：盈利概率下降{abs(prob_diff):.1f}个百分点，中位数收益下降{abs(median_diff):.2f}%')
         add_paragraph(document, '')
     else:
-        add_paragraph(document, '⚠️ 未找到压力测试情景结果，请参见第七章"情景分析与压力测试"获取详细信息。')
+        add_paragraph(document, ' 未找到压力测试情景结果，请参见第七章"情景分析与压力测试"获取详细信息。')
         add_paragraph(document, '')
 
     # ==================== 9.1.7 VaR风险度量汇总 ====================
@@ -407,7 +407,7 @@ def generate_chapter(context):
     add_table_data(document, var_summary_data[0], var_summary_data[1:])
 
     add_paragraph(document, '')
-    add_paragraph(document, '📊 VaR解读：', bold=True)
+    add_paragraph(document, ' VaR解读：', bold=True)
     add_paragraph(document, f'• VaR基于锁定期（120日）的简单收益率计算，未进行年化')
     add_paragraph(document, f'• 95% VaR：{var_95_simple*100:.2f}%，表示在95%置信水平下，锁定期末的最大可能损失')
     add_paragraph(document, f'• 99% VaR：{var_99_simple*100:.2f}%，表示在99%置信水平下，锁定期末的最大可能损失')
@@ -513,7 +513,7 @@ def generate_chapter(context):
     add_table_data(document, comprehensive_summary_data[0], comprehensive_summary_data[1:])
 
     add_paragraph(document, '')
-    add_paragraph(document, '📊 综合评估解读：', bold=True)
+    add_paragraph(document, ' 综合评估解读：', bold=True)
     add_paragraph(document, f'• DCF估值：{dcf_display}（{dcf_eval}）')
     add_paragraph(document, f'• 蒙特卡洛盈利概率：{profit_prob_display:.1f}%（{mc_eval}）')
     add_paragraph(document, f'• 预期年化收益率：{mean_return_display:.2f}%')
