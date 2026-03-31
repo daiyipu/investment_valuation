@@ -900,6 +900,8 @@ def generate_chapter(context):
                 add_paragraph(document, '注意：不同计算方法的收益率不可直接对比')
                 add_paragraph(document, '• 离散复利（单利）：基于简单收益率年化，适用于历史数据回测')
                 add_paragraph(document, '• 连续复利（对数收益率）：基于对数收益率，适用于时间序列预测和期权定价')
+                add_paragraph(document, '• 几何布朗运动（GBM）模型要求使用连续复利漂移率')
+                add_paragraph(document, '• 如将历史离散复利用于GBM，需转换：连续复利 = ln(1 + 离散复利)')
                 add_paragraph(document, '')
 
                 historical_drifts = [
@@ -1082,13 +1084,24 @@ def generate_chapter(context):
             ['发行价格', f'{project_params["issue_price"]:.2f}元'],
             ['名义溢价率', f'{nominal_premium:+.2f}%（相对MA20: {pricing_ma20:.2f}元）'],
             ['实际溢价率', f'{actual_premium:+.2f}%（相对当前价）'],
-            ['预测漂移率', f'{predicted_drift*100:.2f}%（来自5.3节ARIMA预测）'],
+            ['预测漂移率', f'{predicted_drift*100:.2f}%（连续复利，来自5.3节ARIMA预测）'],
             ['预测波动率', f'{predicted_vol*100:.2f}%（来自5.4节GARCH预测）'],
             ['模拟期数', f'{time_steps}日（120个交易日，约半年）'],
             ['模拟次数', f'{n_simulations:,}次'],
             ['锁定期', f'{project_params["lockup_period"]}个月']
         ]
         add_table_data(document, ['参数', '值'], mc_5_5_params)
+
+        # 添加漂移率说明
+        add_paragraph(document, '')
+        add_paragraph(document, '**重要说明：漂移率的一致性**')
+        add_paragraph(document, '')
+        add_paragraph(document, '• 预测漂移率（-9.01%）是**连续复利（对数收益率）**，可直接用于几何布朗运动（GBM）模型')
+        add_paragraph(document, '• 历史窗口漂移率（60日/120日/250日）是**离散复利（单利）**，如需用于GBM需转换为连续复利')
+        add_paragraph(document, '• 转换公式：连续复利 = ln(1 + 离散复利)')
+        add_paragraph(document, '• 例如：-59%离散复利 → ln(1 - 0.59) = ln(0.41) ≈ -89.1%连续复利')
+        add_paragraph(document, '')
+        add_paragraph(document, '本节使用ARIMA预测的连续复利漂移率，确保与GBM模型一致。')
 
         # 添加模拟结果
         add_paragraph(document, '')
