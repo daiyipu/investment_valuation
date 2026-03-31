@@ -897,13 +897,18 @@ def generate_chapter(context):
                 # 对比历史漂移率
                 add_paragraph(document, '')
                 add_paragraph(document, '与历史漂移率对比：', bold=True)
+                add_paragraph(document, '注意：不同计算方法的收益率不可直接对比')
+                add_paragraph(document, '• 离散复利（单利）：基于简单收益率年化，适用于历史数据回测')
+                add_paragraph(document, '• 连续复利（对数收益率）：基于对数收益率，适用于时间序列预测和期权定价')
+                add_paragraph(document, '')
+
                 historical_drifts = [
-                    ['60日窗口', f'{mc_drift_60d*100:.2f}%'],
-                    ['120日窗口', f'{mc_drift_120d*100:.2f}%'],
-                    ['250日窗口', f'{mc_drift_250d*100:.2f}%'],
-                    ['ARIMA预测', f'{arima_result["forecast_drift"]*100:.2f}%']
+                    ['60日窗口', f'{mc_drift_60d*100:.2f}%', '离散复利（单利）'],
+                    ['120日窗口', f'{mc_drift_120d*100:.2f}%', '离散复利（单利）'],
+                    ['250日窗口', f'{mc_drift_250d*100:.2f}%', '离散复利（单利）'],
+                    ['ARIMA预测', f'{arima_result["forecast_drift"]*100:.2f}%', '连续复利（对数收益率）']
                 ]
-                add_table_data(document, ['数据来源', '年化漂移率'], historical_drifts)
+                add_table_data(document, ['数据来源', '年化漂移率', '收益率类型'], historical_drifts)
 
                 print(f" ARIMA预测完成：{arima_result['forecast_drift']*100:.2f}%")
 
