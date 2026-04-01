@@ -231,8 +231,77 @@ def generate_chapter(context):
     add_paragraph(document, '包括2008年金融危机、2020年疫情、行业政策收紧、个股重大利空等多种极端情景。')
     add_paragraph(document, '')
 
+    # 7.2.1 压力情景定义
+    add_title(document, '7.2.1 压力情景定义', level=3)
+    add_paragraph(document, '')
+
+    add_paragraph(document, '本节定义六种极端经济情景，基于历史事件和假设性风险构建。每种情景假设股价')
+    add_paragraph(document, '在当前基础上下跌一定幅度，并伴随波动率飙升，用于评估定增项目在极端情况')
+    add_paragraph(document, '下的最大损失和抗风险能力。')
+    add_paragraph(document, '')
+
     # 定义完整的压力测试情景（与notebook一致）
-    add_paragraph(document, '7.2.1 压力情景定义', bold=True)
+    stress_scenarios = {
+        '市场危机_2008': {
+            'description': '模拟2008年金融危机，股价下跌60%',
+            'price_drop': 0.60,
+            'volatility_spike': 2.0
+        },
+        '市场危机_2020': {
+            'description': '模拟2020年疫情，股价下跌40%',
+            'price_drop': 0.40,
+            'volatility_spike': 1.5
+        },
+        '行业政策收紧': {
+            'description': '行业监管政策收紧，股价下跌25%',
+            'price_drop': 0.25,
+            'volatility_spike': 1.2
+        },
+        '个股重大利空': {
+            'description': '公司业绩暴雷，股价下跌35%',
+            'price_drop': 0.35,
+            'volatility_spike': 1.8
+        },
+        '流动性危机': {
+            'description': '市场流动性枯竭，股价下跌20%并波动率飙升',
+            'price_drop': 0.20,
+            'volatility_spike': 2.5
+        },
+        '极端熊市': {
+            'description': '极端熊市情景，股价下跌50%',
+            'price_drop': 0.50,
+            'volatility_spike': 1.3
+        }
+    }
+
+    # 添加情景说明表格
+    add_paragraph(document, '各极端情景的具体定义如下：')
+    add_paragraph(document, '')
+
+    scenario_headers = ['情景名称', '情景描述', '股价跌幅', '波动率倍数']
+    scenario_table_data = [
+        ['市场危机_2008', '2008年金融危机级别', '-60%', '2.0x'],
+        ['市场危机_2020', '2020年疫情级别', '-40%', '1.5x'],
+        ['极端熊市', '极端熊市情景', '-50%', '1.3x'],
+        ['个股重大利空', '公司业绩暴雷', '-35%', '1.8x'],
+        ['行业政策收紧', '行业监管收紧', '-25%', '1.2x'],
+        ['流动性危机', '市场流动性枯竭', '-20%', '2.5x']
+    ]
+    add_table_data(document, scenario_headers, scenario_table_data)
+
+    add_paragraph(document, '')
+    add_paragraph(document, '情景说明：')
+    add_paragraph(document, '• **市场危机_2008**：模拟2008年全球金融危机，A股市场暴跌约60%的极端情景')
+    add_paragraph(document, '• **市场危机_2020**：模拟2020年新冠疫情冲击，A股市场下跌约40%的情景')
+    add_paragraph(document, '• **极端熊市**：假设进入极端熊市周期，股价下跌50%，波动率上升30%')
+    add_paragraph(document, '• **个股重大利空**：公司突发重大利空（如财务造假、重大诉讼等），股价下跌35%')
+    add_paragraph(document, '• **行业政策收紧**：行业遭遇强监管政策（如教培、互联网金融等），股价下跌25%')
+    add_paragraph(document, '• **流动性危机**：市场流动性枯竭（如钱荒、信用违约等），股价下跌20%，波动率飙升150%')
+    add_paragraph(document, '')
+    add_paragraph(document, '风险提示：')
+    add_paragraph(document, '• 以上情景均为压力测试假设，不代表对未来市场的预测')
+    add_paragraph(document, '• 实际极端情况可能比假设情景更严重或更轻微')
+    add_paragraph(document, '• 投资决策应综合考虑多种情景下的风险敞口')
     add_paragraph(document, '')
 
     # 定义完整的压力测试情景

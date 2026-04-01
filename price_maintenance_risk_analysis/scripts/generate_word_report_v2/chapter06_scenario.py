@@ -1475,9 +1475,14 @@ def generate_chapter(context):
 
     add_section_break(document)
 
-    # 保存all_scenarios到context供附件使用
+    # 保存all_scenarios和all_scenarios_for_appendix到context供附件使用
     if 'all_scenarios' in locals() and len(all_scenarios) > 0:
         context['results']['all_scenarios'] = all_scenarios
         print(f" 已保存{len(all_scenarios)}个情景到context，供附件使用")
+
+    # 保存扁平结构的情景数据供附件使用（包含6.2-6.5专项情景）
+    if 'all_scenarios_for_appendix' in locals() and len(all_scenarios_for_appendix) > 0:
+        context['results']['all_scenarios_for_appendix'] = all_scenarios_for_appendix
+        print(f" 已保存{len(all_scenarios_for_appendix)}个情景（扁平结构）到context，供6.2-6.5节附表使用")
 
     return context

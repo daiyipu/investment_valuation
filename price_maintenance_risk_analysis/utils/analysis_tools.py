@@ -1,6 +1,30 @@
 """
 定增项目风险分析工具函数
 包含各种风险分析的核心计算函数
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+【重要说明】收益率类型与GBM模型
+
+本模块中的GBM模型相关函数使用**连续复利（对数收益率）**。
+
+报告中的收益率数据是**离散复利**（简单涨跌幅），用于直观展示。
+在GBM模型中使用时需要转换为连续复利。
+
+【转换方法】
+    from utils.return_conversion import discrete_to_continuous, get_gbm_drift_from_discrete
+
+    # 场景1: 从报告数据（离散复利）转换为GBM漂移率（连续复利）
+    period_return_discrete = market_data['period_return_60d']  # 例如 -0.1462
+    drift = get_gbm_drift_from_discrete(period_return_discrete, 60)
+    # = ln(1 - 0.1462) × (250/60) = -0.1580 × 4.167 = -0.658
+
+    # 场景2: 蒙特卡洛模拟使用
+    drift = get_gbm_drift_from_discrete(period_return, window)
+    volatility = market_data['volatility_60d']  # 已是连续复利
+    monte_carlo_simulation(drift=drift, volatility=volatility)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 import numpy as np
 import pandas as pd
@@ -18,6 +42,33 @@ def calculate_profit_probability_lognormal(target_price: float,
     """
     使用对数正态分布计算盈利概率（几何布朗运动模型）
 
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    【重要说明】参数类型要求
+
+    本函数基于GBM模型，要求输入**连续复利**的漂移率和波动率。
+
+    参数要求：
+        - drift: 连续复利年化漂移率 μ（不是离散复利！）
+        - volatility: 连续复利年化波动率 σ
+
+    【从报告数据转换】
+    如果从市场数据报告（离散复利）获取参数，需要转换：
+
+        from utils.return_conversion import get_gbm_drift_from_discrete
+
+        # 错误示例：直接使用离散复利
+        drift_wrong = market_data['annual_return_60d']  # ❌ 这是离散复利
+
+        # 正确示例：转换为连续复利
+        period_return = market_data['period_return_60d']  # -14.62%
+        drift_correct = get_gbm_drift_from_discrete(period_return, 60)
+        # = ln(1 - 0.1462) × (250/60) = -60.91%（连续复利年化）
+
+        volatility = market_data['volatility_60d']  # ✓ 已是连续复利
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
     理论基础：
     - 股票价格服从几何布朗运动：dS = μSdt + σSdW
     - 对数价格服从正态分布：ln(S_t) ~ N(ln(S_0) + (μ - σ²/2)t, σ²t)
@@ -26,12 +77,27 @@ def calculate_profit_probability_lognormal(target_price: float,
     参数:
         target_price: 目标价格（盈利阈值）
         current_price: 当前价格
-        drift: 年化漂移率（μ）
-        volatility: 年化波动率（σ）
+        drift: 年化漂移率 μ（必须是连续复利！）
+        volatility: 年化波动率 σ（连续复利）
         period_months: 预测期（月）
 
     返回:
         float: 盈利概率（0-100）
+
+    示例:
+        >>> from utils.return_conversion import get_gbm_drift_from_discrete
+        >>> period_return = -0.1462  # 60日离散收益率 -14.62%
+        >>> drift = get_gbm_drift_from_discrete(period_return, 60)
+        >>> volatility = 0.338  # 60日波动率 33.80%
+        >>>
+        >>> prob = calculate_profit_probability_lognormal(
+        ...     target_price=30.0,
+        ...     current_price=21.26,
+        ...     drift=drift,
+        ...     volatility=volatility,
+        ...     period_months=6
+        ... )
+        >>> print(f"盈利概率: {prob:.2f}%")
     """
     T = period_months / 12  # 转换为年
 
@@ -122,17 +188,74 @@ class PrivatePlacementRiskAnalyzer:
                              drift: float = None,
                              seed: int = None) -> pd.DataFrame:
         """
-        蒙特卡洛模拟股价路径
+        蒙特卡洛模拟股价路径（基于GBM模型）
+
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+        【重要说明】参数类型要求
+
+        本方法基于GBM模型，要求输入**连续复利**的漂移率和波动率。
+
+        参数要求：
+            - drift: 连续复利年化漂移率 μ（不是离散复利！）
+            - volatility: 连续复利年化波动率 σ
+
+        【从报告数据转换】
+        如果从市场数据报告（离散复利）获取参数，需要转换：
+
+            from utils.return_conversion import get_gbm_drift_from_discrete
+
+            # 错误示例：直接使用离散复利
+            drift_wrong = market_data['annual_return_60d']  # ❌ 这是离散复利
+
+            # 正确示例：转换为连续复利
+            period_return = market_data['period_return_60d']  # -14.62%
+            drift_correct = get_gbm_drift_from_discrete(period_return, 60)
+            # = ln(1 - 0.1462) × (250/60) = -60.91%（连续复利年化）
+
+            volatility = market_data['volatility_60d']  # ✓ 已是连续复利
+
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
         Args:
-            n_simulations: 模拟次数
-            time_steps: 时间步数（天）
-            volatility: 年化波动率
-            drift: 漂移率（年化），默认使用无风险利率
-            seed: 随机种子
+            n_simulations: 模拟次数（路径数量）
+            time_steps: 时间步数（天），默认252（一年）
+            volatility: 年化波动率 σ（连续复利）
+            drift: 漂移率 μ（年化，连续复利），默认使用无风险利率
+            seed: 随机种子（可重复性）
 
         Returns:
-            模拟结果DataFrame
+            DataFrame: 模拟结果，每一行是一条路径，列是 Day_0, Day_1, ...
+
+        示例:
+            >>> from utils.return_conversion import get_gbm_drift_from_discrete
+            >>>
+            >>> # 从市场数据获取参数（离散复利）
+            >>> period_return = market_data['period_return_60d']  # -14.62%
+            >>> volatility = market_data['volatility_60d']  # 33.80%
+            >>>
+            >>> # 转换为连续复利（用于GBM）
+            >>> drift = get_gbm_drift_from_discrete(period_return, 60)
+            >>>
+            >>> # 运行蒙特卡洛模拟
+            >>> analyzer = PrivatePlacementRiskAnalyzer(...)
+            >>> simulations = analyzer.monte_carlo_simulation(
+            ...     n_simulations=10000,
+            ...     time_steps=180,  # 6个月约180天
+            ...     drift=drift,  # 连续复利年化漂移率
+            ...     volatility=volatility,  # 连续复利年化波动率
+            ...     seed=42  # 可重复
+            ... )
+
+        理论基础：
+            GBM模型离散化形式：
+                S_{t+1} = S_t × exp((μ - σ²/2)dt + σ√dt × Z)
+
+            其中：
+                - μ: 连续复利漂移率（年化）
+                - σ: 连续复利波动率（年化）
+                - dt: 时间步长（1/252，日数据）
+                - Z: 标准正态分布随机变量
         """
         if seed is not None:
             np.random.seed(seed)
@@ -140,7 +263,7 @@ class PrivatePlacementRiskAnalyzer:
         if drift is None:
             drift = self.risk_free_rate
 
-        dt = 1 / 252  # 日时间步长
+        dt = 1 / 252  # 日时间步长（252个交易日/年）
 
         # 使用传入的time_steps，如果没有则使用锁定期天数
         if time_steps is not None:
@@ -152,6 +275,7 @@ class PrivatePlacementRiskAnalyzer:
         brownian_motion = np.random.standard_normal((n_simulations, total_days))
 
         # 股价路径模拟（几何布朗运动）
+        # 注意：drift和volatility都应该是连续复利年化值
         prices = np.zeros((n_simulations, total_days + 1))
         prices[:, 0] = self.current_price
 

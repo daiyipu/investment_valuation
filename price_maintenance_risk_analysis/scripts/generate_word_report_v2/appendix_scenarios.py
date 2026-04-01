@@ -19,7 +19,9 @@ def generate_chapter(context):
         context: 包含document和results的字典
     """
     document = context['document']
-    all_scenarios_for_appendix = context['results'].get('all_scenarios', [])
+    # 优先使用扁平结构的情景数据（包含6.2-6.5专项情景），否则使用嵌套结构
+    all_scenarios_for_appendix = context['results'].get('all_scenarios_for_appendix',
+                                                        context['results'].get('all_scenarios', []))
     _generate_appendix_scenarios(document, all_scenarios_for_appendix)
     return context
 
@@ -187,12 +189,17 @@ def _generate_appendix_scenarios(document, all_scenarios_for_appendix):
     # 按情景类型分组
     grouped_scenarios = {}
     for s in all_scenarios_for_appendix:
-        # 获取情景名称
+        # 获取情景名称（兼容嵌套和扁平结构）
+        scenario_name = None
         if 'name' in s:
+            # 扁平结构
             scenario_name = s['name']
         elif 'scenario' in s and 'name' in s['scenario']:
+            # 嵌套结构
             scenario_name = s['scenario']['name']
-        else:
+
+        # 如果没有name字段，跳过
+        if not scenario_name:
             continue
 
         # 确定情景类型
@@ -206,6 +213,12 @@ def _generate_appendix_scenarios(document, all_scenarios_for_appendix):
             if scenario_type not in grouped_scenarios:
                 grouped_scenarios[scenario_type] = []
             grouped_scenarios[scenario_type].append(s)
+
+    # 检查是否有分组数据
+    if not grouped_scenarios:
+        add_paragraph(document, '⚠️ 未找到6.2-6.5节的专项情景数据，请确认情景分析章节已正确生成。')
+        add_paragraph(document, '')
+        return
 
     # 为每种情景类型生成表格
     for scenario_type, scenarios in grouped_scenarios.items():

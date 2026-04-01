@@ -52,71 +52,126 @@ def fetch_latest_data(stock_code='300735.SZ', days=500):
 
 def calculate_rolling_volatility(df, window, annualize=True):
     """
-    计算滚动波动率（基于对数收益率，连续复利）
+    计算滚动波动率（基于连续复利，对数收益率）
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    【重要说明】波动率计算方法
+
+    本函数使用**连续复利（对数收益率）**计算波动率，符合GBM模型要求。
+
+    计算公式：
+        对数收益率 = ln(P_t / P_{t-1})
+        波动率 = std(对数收益率) × √250
+
+    注意：
+        - 波动率必须使用连续复利计算（与收益率不同）
+        - 年化因子使用250（中国A股年交易日数）
+        - 此波动率可直接用于GBM模型、蒙特卡洛模拟等
+
+    理论依据：
+        GBM模型中，波动率σ是对数收益率的标准差
+        这是伊藤引理的要求，不能使用离散复利
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     参数:
         df: 包含close列的DataFrame（收盘价数据）
         window: 窗口大小（交易日）
-        annualize: 是否年化
+        annualize: 是否年化（默认True）
 
     返回:
-        波动率序列和统计值（小数形式，如0.23表示23%）
+        dict: 波动率序列和统计值（小数形式，如0.23表示23%）
+            - latest: 最新波动率
+            - mean: 平均波动率
+            - median: 中位数波动率
+            - max: 最大波动率
+            - min: 最小波动率
+            - series: 完整序列（用于绘图）
+
+    示例:
+        >>> vol = calculate_rolling_volatility(df, 60)
+        >>> print(f"60日波动率: {vol['latest']*100:.2f}%")
+        60日波动率: 33.80%
+        >>> # 可直接用于GBM模型
+        >>> drift = ...  # 漂移率
+        >>> volatility = vol['latest']  # 波动率
+        >>> monte_carlo_simulation(drift=drift, volatility=volatility)
     """
     # 计算对数收益率（连续复利）
+    # 注意：波动率必须使用连续复利计算
     log_returns = np.log(df['close']).diff()
 
     # 计算滚动标准差
     rolling_std = log_returns.rolling(window=window).std()
 
-    # 年化波动率 (假设一年252个交易日，与收益率年化一致)
+    # 年化波动率（年化因子250，中国A股年交易日数）
     if annualize:
-        rolling_vol = rolling_std * np.sqrt(252)
+        rolling_vol = rolling_std * np.sqrt(250)
     else:
         rolling_vol = rolling_std
 
     # 返回最新值和平均值
     return {
-        'latest': rolling_std.iloc[-1] * np.sqrt(252),  # 最新波动率
-        'mean': rolling_std.mean() * np.sqrt(252),      # 平均波动率
-        'median': rolling_std.median() * np.sqrt(252),   # 中位数波动率
-        'max': rolling_std.max() * np.sqrt(252),        # 最大波动率
-        'min': rolling_std.min() * np.sqrt(252),        # 最小波动率
+        'latest': rolling_std.iloc[-1] * np.sqrt(250),  # 最新波动率
+        'mean': rolling_std.mean() * np.sqrt(250),      # 平均波动率
+        'median': rolling_std.median() * np.sqrt(250),   # 中位数波动率
+        'max': rolling_std.max() * np.sqrt(250),        # 最大波动率
+        'min': rolling_std.min() * np.sqrt(250),        # 最小波动率
         'series': rolling_vol                           # 完整序列（用于绘图）
     }
 
 
 def calculate_annual_return(df, window):
     """
-    计算年化对数收益率（窗口期，连续复利）
+    计算年化收益率（基于离散复利，用于报告展示）
 
-    年化方法（连续复利）：年化收益率 = 期间对数收益率 × (252 / 窗口期天数)
-    """
-    if len(df) < window:
-        return np.nan
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    # 获取window天前的收盘价和最新收盘价
-    start_price = df['close'].iloc[-window]
-    end_price = df['close'].iloc[-1]
+    【重要说明】年化收益率计算方法
 
-    # 计算期间对数收益率（连续复利）
-    period_log_return = np.log(end_price / start_price)
+    本函数计算**离散复利的年化收益率**，用于报告展示。
 
-    # 按交易日比例年化（252个交易日/年）
-    annual_log_return = period_log_return * (252.0 / window)
+    计算公式（离散复利）：
+        年化收益率 = 区间收益率 × (250 / 窗口期天数)
 
-    return annual_log_return
+    注意：
+        - 此方法保持与区间收益率的一致性，便于理解
+        - 年化因子使用250（中国A股年交易日数）
+        - 此方法用于报告展示，直观但不严谨
 
+    【GBM模型使用】
+    如需在GBM模型中使用年化漂移率，请使用：
+        from utils.return_conversion import get_gbm_drift_from_discrete
 
-def calculate_period_return(df, window):
-    """
-    计算区间对数收益率（期间涨跌幅，连续复利）
+        # 方法1：直接从离散收益率计算GBM漂移率（推荐）
+        drift = get_gbm_drift_from_discrete(period_return, window)
+
+        # 方法2：手动转换
+        from utils.return_conversion import discrete_to_continuous
+        period_continuous = discrete_to_continuous(period_return)
+        drift = period_continuous * (250 / window)
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     参数:
         df: DataFrame，包含收盘价数据
         window: 时间窗口（交易日）
 
     返回:
-        float: 区间对数收益率（连续复利）
+        float: 年化离散复利收益率
+
+    示例:
+        >>> df = ...  # 包含收盘价数据
+        >>> annual_20d = calculate_annual_return(df, 20)
+        >>> print(f"20日年化收益率: {annual_20d*100:.2f}%")
+        20日年化收益率: -219.96%
+
+        >>> # 用于GBM模型时需要转换
+        >>> period_return = calculate_period_return(df, 20)  # -17.60%
+        >>> drift = get_gbm_drift_from_discrete(period_return, 20)
+        >>> print(f"GBM漂移率（连续复利年化）: {drift*100:.2f}%")
+        GBM漂移率（连续复利年化）: -241.88%
     """
     if len(df) < window:
         return np.nan
@@ -125,10 +180,84 @@ def calculate_period_return(df, window):
     start_price = df['close'].iloc[-window]
     end_price = df['close'].iloc[-1]
 
-    # 计算期间对数收益率（连续复利）
-    period_log_return = np.log(end_price / start_price)
+    # 步骤1: 计算区间离散复利收益率
+    period_discrete_return = (end_price - start_price) / start_price
 
-    return period_log_return
+    # 步骤2: 年化（离散复利）
+    # 注意：这是离散复利的年化，用于报告展示
+    # 年化因子使用250（中国A股年交易日数）
+    annual_discrete_return = period_discrete_return * (250.0 / window)
+
+    return annual_discrete_return
+
+
+def calculate_period_return(df, window):
+    """
+    计算区间收益率（离散复利，用于报告展示）
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    【重要说明】离散复利 vs 连续复利
+
+    本函数返回**离散复利收益率**（简单涨跌幅），用于报告展示，直观易懂。
+
+    离散复利（本函数）：
+        公式: (P_end - P_start) / P_start
+        用途: 报告展示、用户界面
+        优点: 直观易懂，符合日常理解
+
+    连续复利（对数收益率）：
+        公式: ln(P_end / P_start)
+        用途: GBM模型、蒙特卡洛模拟、VaR计算
+        优点: 数学性质好，时间可加，符合伊藤引理
+
+    【转换方法】
+    如需在GBM模型中使用，请转换为连续复利：
+        from utils.return_conversion import discrete_to_continuous
+
+        # 展示层：离散复利（报告中的数据）
+        period_return_discrete = calculate_period_return(df, 20)  # -17.60%
+
+        # 计算层：转换为连续复利（GBM模型）
+        period_return_continuous = discrete_to_continuous(period_return_discrete)
+        # = ln(1 - 0.176) = -19.35%
+
+        # 年化连续复利（用于GBM漂移率）
+        drift = period_return_continuous * (250 / 20)
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    参数:
+        df: DataFrame，包含收盘价数据
+        window: 时间窗口（交易日）
+
+    返回:
+        float: 区间离散复利收益率（简单涨跌幅）
+
+    示例:
+        >>> df = ...  # 包含收盘价数据
+        >>> return_20d = calculate_period_return(df, 20)
+        >>> print(f"20日收益率: {return_20d*100:.2f}%")
+        20日收益率: -17.60%
+
+        >>> # 用于GBM模型时需要转换
+        >>> from utils.return_conversion import discrete_to_continuous, get_gbm_drift_from_discrete
+        >>> drift = get_gbm_drift_from_discrete(return_20d, 20)
+        >>> print(f"GBM漂移率: {drift*100:.2f}%")
+        GBM漂移率: -241.88%
+    """
+    if len(df) < window:
+        return np.nan
+
+    # 获取window天前的收盘价和最新收盘价
+    start_price = df['close'].iloc[-window]
+    end_price = df['close'].iloc[-1]
+
+    # 计算离散复利收益率（简单涨跌幅），用于报告展示
+    # 注意：这是离散复利，不是连续复利（对数收益率）
+    period_discrete_return = (end_price - start_price) / start_price
+
+    return period_discrete_return
 
 
 def fetch_market_turnover_data(target_days=1200):

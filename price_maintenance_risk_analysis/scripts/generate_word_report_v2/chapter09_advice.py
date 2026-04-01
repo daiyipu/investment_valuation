@@ -148,8 +148,9 @@ def generate_chapter(context):
         # 方案1：考虑资金成本和时间价值
         be_price_with_cost = issue_price * (1 + (target_return + cost_of_capital) * years)
 
-        # 方案2：传统方法（不考虑任何成本或时间价值，固定等于发行价）
-        be_price_traditional = issue_price
+        # 方案2：传统方法（仅考虑期望年化收益率的时间价值）
+        # 传统方法下，盈亏平衡价应该考虑锁定期内的期望收益增长
+        be_price_traditional = issue_price * (1 + target_return * years)
 
         # 距离当前价的差距
         distance_with_cost = (current_price_eval - be_price_with_cost) / current_price_eval * 100
@@ -198,7 +199,7 @@ def generate_chapter(context):
     add_paragraph(document, ' 退出周期分析结论：', bold=True)
     add_paragraph(document, '说明：')
     add_paragraph(document, f'• 考虑资金成本方法：盈亏平衡价 = 发行价 × (1 + ({target_return*100:.0f}% + {cost_of_capital*100:.0f}%) × 年数)')
-    add_paragraph(document, f'• 传统方法：盈亏平衡价 = 发行价 = {issue_price:.2f}元（不考虑资金成本和时间价值）')
+    add_paragraph(document, f'• 传统方法：盈亏平衡价 = 发行价 × (1 + {target_return*100:.0f}% × 年数)（考虑期望收益率的时间价值）')
     add_paragraph(document, f'• 资金成本{cost_of_capital*100:.0f}%已计入，反映资金的时间价值')
     add_paragraph(document, '')
 
@@ -533,9 +534,10 @@ def generate_chapter(context):
             if 'scenario' in result and 'median_return' in result and 'profit_prob' in result:
                 scenario_obj = result['scenario']
                 scenario_name = scenario_obj['name']
-                median_return = result['median_return']  # 已经是百分比
+                median_return = result['median_return'] * 100  # 从小数转换为百分比
                 profit_prob = result['profit_prob']  # 已经是百分比
-                var_95 = result.get('var_95', 0)  # 已经是百分比
+                # 修正：使用var_5（5%分位数）作为95% VaR，表示95%置信水平下的最大损失
+                var_95 = result.get('var_5', result.get('var_95', 0)) * 100  # 优先使用var_5
 
                 # 兼容不同格式的issue_price
                 issue_price = result.get('issue_price', scenario_obj.get('issue_price', 0))
@@ -558,7 +560,8 @@ def generate_chapter(context):
             # 检查四个条件
             condition_1 = scenario['premium_rate'] <= -5  # 溢价率 ≤ -5%
             condition_2 = scenario['median_return'] > 8  # 中位数收益率 > 8%
-            condition_3 = scenario['var_95'] < 60  # VaR < 60%
+            # 修正：95% VaR应该是负值（损失），使用绝对值比较，表示最大损失不超过60%
+            condition_3 = abs(scenario['var_95']) < 60  # |95% VaR| < 60%
             condition_4 = scenario['profit_prob'] > 50  # 盈利概率 > 50%
 
             if condition_1 and condition_2 and condition_3 and condition_4:
@@ -574,7 +577,8 @@ def generate_chapter(context):
             # 检查是否满足条件
             condition_1 = '' if scenario['premium_rate'] <= -5 else ''
             condition_2 = '' if scenario['median_return'] > 8 else ''
-            condition_3 = '' if scenario['var_95'] < 60 else ''
+            # 修正：95% VaR使用绝对值比较
+            condition_3 = '' if abs(scenario['var_95']) < 60 else ''
             condition_4 = '' if scenario['profit_prob'] > 50 else ''
             all_qualified = condition_1 == '' and condition_2 == '' and condition_3 == '' and condition_4 == ''
 
@@ -611,13 +615,13 @@ def generate_chapter(context):
             recommended_data = [
                 ['推荐方案', best_scenario['name'], '基于筛选条件和选择逻辑'],
                 ['建议报价', f"{best_scenario['issue_price']:.2f}元/股", f"溢价率{best_scenario['premium_rate']:+.2f}%"],
-                ['预期中位数收益率', f"{best_scenario['median_return']:.2f}%", '年化收益率'],
+                ['预期中位数收益率', f"{best_scenario['median_return']:+.2f}%", '年化收益率'],
                 ['盈利概率', f"{best_scenario['profit_prob']:.1f}%", '蒙特卡洛模拟盈利概率'],
-                ['95% VaR', f"{best_scenario['var_95']:.2f}%", '锁定期最大损失'],
+                ['95% VaR', f"{best_scenario['var_95']:+.2f}%", '锁定期最大损失（负值表示损失）'],
                 ['', '', ''],
                 [' 溢价率', f"{best_scenario['premium_rate']:+.2f}%", '≤ -5% ✓'],
-                [' 中位数收益率', f"{best_scenario['median_return']:.2f}%", '> 8% ✓'],
-                [' 95% VaR', f"{best_scenario['var_95']:.2f}%", '< 60% ✓'],
+                [' 中位数收益率', f"{best_scenario['median_return']:+.2f}%", '> 8% ✓'],
+                [' 95% VaR', f"{best_scenario['var_95']:+.2f}%", '|VaR| < 60% ✓'],
                 [' 盈利概率', f"{best_scenario['profit_prob']:.1f}%", '> 50% ✓'],
             ]
 
@@ -630,7 +634,10 @@ def generate_chapter(context):
             add_paragraph(document, f'• 中位数收益率{best_scenario["median_return"]:.2f}%最接近8%目标，符合保守原则')
             add_paragraph(document, f'• 溢价率{best_scenario["premium_rate"]:+.2f}%提供{abs(best_scenario["premium_rate"]):.2f}%的安全边际')
             add_paragraph(document, f'• 盈利概率{best_scenario["profit_prob"]:.1f}%，超过半数场景盈利')
-            add_paragraph(document, f'• 95% VaR为{best_scenario["var_95"]:.2f}%，最大损失相对可控')
+            # 修正：VaR是负值表示损失，需要明确说明
+            var_value = best_scenario["var_95"]
+            var_description = f"{abs(var_value):.2f}%的损失" if var_value < 0 else f"{var_value:.2f}%的收益"
+            add_paragraph(document, f'• 95% VaR为{var_value:+.2f}%（最大可能{var_description}），风险相对可控')
 
             # 投资建议
             add_paragraph(document, '')
@@ -686,13 +693,15 @@ def generate_chapter(context):
         # 获取实际溢价率（百分比形式）
         premium_rate_pct = scenario_obj.get('premium_rate', scenario_obj.get('discount', 0)) * 100
         median_return_pct = result.get('median_return', 0) * 100
-        var_95_pct = abs(result.get('var_5', result.get('var_95', median_return_pct / 100))) * 100
+        # 修正：使用var_5（5%分位数）作为95% VaR，保留原始值（负值表示损失）
+        var_5_raw = result.get('var_5', result.get('var_95', 0)) * 100  # 原始值，可能是负值
+        var_95_pct = abs(var_5_raw)  # 绝对值，用于筛选条件
         profit_prob_pct = result.get('profit_prob', 0)
 
         # 检查四个条件
         condition_1 = premium_rate_pct <= -5  # 溢价率 ≤ -5%
         condition_2 = median_return_pct > 8  # 中位数收益率 > 8%
-        condition_3 = var_95_pct < 60  # VaR < 60%
+        condition_3 = var_95_pct < 60  # |95% VaR| < 60%
         condition_4 = profit_prob_pct > 50  # 盈利概率 > 50%
 
         if condition_1 and condition_2 and condition_3 and condition_4:
@@ -703,7 +712,7 @@ def generate_chapter(context):
                 'premium_rate': premium_rate_pct,
                 'issue_price': scenario_obj.get('issue_price', 0),
                 'median_return': median_return_pct,
-                'var_95': var_95_pct,
+                'var_95': var_5_raw,  # 存储原始值（可能是负值），用于显示
                 'profit_prob': profit_prob_pct
             })
 
@@ -722,12 +731,12 @@ def generate_chapter(context):
             ['建议报价', f"{best_585_scenario['issue_price']:.2f}元/股", f"溢价率{best_585_scenario['premium_rate']:+.1f}%"],
             ['预期中位数收益率', f"{best_585_scenario['median_return']:+.1f}%", '年化收益率'],
             ['盈利概率', f"{best_585_scenario['profit_prob']:.1f}%", '蒙特卡洛模拟盈利概率'],
-            ['95% VaR', f"{best_585_scenario['var_95']:+.1f}%", '锁定期最大损失'],
+            ['95% VaR', f"{best_585_scenario['var_95']:+.1f}%", '锁定期最大损失（负值）'],
             ['', '', ''],
             ['市场参数', f"漂移率{best_585_scenario['drift']*100:+.0f}%, 波动率{best_585_scenario['volatility']*100:.0f}%", '基于历史数据'],
             [' 溢价率', f"{best_585_scenario['premium_rate']:+.1f}%", '≤ -5% ✓'],
             [' 中位数收益率', f"{best_585_scenario['median_return']:+.1f}%", '> 8% ✓'],
-            [' 95% VaR', f"{best_585_scenario['var_95']:+.1f}%", '< 60% ✓'],
+            [' 95% VaR', f"{best_585_scenario['var_95']:+.1f}%", '|VaR| < 60% ✓'],
             [' 盈利概率', f"{best_585_scenario['profit_prob']:.1f}%", '> 50% ✓'],
         ]
 
@@ -740,7 +749,10 @@ def generate_chapter(context):
         add_paragraph(document, f'• 中位数收益率{best_585_scenario["median_return"]:+.1f}%最接近8%目标，符合保守原则')
         add_paragraph(document, f'• 溢价率{best_585_scenario["premium_rate"]:+.1f}%提供{abs(best_585_scenario["premium_rate"]):.1f}%的安全边际')
         add_paragraph(document, f'• 盈利概率{best_585_scenario["profit_prob"]:.1f}%，超过半数场景盈利')
-        add_paragraph(document, f'• 95% VaR为{best_585_scenario["var_95"]:+.1f}%，最大损失相对可控')
+        # 修正：VaR是负值表示损失
+        var_585_value = best_585_scenario["var_95"]
+        var_585_desc = f"{abs(var_585_value):.1f}%的损失" if var_585_value < 0 else f"{var_585_value:.1f}%的收益"
+        add_paragraph(document, f'• 95% VaR为{var_585_value:+.1f}%（最大可能{var_585_desc}），风险相对可控')
 
         # 投资建议
         add_paragraph(document, '')
