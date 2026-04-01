@@ -235,8 +235,8 @@ def generate_time_window_analysis_chart(price_series, save_dir):
     results = {
         'window': [],
         'volatility': [],
-        'total_return': [],     # 期间收益率
-        'annual_return': [],    # 年化收益率
+        'total_return': [],     # 期间对数收益率
+        'annual_return': [],    # 年化对数收益率（连续复利）
         'mean': [],
         'std': [],
         'max_drawdown': [],
@@ -252,18 +252,18 @@ def generate_time_window_analysis_chart(price_series, save_dir):
         # 取最近window天的数据
         recent_prices = price_series[-window:]
 
-        # 计算收益率
-        returns = recent_prices.pct_change().dropna()
+        # 计算对数收益率（连续复利）
+        log_returns = np.log(recent_prices).diff().dropna()
 
-        # 年化波动率
-        volatility = returns.std() * np.sqrt(250)
+        # 年化波动率（基于对数收益率）
+        volatility = log_returns.std() * np.sqrt(252)
 
-        # 期间收益率
-        total_return = (recent_prices.iloc[-1] / recent_prices.iloc[0]) - 1
+        # 期间对数收益率
+        total_log_return = np.log(recent_prices.iloc[-1] / recent_prices.iloc[0])
 
-        # 年化收益率（使用单利计算，按交易日比例）
-        # 年化收益率 = 期间收益率 × (250 / 窗口期天数)
-        annual_return = total_return * (250.0 / window)
+        # 年化对数收益率（连续复利）
+        # 年化收益率 = 期间对数收益率 × (252 / 窗口期天数)
+        annual_return = total_log_return * (252.0 / window)
 
         # 均值
         mean = recent_prices.mean()
@@ -276,13 +276,13 @@ def generate_time_window_analysis_chart(price_series, save_dir):
         drawdown = (recent_prices - cummax) / cummax
         max_drawdown = drawdown.min()
 
-        # 夏普比率
+        # 夏普比率（基于连续复利）
         sharpe = (annual_return - risk_free_rate) / volatility if volatility > 0 else 0
 
         results['window'].append(window)
         results['volatility'].append(volatility)
-        results['total_return'].append(total_return)     # 期间收益率
-        results['annual_return'].append(annual_return)    # 年化收益率
+        results['total_return'].append(total_log_return)     # 期间对数收益率
+        results['annual_return'].append(annual_return)       # 年化对数收益率（连续复利）
         results['mean'].append(mean)
         results['std'].append(std)
         results['max_drawdown'].append(max_drawdown)

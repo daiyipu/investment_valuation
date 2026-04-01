@@ -52,47 +52,44 @@ def fetch_latest_data(stock_code='300735.SZ', days=500):
 
 def calculate_rolling_volatility(df, window, annualize=True):
     """
-    计算滚动波动率
+    计算滚动波动率（基于对数收益率，连续复利）
 
     参数:
-        df: 包含pct_chg或pct_change列的DataFrame（涨跌幅为百分比形式，如2.5表示2.5%）
+        df: 包含close列的DataFrame（收盘价数据）
         window: 窗口大小（交易日）
         annualize: 是否年化
 
     返回:
         波动率序列和统计值（小数形式，如0.23表示23%）
     """
-    # 兼容不同的字段名：pct_chg（daily接口）或 pct_change（sw_daily接口）
-    pct_col = 'pct_chg' if 'pct_chg' in df.columns else 'pct_change'
-
-    # Tushare的涨跌幅是百分比形式（如2.5表示2.5%），需要先转换为小数
-    pct_decimal = df[pct_col] / 100.0
+    # 计算对数收益率（连续复利）
+    log_returns = np.log(df['close']).diff()
 
     # 计算滚动标准差
-    rolling_std = pct_decimal.rolling(window=window).std()
+    rolling_std = log_returns.rolling(window=window).std()
 
-    # 年化波动率 (假设一年250个交易日，与收益率年化一致)
+    # 年化波动率 (假设一年252个交易日，与收益率年化一致)
     if annualize:
-        rolling_vol = rolling_std * np.sqrt(250)
+        rolling_vol = rolling_std * np.sqrt(252)
     else:
         rolling_vol = rolling_std
 
     # 返回最新值和平均值
     return {
-        'latest': rolling_std.iloc[-1] * np.sqrt(250),  # 最新波动率
-        'mean': rolling_std.mean() * np.sqrt(250),      # 平均波动率
-        'median': rolling_std.median() * np.sqrt(250),   # 中位数波动率
-        'max': rolling_std.max() * np.sqrt(250),        # 最大波动率
-        'min': rolling_std.min() * np.sqrt(250),        # 最小波动率
+        'latest': rolling_std.iloc[-1] * np.sqrt(252),  # 最新波动率
+        'mean': rolling_std.mean() * np.sqrt(252),      # 平均波动率
+        'median': rolling_std.median() * np.sqrt(252),   # 中位数波动率
+        'max': rolling_std.max() * np.sqrt(252),        # 最大波动率
+        'min': rolling_std.min() * np.sqrt(252),        # 最小波动率
         'series': rolling_vol                           # 完整序列（用于绘图）
     }
 
 
 def calculate_annual_return(df, window):
     """
-    计算年化收益率（窗口期）
+    计算年化对数收益率（窗口期，连续复利）
 
-    年化方法（单利）：年化收益率 = 期间收益率 × (250 / 窗口期天数)
+    年化方法（连续复利）：年化收益率 = 期间对数收益率 × (252 / 窗口期天数)
     """
     if len(df) < window:
         return np.nan
@@ -101,25 +98,25 @@ def calculate_annual_return(df, window):
     start_price = df['close'].iloc[-window]
     end_price = df['close'].iloc[-1]
 
-    # 计算期间收益率
-    period_return = (end_price - start_price) / start_price
+    # 计算期间对数收益率（连续复利）
+    period_log_return = np.log(end_price / start_price)
 
-    # 按交易日比例年化（250个交易日/年）
-    annual_return = period_return * (250.0 / window)
+    # 按交易日比例年化（252个交易日/年）
+    annual_log_return = period_log_return * (252.0 / window)
 
-    return annual_return
+    return annual_log_return
 
 
 def calculate_period_return(df, window):
     """
-    计算区间收益率（期间涨跌幅）
+    计算区间对数收益率（期间涨跌幅，连续复利）
 
     参数:
         df: DataFrame，包含收盘价数据
         window: 时间窗口（交易日）
 
     返回:
-        float: 区间收益率
+        float: 区间对数收益率（连续复利）
     """
     if len(df) < window:
         return np.nan
@@ -128,10 +125,10 @@ def calculate_period_return(df, window):
     start_price = df['close'].iloc[-window]
     end_price = df['close'].iloc[-1]
 
-    # 计算期间收益率
-    period_return = (end_price - start_price) / start_price
+    # 计算期间对数收益率（连续复利）
+    period_log_return = np.log(end_price / start_price)
 
-    return period_return
+    return period_log_return
 
 
 def fetch_market_turnover_data(target_days=1200):
@@ -373,11 +370,12 @@ def print_market_data_summary(market_data):
     print(f"   半年(120日): {market_data['volatility_120d']*100:.2f}%")
     print(f"   年度(250日): {market_data['volatility_250d']*100:.2f}%")
 
-    print(f"\n📈 年化收益率:")
+    print(f"\n📈 年化收益率（连续复利）:")
     print(f"   月度(20日): {market_data['annual_return_20d']*100:.2f}%")
     print(f"   季度(60日): {market_data['annual_return_60d']*100:.2f}%  ← 推荐")
     print(f"   半年(120日): {market_data['annual_return_120d']*100:.2f}%")
     print(f"   年度(250日): {market_data['annual_return_250d']*100:.2f}%")
+    print(f"\n   注意：年化收益率采用连续复利（对数收益率）计算，符合GBM模型要求")
 
     print(f"\n📊 移动平均线:")
     print(f"   MA20: {market_data['ma_20']:.2f} 元")
@@ -1520,10 +1518,10 @@ if __name__ == '__main__':
             print(f"   指数代码: {industry_data['index_code']}")
             print(f"   当前点位: {industry_data['current_level']:.2f}")
             print(f"   波动率(60日): {industry_data['volatility_60d']*100:.2f}%")
-            print(f"   年化收益率(60日): {industry_data['annual_return_60d']*100:+.2f}%")
-            print(f"   区间收益率(60日): {industry_data['period_return_60d']*100:+.2f}%")
-            print(f"   年化收益率(250日): {industry_data['annual_return_250d']*100:+.2f}%")
-            print(f"   区间收益率(250日): {industry_data['period_return_250d']*100:+.2f}%")
+            print(f"   年化收益率(60日): {industry_data['annual_return_60d']*100:+.2f}% (连续复利)")
+            print(f"   区间收益率(60日): {industry_data['period_return_60d']*100:+.2f}% (连续复利)")
+            print(f"   年化收益率(250日): {industry_data['annual_return_250d']*100:+.2f}% (连续复利)")
+            print(f"   区间收益率(250日): {industry_data['period_return_250d']*100:+.2f}% (连续复利)")
 
         print("\n📌 使用方法:")
         print(f"   from utils.market_data_loader import load_market_data")
