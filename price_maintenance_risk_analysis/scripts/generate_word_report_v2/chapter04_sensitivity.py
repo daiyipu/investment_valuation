@@ -69,13 +69,13 @@ def generate_time_window_analysis_chart(price_series, save_dir):
         if len(price_series) < window:
             continue
 
-        # 计算窗口统计量
+        # 计算窗口统计量（使用连续复利/对数收益率）
         window_prices = price_series[-window:]
-        returns = window_prices.pct_change().dropna()
+        log_returns = np.log(window_prices).diff().dropna()
 
-        volatility = returns.std() * np.sqrt(252)  # 年化波动率
-        total_return = (window_prices.iloc[-1] / window_prices.iloc[0] - 1)
-        annual_return = (1 + total_return) ** (252 / window) - 1
+        volatility = log_returns.std() * np.sqrt(252)  # 年化波动率
+        total_log_return = np.log(window_prices.iloc[-1] / window_prices.iloc[0])
+        annual_log_return = total_log_return * (252.0 / window)
 
         # 计算最大回撤
         cummax = window_prices.cummax()
@@ -84,13 +84,13 @@ def generate_time_window_analysis_chart(price_series, save_dir):
 
         # 计算夏普比率（假设无风险利率为3%）
         risk_free_rate = 0.03
-        excess_return = annual_return - risk_free_rate
+        excess_return = annual_log_return - risk_free_rate
         sharpe = excess_return / volatility if volatility > 0 else 0
 
         results['window'].append(window)
         results['volatility'].append(volatility)
-        results['total_return'].append(total_return)
-        results['annual_return'].append(annual_return)
+        results['total_return'].append(total_log_return)  # 对数收益率
+        results['annual_return'].append(annual_log_return)  # 年化对数收益率
         results['max_drawdown'].append(max_drawdown)
         results['sharpe'].append(sharpe)
 
@@ -650,26 +650,15 @@ def generate_chapter(context):
                     # 获取窗口期价格
                     window_prices = price_series[-window:].values
 
-                    # 计算波动率
-                    returns = pd.Series(window_prices).pct_change().dropna()
-                    volatility = returns.std() * np.sqrt(252)
+                    # 计算波动率（使用对数收益率）
+                    log_returns = np.diff(np.log(window_prices))
+                    volatility = log_returns.std() * np.sqrt(252)
 
-                    # 计算收益率
-                    total_return = (window_prices[-1] / window_prices[0] - 1)
+                    # 计算对数收益率
+                    total_log_return = np.log(window_prices[-1] / window_prices[0])
 
-                    # 年化收益率（使用固定系数）
-                    if window == 20:
-                        coefficient = 1/12  # 月度
-                    elif window == 60:
-                        coefficient = 1/4   # 季度
-                    elif window == 120:
-                        coefficient = 1/2   # 半年
-                    elif window == 250:
-                        coefficient = 1.0   # 年度
-                    else:
-                        coefficient = window / 252.0
-
-                    annual_return = total_return / coefficient if coefficient > 0 else total_return
+                    # 年化对数收益率（连续复利）
+                    annual_log_return = total_log_return * (252.0 / window)
 
                     # 计算最大回撤
                     cummax = pd.Series(window_prices).cummax()
@@ -677,7 +666,7 @@ def generate_chapter(context):
                     max_drawdown = drawdown.min()
 
                     # 计算夏普比率
-                    excess_return = annual_return - risk_free_rate
+                    excess_return = annual_log_return - risk_free_rate
                     sharpe = excess_return / volatility if volatility > 0 else 0
 
                     time_window_results['window'].append(window)

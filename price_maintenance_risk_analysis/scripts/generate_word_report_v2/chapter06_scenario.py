@@ -187,13 +187,16 @@ def generate_multi_dimension_scenario_charts_split(current_price, base_price, vo
                 lockup_vol = v * np.sqrt(lockup_years)
 
                 np.random.seed(42)
+                # sim_returns是对数收益率（连续复利）
                 sim_returns = np.random.normal(lockup_drift, lockup_vol, n_sim)
                 final_prices = current_price * np.exp(sim_returns)
-                total_returns = (final_prices - issue_price) / issue_price
-                annualized_returns = total_returns / lockup_years
+                # 使用对数收益率计算总收益
+                total_log_returns = np.log(final_prices / issue_price)
+                # 年化：总对数收益率 / 年数
+                annualized_log_returns = total_log_returns / lockup_years
 
-                profit_prob = (total_returns > 0).mean() * 100
-                mean_return = annualized_returns.mean() * 100
+                profit_prob = (total_log_returns > 0).mean() * 100
+                mean_return = annualized_log_returns.mean() * 100
 
                 all_results.append({
                     'drift': d,
@@ -362,20 +365,21 @@ def generate_chapter(context):
                 lockup_vol = vol * np.sqrt(lockup_years)
 
                 np.random.seed(42)  # 固定种子以确保可重复性
+                # sim_returns是对数收益率（连续复利）
                 sim_returns = np.random.normal(lockup_drift, lockup_vol, n_sim)
                 final_prices = current_price * np.exp(sim_returns)
 
-                # 计算收益
-                total_returns = (final_prices - issue_price) / issue_price
-                # 年化收益率（使用单利计算）
-                annualized_returns = total_returns / lockup_years
+                # 计算收益：使用对数收益率（连续复利）
+                total_log_returns = np.log(final_prices / issue_price)
+                # 年化对数收益率
+                annualized_log_returns = total_log_returns / lockup_years
 
                 # 统计指标
-                mean_return = annualized_returns.mean()
-                median_return = np.median(annualized_returns)
-                profit_prob = (total_returns > 0).mean() * 100
-                var_5 = np.percentile(annualized_returns, 5)
-                var_95 = np.percentile(annualized_returns, 95)
+                mean_return = annualized_log_returns.mean()
+                median_return = np.median(annualized_log_returns)
+                profit_prob = (total_log_returns > 0).mean() * 100
+                var_5 = np.percentile(annualized_log_returns, 5)
+                var_95 = np.percentile(annualized_log_returns, 95)
 
                 all_scenarios.append({
                     'drift': drift,
@@ -640,12 +644,14 @@ def generate_chapter(context):
                 final_prices = sim_result.iloc[:, -1].values
                 # 使用情景相关的发行价（考虑了溢价率）
                 scenario_issue_price = scenario['issue_price']
-                returns = (final_prices - scenario_issue_price) / scenario_issue_price
-                annualized_returns = returns * (12 / project_params['lockup_period'])
+                # 对数收益率（连续复利）
+                log_returns = np.log(final_prices / scenario_issue_price)
+                # 年化：120日 = 120个交易日
+                annualized_log_returns = log_returns * (252.0 / 120)
 
-                # 计算VaR
-                var_5 = np.percentile(returns, 5)   # 5%分位数（最坏5%）
-                var_95 = np.percentile(returns, 95) # 95%分位数（最好5%）
+                # 计算VaR（使用年化对数收益率）
+                var_5 = np.percentile(annualized_log_returns, 5)   # 5%分位数（最坏5%）
+                var_95 = np.percentile(annualized_log_returns, 95) # 95%分位数（最好5%）
 
                 # 包装成兼容旧代码的格式
                 scenario_result = {
@@ -783,12 +789,14 @@ def generate_chapter(context):
                 final_prices = sim_result.iloc[:, -1].values
                 # 使用情景相关的发行价（考虑了溢价率）
                 scenario_issue_price = scenario['issue_price']
-                returns = (final_prices - scenario_issue_price) / scenario_issue_price
-                annualized_returns = returns * (12 / project_params['lockup_period'])
+                # 对数收益率（连续复利）
+                log_returns = np.log(final_prices / scenario_issue_price)
+                # 年化：120日 = 120个交易日
+                annualized_log_returns = log_returns * (252.0 / 120)
 
-                # 计算VaR
-                var_5 = np.percentile(returns, 5)   # 5%分位数（最坏5%）
-                var_95 = np.percentile(returns, 95) # 95%分位数（最好5%）
+                # 计算VaR（使用年化对数收益率）
+                var_5 = np.percentile(annualized_log_returns, 5)   # 5%分位数（最坏5%）
+                var_95 = np.percentile(annualized_log_returns, 95) # 95%分位数（最好5%）
 
                 # 包装成兼容旧代码的格式
                 scenario_result = {
@@ -942,19 +950,21 @@ def generate_chapter(context):
                         final_prices = sim_result.iloc[:, -1].values
                         # 使用情景相关的发行价（考虑了溢价率）
                         scenario_issue_price = scenario['issue_price']
-                        returns = (final_prices - scenario_issue_price) / scenario_issue_price
-                        annualized_returns = returns * (12 / project_params['lockup_period'])
+                        # 对数收益率（连续复利）
+                        log_returns = np.log(final_prices / scenario_issue_price)
+                        # 年化：120日 = 120个交易日
+                        annualized_log_returns = log_returns * (252.0 / 120)
 
-                        # 计算VaR
-                        var_5 = np.percentile(returns, 5)
-                        var_95 = np.percentile(returns, 95)
+                        # 计算VaR（使用年化对数收益率）
+                        var_5 = np.percentile(annualized_log_returns, 5)
+                        var_95 = np.percentile(annualized_log_returns, 95)
 
                         # 包装成兼容旧代码的格式
                         scenario_result = {
                             'scenario': scenario,
-                            'profit_prob': (returns > 0).mean() * 100,
-                            'median_return': np.median(annualized_returns),
-                            'mean_return': np.mean(annualized_returns),
+                            'profit_prob': (log_returns > 0).mean() * 100,
+                            'median_return': np.median(annualized_log_returns),
+                            'mean_return': np.mean(annualized_log_returns),
                             'var_5': var_5,
                             'var_95': var_95,
                             'actual_premium_rate': scenario['premium_rate']
@@ -1106,19 +1116,21 @@ def generate_chapter(context):
                         final_prices = sim_result.iloc[:, -1].values
                         # 使用情景相关的发行价（考虑了溢价率）
                         scenario_issue_price = scenario['issue_price']
-                        returns = (final_prices - scenario_issue_price) / scenario_issue_price
-                        annualized_returns = returns * (12 / project_params['lockup_period'])
+                        # 对数收益率（连续复利）
+                        log_returns = np.log(final_prices / scenario_issue_price)
+                        # 年化：120日 = 120个交易日
+                        annualized_log_returns = log_returns * (252.0 / 120)
 
-                        # 计算VaR
-                        var_5 = np.percentile(returns, 5)
-                        var_95 = np.percentile(returns, 95)
+                        # 计算VaR（使用年化对数收益率）
+                        var_5 = np.percentile(annualized_log_returns, 5)
+                        var_95 = np.percentile(annualized_log_returns, 95)
 
                         # 包装成兼容旧代码的格式
                         scenario_result = {
                             'scenario': scenario,
-                            'profit_prob': (returns > 0).mean() * 100,
-                            'median_return': np.median(annualized_returns),
-                            'mean_return': np.mean(annualized_returns),
+                            'profit_prob': (log_returns > 0).mean() * 100,
+                            'median_return': np.median(annualized_log_returns),
+                            'mean_return': np.mean(annualized_log_returns),
                             'var_5': var_5,
                             'var_95': var_95,
                             'actual_premium_rate': scenario['premium_rate']
@@ -1256,19 +1268,21 @@ def generate_chapter(context):
                         final_prices = sim_result.iloc[:, -1].values
                         # 使用情景相关的发行价（考虑了溢价率）
                         scenario_issue_price = scenario['issue_price']
-                        returns = (final_prices - scenario_issue_price) / scenario_issue_price
-                        annualized_returns = returns * (12 / project_params['lockup_period'])
+                        # 对数收益率（连续复利）
+                        log_returns = np.log(final_prices / scenario_issue_price)
+                        # 年化：120日 = 120个交易日
+                        annualized_log_returns = log_returns * (252.0 / 120)
 
-                        # 计算VaR
-                        var_5 = np.percentile(returns, 5)
-                        var_95 = np.percentile(returns, 95)
+                        # 计算VaR（使用年化对数收益率）
+                        var_5 = np.percentile(annualized_log_returns, 5)
+                        var_95 = np.percentile(annualized_log_returns, 95)
 
                         # 包装成兼容旧代码的格式
                         scenario_result = {
                             'scenario': scenario,
-                            'profit_prob': (returns > 0).mean() * 100,
-                            'median_return': np.median(annualized_returns),
-                            'mean_return': np.mean(annualized_returns),
+                            'profit_prob': (log_returns > 0).mean() * 100,
+                            'median_return': np.median(annualized_log_returns),
+                            'mean_return': np.mean(annualized_log_returns),
                             'var_5': var_5,
                             'var_95': var_95,
                             'actual_premium_rate': scenario['premium_rate']

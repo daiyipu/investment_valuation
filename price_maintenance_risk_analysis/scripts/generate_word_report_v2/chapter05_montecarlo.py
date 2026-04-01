@@ -538,36 +538,32 @@ def generate_chapter(context):
 
             # 提取锁定期末价格
             final_prices = sim_window.iloc[:, -1].values
-            returns = (final_prices - project_params['issue_price']) / project_params['issue_price']
 
-            # 年化收益率计算：使用固定系数（单利）
-            # 60日=1/4(季度), 120日=1/2(半年), 250日=1(年度)
-            if time_steps == 60:
-                coefficient = 0.25  # 季度
-            elif time_steps == 120:
-                coefficient = 0.5   # 半年
-            elif time_steps == 250:
-                coefficient = 1.0   # 年度
-            else:
-                coefficient = time_steps / 252.0  # 其他情况用实际计算
-            annualized_returns = returns / coefficient if coefficient > 0 else returns
+            # 计算对数收益率（连续复利）
+            log_returns = np.log(final_prices / project_params['issue_price'])
+
+            # 年化对数收益率计算（连续复利）
+            annualized_log_returns = log_returns * (252.0 / time_steps)
 
             # 调试信息
             print(f"    调试: 当前价={project_params['current_price']:.2f}, 发行价={project_params['issue_price']:.2f}")
-            print(f"    调试: 模拟期数={time_steps}日(系数={coefficient}), 锁定期={project_params['lockup_period']}月")
+            print(f"    调试: 模拟期数={time_steps}日, 锁定期={project_params['lockup_period']}月")
             print(f"    调试: 漂移率={window_drift*100:.2f}%, 波动率={window_vol*100:.2f}%")
             print(f"    调试: 最终价格均值={final_prices.mean():.2f}, 中位数={np.median(final_prices):.2f}")
-            print(f"    调试: 期收益率均值={returns.mean()*100:.2f}%, 年化收益率均值={annualized_returns.mean()*100:.2f}%")
-            print(f"    调试: 盈利次数={(returns>0).sum()}/{len(returns)}, 盈利概率={(returns>0).mean()*100:.1f}%")
+            print(f"    调试: 期对数收益率均值={log_returns.mean()*100:.2f}%, 年化对数收益率均值={annualized_log_returns.mean()*100:.2f}%")
+            print(f"    调试: 盈利次数={(log_returns>0).sum()}/{len(log_returns)}, 盈利概率={(log_returns>0).mean()*100:.1f}%")
 
-            # 统计分析
+            # 统计分析（使用年化对数收益率）
+            returns = log_returns  # 用于后续计算
+            annualized_returns = annualized_log_returns  # 年化对数收益率
+
             multi_window_mc_results[window_name] = {
                 'volatility': window_vol,
                 'drift': window_drift,
                 'mean_return': annualized_returns.mean(),
                 'median_return': np.median(annualized_returns),
                 'std_return': annualized_returns.std(),
-                'profit_prob': (returns > 0).mean() * 100,
+                'profit_prob': (log_returns > 0).mean() * 100,
                 'percentile_5': np.percentile(annualized_returns, 5),
                 'percentile_25': np.percentile(annualized_returns, 25),
                 'percentile_75': np.percentile(annualized_returns, 75),
@@ -634,8 +630,13 @@ def generate_chapter(context):
                 )
 
                 final_prices = sim_rate.iloc[:, -1].values
-                returns = (final_prices - issue_price_with_rate) / issue_price_with_rate
-                annualized_returns = returns * (12 / project_params['lockup_period'])
+
+                # 计算对数收益率（连续复利）
+                log_returns = np.log(final_prices / issue_price_with_rate)
+
+                # 年化对数收益率
+                time_steps_days = time_steps  # time_steps已经是天数
+                annualized_log_returns = log_returns * (252.0 / time_steps_days)
 
                 # 根据折价/溢价率显示不同的标签
                 if rate < 0:
@@ -649,11 +650,11 @@ def generate_chapter(context):
                     rate_label,
                     "",  # 波动率留空
                     "",  # 历史收益率留空
-                    f"{annualized_returns.mean()*100:.2f}%",  # 该折价/溢价率下的预期收益
-                    f"{np.median(annualized_returns)*100:.2f}%",
-                    f"{(returns > 0).mean()*100:.1f}%",
-                    f"{np.percentile(annualized_returns, 5)*100:.2f}%",
-                    f"{np.percentile(annualized_returns, 95)*100:.2f}%"
+                    f"{annualized_log_returns.mean()*100:.2f}%",  # 该折价/溢价率下的预期收益（年化对数收益率）
+                    f"{np.median(annualized_log_returns)*100:.2f}%",
+                    f"{(log_returns > 0).mean()*100:.1f}%",
+                    f"{np.percentile(annualized_log_returns, 5)*100:.2f}%",
+                    f"{np.percentile(annualized_log_returns, 95)*100:.2f}%"
                 ])
 
     add_table_data(document, window_headers, window_table_data)
@@ -1045,19 +1046,20 @@ def generate_chapter(context):
 
         # 计算结果
         final_prices = sim_predicted.iloc[:, -1].values
-        returns = (final_prices - project_params['issue_price']) / project_params['issue_price']
+        # 连续复利（对数收益率）
+        log_returns = np.log(final_prices / project_params['issue_price'])
 
-        # 年化收益率计算：使用固定系数（单利）
-        # 120日=1/2(半年)
-        coefficient = 0.5
-        annualized_returns = returns / coefficient
+        # 年化收益率计算：连续复利年化
+        # 120日 = 120个交易日
+        time_steps = 120
+        annualized_log_returns = log_returns * (252.0 / time_steps)
 
         # 统计
-        profit_prob = (returns > 0).mean() * 100
-        mean_return = annualized_returns.mean()
-        median_return = np.median(annualized_returns)
-        percentile_5 = np.percentile(annualized_returns, 5)
-        percentile_95 = np.percentile(annualized_returns, 95)
+        profit_prob = (log_returns > 0).mean() * 100
+        mean_return = annualized_log_returns.mean()
+        median_return = np.median(annualized_log_returns)
+        percentile_5 = np.percentile(annualized_log_returns, 5)
+        percentile_95 = np.percentile(annualized_log_returns, 95)
 
         # 保存基于预测参数的模拟结果到context，供第九章使用
         context['results']['mc_predicted_120d'] = {
@@ -1166,12 +1168,13 @@ def generate_chapter(context):
         )
 
         final_prices_hist = sim_historical.iloc[:, -1].values
-        returns_hist = (final_prices_hist - project_params['issue_price']) / project_params['issue_price']
-        annualized_returns_hist = returns_hist * (12 / project_params['lockup_period'])
+        # 连续复利（对数收益率）
+        log_returns_hist = np.log(final_prices_hist / project_params['issue_price'])
+        annualized_log_returns_hist = log_returns_hist * (252.0 / time_steps)
 
         # 统计
-        profit_prob_hist = (returns_hist > 0).mean() * 100
-        mean_return_hist = annualized_returns_hist.mean()
+        profit_prob_hist = (log_returns_hist > 0).mean() * 100
+        mean_return_hist = annualized_log_returns_hist.mean()
 
         # 对比表格
         comparison_table = [
