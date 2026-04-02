@@ -656,9 +656,9 @@ def generate_chapter(context):
                 # 包装成兼容旧代码的格式
                 scenario_result = {
                     'scenario': scenario,  # 将原始情景对象嵌套在scenario键中
-                    'profit_prob': (returns > 0).mean() * 100,
-                    'median_return': np.median(annualized_returns),
-                    'mean_return': np.mean(annualized_returns),
+                    'profit_prob': (log_returns > 0).mean() * 100,
+                    'median_return': np.median(annualized_log_returns),
+                    'mean_return': np.mean(annualized_log_returns),
                     'var_5': var_5,
                     'var_95': var_95,
                     'actual_premium_rate': scenario['premium_rate']
@@ -801,9 +801,9 @@ def generate_chapter(context):
                 # 包装成兼容旧代码的格式
                 scenario_result = {
                     'scenario': scenario,  # 将原始情景对象嵌套在scenario键中
-                    'profit_prob': (returns > 0).mean() * 100,
-                    'median_return': np.median(annualized_returns),
-                    'mean_return': np.mean(annualized_returns),
+                    'profit_prob': (log_returns > 0).mean() * 100,
+                    'median_return': np.median(annualized_log_returns),
+                    'mean_return': np.mean(annualized_log_returns),
                     'var_5': var_5,
                     'var_95': var_95,
                     'actual_premium_rate': scenario['premium_rate']
