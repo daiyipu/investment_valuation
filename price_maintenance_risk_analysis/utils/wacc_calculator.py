@@ -157,17 +157,19 @@ class WACCCalculator:
 
     def calculate_industry_beta(
         self,
-        industry_code: str,
-        window: int = 120,
+        industry_code: str = None,
+        peer_companies: pd.DataFrame = None,
+        window: int = 500,
         max_stocks: int = 10
     ) -> Dict:
         """
-        计算行业Beta（行业内成分股Beta的中位数）
+        计算行业Beta（同行公司Beta的中位数）
 
         参数:
-            industry_code: 申万行业代码（如'801010.SI'）
-            window: 计算窗口
-            max_stocks: 最多计算多少只成分股
+            industry_code: 申万行业代码（可选，如果提供peer_companies则不需要）
+            peer_companies: 同行公司数据（从第二章获取，优先使用）
+            window: 计算窗口（默认500天，与个股Beta保持一致）
+            max_stocks: 最多计算多少只同行公司
 
         返回:
             {
@@ -179,34 +181,57 @@ class WACCCalculator:
         if self.pro is None:
             return {'industry_beta': 1.0, 'error': 'API未初始化'}
 
+        stock_codes = []
+
+        # 优先使用第二章的同行公司数据
+        if peer_companies is not None and not peer_companies.empty:
+            print(f"📊 使用第二章同行公司数据计算行业Beta，同行数量：{len(peer_companies)}")
+            # 从同行公司数据中提取股票代码
+            if 'ts_code' in peer_companies.columns:
+                stock_codes = peer_companies['ts_code'].unique().tolist()[:max_stocks]
+                print(f"   提取到 {len(stock_codes)} 个同行公司代码")
+            else:
+                print(f"   ⚠️ 同行公司数据中没有ts_code列")
+        elif industry_code:
+            # 降级：使用行业成分股
+            print(f"📊 使用行业指数成分股计算行业Beta：{industry_code}")
+            try:
+                # 获取行业成分股
+                df_members = self.pro.index_member(
+                    index_code=industry_code,
+                    fields='con_code,index_code,in_date,out_date,is_new'
+                )
+
+                if df_members.empty:
+                    return {'industry_beta': 1.0, 'error': '未找到行业成分股'}
+
+                # 筛选当前成分股
+                today = datetime.now().strftime('%Y%m%d')
+                df_members = df_members[
+                    (df_members['out_date'].isna()) | (df_members['out_date'] > today)
+                ]
+
+                stock_codes = df_members['con_code'].tolist()[:max_stocks]
+                print(f"   行业成分股数量：{len(stock_codes)}")
+            except Exception as e:
+                print(f"   ⚠️ 获取行业成分股失败: {e}")
+                return {'industry_beta': 1.0, 'error': str(e)}
+        else:
+            return {'industry_beta': 1.0, 'error': '未提供同行公司数据或行业代码'}
+
+        if not stock_codes:
+            return {'industry_beta': 1.0, 'error': '没有可用的同行公司'}
+
         try:
-            # 获取行业成分股
-            df_members = self.pro.index_member(
-                index_code=industry_code,
-                fields='con_code,index_code,in_date,out_date,is_new'
-            )
-
-            if df_members.empty:
-                return {'industry_beta': 1.0, 'error': '未找到行业成分股'}
-
-            # 筛选当前成分股
-            today = datetime.now().strftime('%Y%m%d')
-            df_members = df_members[
-                (df_members['out_date'].isna()) | (df_members['out_date'] > today)
-            ]
-
-            # 限制股票数量
-            stock_codes = df_members['con_code'].tolist()[:max_stocks]
-
-            print(f"📊 计算行业Beta：{industry_code}，成分股数量：{len(stock_codes)}")
-
             # 计算每只股票的Beta
             betas = []
             for stock_code in stock_codes:
-                result = self.calculate_beta_from_api(stock_code, window)
+                result = self.calculate_beta_from_api(stock_code, window=window)  # 明确传入500天窗口
                 if 'beta' in result and result['beta'] > 0:
                     betas.append(result['beta'])
                     print(f"   {stock_code}: Beta = {result['beta']:.3f}")
+                else:
+                    print(f"   {stock_code}: Beta计算失败或数据不足")
 
             if len(betas) == 0:
                 return {'industry_beta': 1.0, 'error': '未成功计算任何Beta'}
@@ -353,6 +378,7 @@ class WACCCalculator:
         beta: Optional[float] = None,
         market_data: Optional[Dict] = None,
         industry_code: Optional[str] = None,
+        peer_companies: Optional[pd.DataFrame] = None,
         custom_params: Optional[Dict] = None,
         use_industry_beta: bool = True
     ) -> Dict:
@@ -363,7 +389,8 @@ class WACCCalculator:
             stock_code: 股票代码
             beta: Beta系数（如果为None且use_industry_beta=False，则自动计算个股Beta）
             market_data: 市场数据字典（可选）
-            industry_code: 申万行业代码（必须，用于计算行业Beta）
+            industry_code: 申万行业代码（可选，如果提供peer_companies则不需要）
+            peer_companies: 同行公司数据（从第二章获取，优先使用）
             custom_params: 自定义参数（可选，覆盖默认值）
             use_industry_beta: 是否使用行业Beta（默认True）
 
@@ -403,9 +430,26 @@ class WACCCalculator:
 
         # 2. 计算行业Beta（优先使用）
         beta_industry = 1.0
-        if industry_code:
-            print(f"\n2. 计算行业Beta系数...")
-            industry_result = self.calculate_industry_beta(industry_code, window=params['beta_window'])
+        if peer_companies is not None and not peer_companies.empty:
+            print(f"\n2. 计算行业Beta系数（使用第二章同行公司）...")
+            industry_result = self.calculate_industry_beta(
+                peer_companies=peer_companies,
+                window=params['beta_window']
+            )
+            beta_industry = industry_result.get('industry_beta', 1.0)
+            if 'error' not in industry_result:
+                print(f"   行业Beta = {beta_industry:.3f}（{industry_result['stock_count']}只同行）")
+                if 'beta_range' in industry_result:
+                    print(f"   Beta范围：{industry_result['beta_range'][0]:.3f} ~ {industry_result['beta_range'][1]:.3f}")
+            else:
+                print(f"   {industry_result['error']}")
+                beta_industry = beta_stock  # 降级使用个股Beta
+        elif industry_code:
+            print(f"\n2. 计算行业Beta系数（使用行业指数成分股）...")
+            industry_result = self.calculate_industry_beta(
+                industry_code=industry_code,
+                window=params['beta_window']
+            )
             beta_industry = industry_result.get('industry_beta', 1.0)
             if 'error' not in industry_result:
                 print(f"   行业Beta = {beta_industry:.3f}（{industry_result['stock_count']}只成分股）")

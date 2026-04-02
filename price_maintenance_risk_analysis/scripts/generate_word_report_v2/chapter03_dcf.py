@@ -475,10 +475,14 @@ def generate_chapter(context):
                 print(f"   将使用默认行业代码（申万电子）")
 
             # 计算WACC（使用行业Beta）
+            # 获取第二章的同行公司数据
+            peer_companies_val = context.get('peer_companies_val', None)
+
             wacc_result = calculator.calculate_wacc(
                 stock_code=stock_code,
                 market_data=project_params,  # 传递市场数据
                 industry_code='801010.SI',   # 申万一级行业代码（电子）
+                peer_companies=peer_companies_val,  # 传入同行公司数据
                 use_industry_beta=True       # 使用行业Beta
             )
 
