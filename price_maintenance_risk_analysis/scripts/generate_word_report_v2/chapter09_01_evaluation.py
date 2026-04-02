@@ -657,7 +657,7 @@ def generate_chapter(context):
     if worst_scenario:
         add_paragraph(document, f'• **最坏情景**：{worst_scenario["description"]}（股价下跌{int(worst_scenario["price_drop"]*100)}%）')
         add_paragraph(document, f'• **最大亏损**：{abs(worst_loss):.1f}%（约{abs((issue_price - current_price * (1 - worst_scenario["price_drop"])) * issue_shares / 100000000):.2f}万元）')
-        add_paragraph(document, f'• **亏损情景数量**：{sum(1 for s in stress_scenarios if (current_price * (1 - s["price_drop"]) < issue_price))} / 6}种情景出现亏损')
+        add_paragraph(document, f'• **亏损情景数量**：{sum(1 for s in stress_scenarios if (current_price * (1 - s["price_drop"]) < issue_price))} / 6 种情景出现亏损')
         add_paragraph(document, '')
 
     # 风险提示
@@ -917,7 +917,7 @@ def generate_chapter(context):
             '9.1.6 压力测试',
             f'最坏情景: {worst_scenario["description"]}',
             f'最大亏损: {abs(worst_loss):.1f}%',
-            f'亏损情景: {sum(1 for s in stress_scenarios if (current_price * (1 - s["price_drop"]) < issue_price))}/6}种'
+            f'亏损情景: {sum(1 for s in stress_scenarios if (current_price * (1 - s["price_drop"]) < issue_price))}/6 种'
         ])
     else:
         all_analysis_summary.append([
