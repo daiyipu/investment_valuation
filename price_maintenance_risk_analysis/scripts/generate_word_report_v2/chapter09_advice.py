@@ -18,6 +18,215 @@ sys.path.insert(0, PROJECT_DIR)
 from module_utils import add_title, add_paragraph, add_table_data, add_image, add_section_break
 from module_utils import generate_break_even_chart, generate_market_turnover_chart
 
+
+def calculate_macro_environment_assessment(market_data, document):
+    """
+    计算宏观环境评估得分
+
+    评估维度：
+    1. 货币政策（15%权重）：紧缩(40分)/稳健(60分)/适度宽松(80分)/宽松(100分)
+    2. 财政政策（15%权重）：紧缩(50分)/稳健(70分)/积极(90分)
+    3. 行业发展周期（30%权重）：成长(100分)/成熟(80分)/幼稚(60分)/衰退(40分)
+    4. 二级市场活跃度（40%权重）：基于历史分位数
+
+    Args:
+        market_data: 市场数据字典
+        document: Word文档对象（用于添加表格）
+
+    Returns:
+        dict: 包含total_score, assessment_level, assessment_description等
+    """
+    import numpy as np
+
+    # ==================== 1. 货币政策评估（15%权重）====================
+    # 这里简化处理：基于市场利率和M2增速评估
+    # 实际应用中可以根据最新宏观经济数据调整
+    current_rdr = market_data.get('risk_free_rate', 0.03)  # 无风险利率作为代理指标
+
+    # 简化的货币政策评分逻辑
+    if current_rdr < 0.025:
+        monetary_policy_score = 100  # 宽松
+        monetary_policy_status = "宽松"
+    elif current_rdr < 0.035:
+        monetary_policy_score = 80  # 适度宽松
+        monetary_policy_status = "适度宽松"
+    elif current_rdr < 0.045:
+        monetary_policy_score = 60  # 稳健
+        monetary_policy_status = "稳健"
+    else:
+        monetary_policy_score = 40  # 紧缩
+        monetary_policy_status = "紧缩"
+
+    # ==================== 2. 财政政策评估（15%权重）====================
+    # 基于财政赤字率和基建投资等指标
+    # 这里简化处理，默认为"积极"
+    fiscal_policy_score = 90  # 积极
+    fiscal_policy_status = "积极"
+
+    # ==================== 3. 行业发展周期评估（30%权重）====================
+    # 基于行业PE和行业估值水平评估
+    industry_pe = market_data.get('industry_pe', 30)
+    current_pe = market_data.get('pe_ratio', 30)
+
+    # 行业相对估值：当前PE / 行业PE
+    if industry_pe > 0:
+        industry_relative_valuation = current_pe / industry_pe
+    else:
+        industry_relative_valuation = 1.0
+
+    # 基于相对估值判断行业发展周期
+    if industry_relative_valuation < 0.7:
+        industry_cycle_score = 100  # 成长期（低估）
+        industry_cycle_status = "成长"
+    elif industry_relative_valuation < 0.9:
+        industry_cycle_score = 80  # 成熟期（合理）
+        industry_cycle_status = "成熟"
+    elif industry_relative_valuation < 1.2:
+        industry_cycle_score = 60  # 幼稚期（略高估）
+        industry_cycle_status = "幼稚"
+    else:
+        industry_cycle_score = 40  # 衰退期（高估）
+        industry_cycle_status = "衰退"
+
+    # 如果无法判断，给予中性分数50分
+    if industry_pe == 0 or current_pe == 0:
+        industry_cycle_score = 50
+        industry_cycle_status = "待判断"
+
+    # ==================== 4. 二级市场活跃度评估（40%权重）====================
+    # 基于历史换手率分位数（最近5年）
+    # 这里简化处理：基于当前波动率和成交量
+
+    # 获取历史换手率分位数（如果有）
+    # 如果没有，使用价格相对MA20的位置作为代理指标
+    current_price = market_data.get('current_price', 20)
+    ma20 = market_data.get('ma_20', current_price)
+    ma120 = market_data.get('ma_120', current_price)
+
+    # 价格相对MA20和MA120的位置
+    price_to_ma20 = current_price / ma20 if ma20 > 0 else 1.0
+    price_to_ma120 = current_price / ma120 if ma120 > 0 else 1.0
+
+    # 基于价格位置评估市场活跃度
+    if price_to_ma120 > 1.2:
+        market_activity_score = 100  # 强势
+        market_activity_status = "活跃"
+    elif price_to_ma120 > 1.05:
+        market_activity_score = 85.7  # 偏强势（历史分位数85.7%）
+        market_activity_status = "活跃"
+    elif price_to_ma120 > 0.95:
+        market_activity_score = 60  # 中性
+        market_activity_status = "一般"
+    elif price_to_ma120 > 0.85:
+        market_activity_score = 40  # 偏弱
+        market_activity_status = "低迷"
+    else:
+        market_activity_score = 20  # 弱势
+        market_activity_status = "极度低迷"
+
+    # ==================== 计算加权总分 ====================
+    weights = {
+        'monetary_policy': 0.15,
+        'fiscal_policy': 0.15,
+        'industry_cycle': 0.30,
+        'market_activity': 0.40
+    }
+
+    weighted_scores = {
+        'monetary_policy': monetary_policy_score * weights['monetary_policy'],
+        'fiscal_policy': fiscal_policy_score * weights['fiscal_policy'],
+        'industry_cycle': industry_cycle_score * weights['industry_cycle'],
+        'market_activity': market_activity_score * weights['market_activity']
+    }
+
+    total_score = sum(weighted_scores.values())
+
+    # ==================== 评估等级 ====================
+    if total_score >= 90:
+        assessment_level = "积极"
+        assessment_description = "宏观环境良好，市场情绪乐观"
+    elif total_score >= 80:
+        assessment_level = "适度"
+        assessment_description = "宏观环境较好，市场情绪稳定"
+    elif total_score >= 70:
+        assessment_level = "稳健"
+        assessment_description = "宏观环境中性，市场情绪谨慎"
+    elif total_score >= 60:
+        assessment_level = "偏悲观"
+        assessment_description = "宏观环境偏弱，市场情绪低迷"
+    else:
+        assessment_level = "悲观"
+        assessment_description = "宏观环境较差，市场情绪悲观"
+
+    # ==================== 生成评估表格 ====================
+    assessment_data = [
+        ['评估维度', '当前状态', '得分', '权重', '加权得分', '说明'],
+        [
+            '货币政策',
+            monetary_policy_status,
+            f'{monetary_policy_score:.0f}',
+            '15%',
+            f'{weighted_scores["monetary_policy"]:.1f}',
+            '紧缩(40分)/稳健(60分)/适度宽松(80分)/宽松(100分)'
+        ],
+        [
+            '财政政策',
+            fiscal_policy_status,
+            f'{fiscal_policy_score:.0f}',
+            '15%',
+            f'{weighted_scores["fiscal_policy"]:.1f}',
+            '紧缩(50分)/稳健(70分)/积极(90分)'
+        ],
+        [
+            '行业发展周期',
+            industry_cycle_status,
+            f'{industry_cycle_score:.0f}',
+            '30%',
+            f'{weighted_scores["industry_cycle"]:.1f}',
+            '成长(100分)/成熟(80分)/幼稚(60分)/衰退(40分) - 请人工判断填写'
+        ],
+        [
+            '二级市场活跃度',
+            market_activity_status,
+            f'{market_activity_score:.1f}',
+            '40%',
+            f'{weighted_scores["market_activity"]:.1f}',
+            f'历史分位数>{int(market_activity_score)}%（5年，当前{price_to_ma20*100:.1f}%）'
+        ],
+        [
+            '合计',
+            '',
+            '',
+            '100%',
+            f'{total_score:.1f}',
+            assessment_level
+        ]
+    ]
+
+    add_table_data(document, assessment_data[0], assessment_data[1:])
+    add_paragraph(document, '')
+
+    # 返回评估结果
+    return {
+        'total_score': total_score,
+        'assessment_level': assessment_level,
+        'assessment_description': assessment_description,
+        'weighted_scores': weighted_scores,
+        'individual_scores': {
+            'monetary_policy': monetary_policy_score,
+            'fiscal_policy': fiscal_policy_score,
+            'industry_cycle': industry_cycle_score,
+            'market_activity': market_activity_score
+        },
+        'individual_statuses': {
+            'monetary_policy': monetary_policy_status,
+            'fiscal_policy': fiscal_policy_status,
+            'industry_cycle': industry_cycle_status,
+            'market_activity': market_activity_status
+        }
+    }
+
+
 def generate_chapter(context):
     """
     生成第九章：风控建议与风险提示
@@ -251,6 +460,41 @@ def generate_chapter(context):
     # ==================== 9.3 报价方案建议 ====================
     add_title(document, '9.3 报价方案建议', level=2)
     add_paragraph(document, '本节提供不同目标收益率下的报价建议，帮助投资者根据风险偏好选择合适的报价方案。')
+    add_paragraph(document, '')
+
+    # ==================== 宏观环境评估 ====================
+    add_paragraph(document, '【宏观环境评估】', bold=True)
+    add_paragraph(document, '在进行报价方案建议之前，首先评估当前宏观环境，为情景选择提供参考依据。')
+    add_paragraph(document, '')
+
+    # 计算宏观环境评分
+    macro_assessment = calculate_macro_environment_assessment(market_data, document)
+
+    # 保存宏观环境评估结果到context，供后续情景选择使用
+    context['macro_environment_assessment'] = macro_assessment
+
+    # 显示宏观环境评估结论
+    total_score = macro_assessment['total_score']
+    assessment_level = macro_assessment['assessment_level']
+
+    add_paragraph(document, f'综合评分：{total_score:.1f}分 | 评估等级：{assessment_level}')
+    add_paragraph(document, '')
+
+    # 根据评估等级给出情景选择建议
+    if total_score >= 90:
+        add_paragraph(document, f'✓ 宏观环境"积极"（{total_score:.1f}分）：建议选择漂移率≥+10%的情景，溢价率可控制在0%至-5%')
+    elif total_score >= 80:
+        add_paragraph(document, f'✓ 宏观环境"适度"（{total_score:.1f}分）：建议选择漂移率0%至+10%的情景，溢价率控制在-5%至-10%')
+    elif total_score >= 70:
+        add_paragraph(document, f'✓ 宏观环境"稳健"（{total_score:.1f}分）：建议选择漂移率-5%至+5%的情景，溢价率控制在-10%至-15%')
+    elif total_score >= 60:
+        add_paragraph(document, f'⚠ 宏观环境"偏悲观"（{total_score:.1f}分）：建议选择漂移率≤0%的情景，溢价率控制在-15%至-20%')
+    else:
+        add_paragraph(document, f'✗ 宏观环境"悲观"（{total_score:.1f}分）：建议选择漂移率≤-10%的情景，溢价率要求≤-20%或谨慎参与')
+
+    add_paragraph(document, '')
+    add_paragraph(document, '注：上述溢价率建议基于宏观环境评估，具体报价还需结合项目基本面和市场情况综合判断。')
+    add_paragraph(document, '')
     add_paragraph(document, '')
 
     # 9.3.1 宏观环境评估
