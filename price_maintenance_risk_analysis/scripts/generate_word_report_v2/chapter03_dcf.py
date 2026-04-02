@@ -464,9 +464,12 @@ def generate_chapter(context):
                     ts_code=stock_code,
                     fields='ts_code,name,area,industry,list_date'
                 )
-                if not df_stock_basic.empty:
+                if not df_stock_basic.empty and 'industry' in df_stock_basic.columns:
                     industry = df_stock_basic['industry'].iloc[0]
                     print(f"   股票所属行业：{industry}")
+                else:
+                    print(f"   获取行业信息为空或缺少industry字段")
+                    print(f"   将使用默认行业代码（申万电子）")
             except Exception as e:
                 print(f"   获取行业代码失败: {e}")
                 print(f"   将使用默认行业代码（申万电子）")
