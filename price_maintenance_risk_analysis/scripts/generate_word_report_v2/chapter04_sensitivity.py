@@ -669,10 +669,13 @@ def generate_chapter(context):
                     excess_return = annual_log_return - risk_free_rate
                     sharpe = excess_return / volatility if volatility > 0 else 0
 
+                    # 计算简单收益率（用于显示）
+                    simple_total_return = np.exp(total_log_return) - 1
+
                     time_window_results['window'].append(window)
                     time_window_results['volatility'].append(volatility)
-                    time_window_results['total_return'].append(total_return)
-                    time_window_results['annual_return'].append(annual_return)
+                    time_window_results['total_return'].append(simple_total_return)  # 简单收益率
+                    time_window_results['annual_return'].append(annual_log_return)  # 年化对数收益率
                     time_window_results['max_drawdown'].append(max_drawdown)
                     time_window_results['sharpe'].append(sharpe)
 
