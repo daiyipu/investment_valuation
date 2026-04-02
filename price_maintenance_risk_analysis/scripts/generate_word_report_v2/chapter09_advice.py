@@ -482,15 +482,46 @@ def generate_chapter(context):
 
     # 根据评估等级给出情景选择建议
     if total_score >= 90:
-        add_paragraph(document, f'✓ 宏观环境"积极"（{total_score:.1f}分）：建议选择漂移率≥+10%的情景，溢价率可控制在0%至-5%')
+        add_paragraph(document, f'✓ 宏观环境"积极"（{total_score:.1f}分）：建议溢价率和波动率选择第一档（乐观），漂移率结合公司基本面选择')
     elif total_score >= 80:
-        add_paragraph(document, f'✓ 宏观环境"适度"（{total_score:.1f}分）：建议选择漂移率0%至+10%的情景，溢价率控制在-5%至-10%')
+        add_paragraph(document, f'✓ 宏观环境"适度"（{total_score:.1f}分）：建议溢价率和波动率选择第二档（中性偏乐观），漂移率需结合公司基本面判断')
     elif total_score >= 70:
-        add_paragraph(document, f'✓ 宏观环境"稳健"（{total_score:.1f}分）：建议选择漂移率-5%至+5%的情景，溢价率控制在-10%至-15%')
+        add_paragraph(document, f'✓ 宏观环境"稳健"（{total_score:.1f}分）：建议溢价率和波动率选择第三档（中性），漂移率结合公司基本面选择偏保守一档')
     elif total_score >= 60:
-        add_paragraph(document, f'⚠ 宏观环境"偏悲观"（{total_score:.1f}分）：建议选择漂移率≤0%的情景，溢价率控制在-15%至-20%')
+        add_paragraph(document, f'⚠ 宏观环境"偏悲观"（{total_score:.1f}分）：建议溢价率和波动率选择第四档（谨慎），漂移率结合公司基本面选择保守档')
     else:
-        add_paragraph(document, f'✗ 宏观环境"悲观"（{total_score:.1f}分）：建议选择漂移率≤-10%的情景，溢价率要求≤-20%或谨慎参与')
+        add_paragraph(document, f'✗ 宏观环境"悲观"（{total_score:.1f}分）：建议溢价率和波动率选择第五档（极度保守），漂移率结合公司基本面选择最保守档或谨慎参与')
+
+    # 添加公司基本面判断说明
+    add_paragraph(document, '')
+    add_paragraph(document, '【公司基本面判断说明】', bold=True)
+    add_paragraph(document, '')
+    add_paragraph(document, '漂移率选择需结合公司基本面判断（经营周期）：')
+    add_paragraph(document, '• 优质期（业绩增长稳定、行业地位领先）：漂移率范围 +10% 至 +30%')
+    add_paragraph(document, '• 成熟期（业绩稳定、行业地位稳固）：漂移率范围 0% 至 +10%')
+    add_paragraph(document, '• 衰退期（业绩下滑、行业地位下降）：漂移率范围 -10% 至 0%')
+    add_paragraph(document, '• 极度保守期：漂移率范围 -30% 至 -10%')
+    add_paragraph(document, '')
+    add_paragraph(document, '后续将根据经营周期对应的漂移率范围，筛选符合条件的情景。')
+    add_paragraph(document, '')
+
+    # 参数档位说明
+    add_paragraph(document, '【参数档位说明】', bold=True)
+    add_paragraph(document, '')
+    add_paragraph(document, '溢价率档位（从优到差）：')
+    add_paragraph(document, '• 第一档：0%（无折价，最高报价）')
+    add_paragraph(document, '• 第二档：-5%（小幅折价）')
+    add_paragraph(document, '• 第三档：-10%（中等折价）')
+    add_paragraph(document, '• 第四档：-15%（较大折价）')
+    add_paragraph(document, '• 第五档：-20%（最大折价，最低报价）')
+    add_paragraph(document, '')
+
+    add_paragraph(document, '波动率档位（从高到低）：')
+    add_paragraph(document, '• 第一档：40%-50%（高波动，风险较高）')
+    add_paragraph(document, '• 第二档：30%-40%（中高波动）')
+    add_paragraph(document, '• 第三档：20%-30%（中低波动）')
+    add_paragraph(document, '• 第四档：10%-20%（低波动，风险较低）')
+    add_paragraph(document, '')
 
     add_paragraph(document, '')
     add_paragraph(document, '注：上述溢价率建议基于宏观环境评估，具体报价还需结合项目基本面和市场情况综合判断。')
