@@ -459,20 +459,17 @@ def generate_chapter(context):
 
             # 获取申万行业代码
             try:
-                df_industry = pro.index_member(
-                    index_code='801010.SI',  # 申万一级行业
-                    fields='con_code,index_code,in_date'
-                )
-                # 查找股票所属的申万一级行业
-                df_stock_industry = pro.daily_basic(
+                # 使用stock_basic接口获取行业信息
+                df_stock_basic = pro.stock_basic(
                     ts_code=stock_code,
-                    fields='ts_code,industry'
+                    fields='ts_code,name,area,industry,list_date'
                 )
-                if not df_stock_industry.empty:
-                    industry = df_stock_industry['industry'].iloc[0]
+                if not df_stock_basic.empty:
+                    industry = df_stock_basic['industry'].iloc[0]
                     print(f"   股票所属行业：{industry}")
             except Exception as e:
                 print(f"   获取行业代码失败: {e}")
+                print(f"   将使用默认行业代码（申万电子）")
 
             # 计算WACC（使用行业Beta）
             wacc_result = calculator.calculate_wacc(
