@@ -186,12 +186,17 @@ class WACCCalculator:
         # 优先使用第二章的同行公司数据
         if peer_companies is not None and not peer_companies.empty:
             print(f"📊 使用第二章同行公司数据计算行业Beta，同行数量：{len(peer_companies)}")
-            # 从同行公司数据中提取股票代码
+            # 从同行公司数据中提取股票代码（支持ts_code和code两种列名）
             if 'ts_code' in peer_companies.columns:
                 stock_codes = peer_companies['ts_code'].unique().tolist()[:max_stocks]
                 print(f"   提取到 {len(stock_codes)} 个同行公司代码")
+            elif 'code' in peer_companies.columns:
+                stock_codes = peer_companies['code'].unique().tolist()[:max_stocks]
+                print(f"   提取到 {len(stock_codes)} 个同行公司代码")
             else:
-                print(f"   ⚠️ 同行公司数据中没有ts_code列")
+                print(f"   ⚠️ 同行公司数据中没有ts_code或code列")
+                # 尝试查看所有列名
+                print(f"   可用列名: {list(peer_companies.columns)}")
         elif industry_code:
             # 降级：使用行业成分股
             print(f"📊 使用行业指数成分股计算行业Beta：{industry_code}")
