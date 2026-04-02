@@ -160,7 +160,7 @@ class WACCCalculator:
         industry_code: str = None,
         peer_companies: pd.DataFrame = None,
         window: int = 500,
-        max_stocks: int = 10
+        max_stocks: int = 9999  # 修改为9999，表示使用所有同行公司
     ) -> Dict:
         """
         计算行业Beta（同行公司Beta的中位数）
@@ -169,7 +169,7 @@ class WACCCalculator:
             industry_code: 申万行业代码（可选，如果提供peer_companies则不需要）
             peer_companies: 同行公司数据（从第二章获取，优先使用）
             window: 计算窗口（默认500天，与个股Beta保持一致）
-            max_stocks: 最多计算多少只同行公司
+            max_stocks: 最多计算多少只同行公司（默认9999，即使用所有）
 
         返回:
             {
