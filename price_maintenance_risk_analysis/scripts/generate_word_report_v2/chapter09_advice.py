@@ -1211,53 +1211,42 @@ def generate_chapter(context):
     # 2. 参数构造场景阈值（如果有符合条件的）
     param_threshold = None
     if 'environment_matched_scenarios' in locals() and environment_matched_scenarios:
-        param_threshold = environment_matched_scenarios[0]['premium_rate']
+        param_threshold_actual = environment_matched_scenarios[0]['premium_rate']  # 实际溢价率
+        # 转换为名义溢价率（相对MA20）
+        param_threshold = param_threshold_actual + ((ma20_price - current_price_eval) / current_price_eval * 100)
 
     # 3. 反向推算阈值（使用实际溢价率相对发行日价格）
-    reverse_threshold = premium_to_current_adjusted  # 从9.3.2.1节获取实际溢价率
-    reverse_threshold_ma20 = premium_to_ma20_adjusted  # 名义溢价率相对MA20
+    reverse_threshold_actual = premium_to_current_adjusted  # 从9.3.2.1节获取实际溢价率
+    # 转换为名义溢价率（相对MA20）
+    reverse_threshold = premium_to_ma20_adjusted  # 名义溢价率相对MA20
 
-    # 汇总结果
+    # 汇总结果（统一使用名义溢价率）
     thresholds = []
     if historical_threshold is not None:
-        thresholds.append(('历史数据场景', historical_threshold, '名义溢价率'))
+        thresholds.append(('历史数据场景', historical_threshold))
     if param_threshold is not None:
-        thresholds.append(('参数构造场景', param_threshold, '实际溢价率'))
+        thresholds.append(('参数构造场景', param_threshold))
     if reverse_threshold is not None:
-        thresholds.append(('反向推算', reverse_threshold, '实际溢价率'))
+        thresholds.append(('反向推算', reverse_threshold))
 
     if len(thresholds) >= 2:
-        # 计算溢价率区间（统一使用实际溢价率）
-        actual_premiums = [(name, threshold) for name, threshold, type in thresholds if type == '实际溢价率']
-        if len(actual_premiums) >= 2:
-            all_premiums = [t[1] for t in actual_premiums]
-        else:
-            # 如果实际溢价率不够2个，混合使用
-            all_premiums = [t[1] for t in [(name, threshold) for name, threshold, type in thresholds]]
+        # 统一使用名义溢价率（相对MA20）
+        all_premiums = [t[1] for t in thresholds]
 
         min_premium = min(all_premiums)
         max_premium = max(all_premiums)
         premium_range = max_premium - min_premium
 
         add_paragraph(document, f'• 有效阈值数量：{len(thresholds)}个')
-        for name, threshold, premium_type in thresholds:
-            add_paragraph(document, f'• {name}阈值：{threshold:+.2f}%（{premium_type}）')
+        for name, threshold in thresholds:
+            add_paragraph(document, f'• {name}阈值：{threshold:+.2f}%（名义溢价率，相对MA20）')
 
         add_paragraph(document, '')
         add_paragraph(document, '最终溢价率区间建议：', bold=True)
-        # 根据是否有确定发行日显示不同的描述
-        if date_source == "指定发行日":
-            add_paragraph(document, f'• 实际溢价率区间（相对发行日价格）：[{min_premium:+.2f}%, {max_premium:+.2f}%]')
-        else:
-            add_paragraph(document, f'• 实际溢价率区间（相对当前价格，默认为发行日价格）：[{min_premium:+.2f}%, {max_premium:+.2f}%]')
-        add_paragraph(document, f'• 名义溢价率区间（相对MA20）：约[{min_premium+((ma20_price-current_price_eval)/current_price_eval*100):+.2f}%, {max_premium+((ma20_price-current_price_eval)/current_price_eval*100):+.2f}%]')
+        add_paragraph(document, f'• 名义溢价率区间（相对MA20）：[{min_premium:+.2f}%, {max_premium:+.2f}%]')
         add_paragraph(document, f'• 区间宽度：{premium_range:.2f}%')
         add_paragraph(document, f'• 折价区间：[{abs(max_premium):.2f}%, {abs(min_premium):.2f}%]')
-        # 根据是否有确定发行日显示不同的说明
-        if date_source == "指定发行日":
-            add_paragraph(document, f'• 说明：发行日价格{current_price_eval:.2f}元，MA20价格{ma20_price:.2f}元，差异{((ma20_price-current_price_eval)/current_price_eval*100):+.2f}%')
-        else:
-            add_paragraph(document, f'• 说明：当前价格{current_price_eval:.2f}元（默认为发行日价格），MA20价格{ma20_price:.2f}元，差异{((ma20_price-current_price_eval)/current_price_eval*100):+.2f}%')
+        add_paragraph(document, f'• 说明：MA20价格{ma20_price:.2f}元，当前价格{current_price_eval:.2f}元，差异{((ma20_price-current_price_eval)/current_price_eval*100):+.2f}%')
 
         add_paragraph(document, '')
         add_paragraph(document, '区间分析：', bold=True)
@@ -1273,12 +1262,7 @@ def generate_chapter(context):
 
         add_paragraph(document, '')
         add_paragraph(document, '最终建议：', bold=True)
-        # 根据是否有确定发行日显示不同的建议描述
-        if date_source == "指定发行日":
-            add_paragraph(document, f'• 建议实际溢价率（相对发行日价格）：≤{max_premium:.2f}%（折价至少{abs(max_premium):.2f}%）')
-        else:
-            add_paragraph(document, f'• 建议实际溢价率（相对当前价格，默认为发行日价格）：≤{max_premium:.2f}%（折价至少{abs(max_premium):.2f}%）')
-        add_paragraph(document, f'• 对应名义溢价率（相对MA20）：约≤{max_premium+((ma20_price-current_price_eval)/current_price_eval*100):+.2f}%')
+        add_paragraph(document, f'• 建议名义溢价率（相对MA20）：≤{max_premium:.2f}%（折价至少{abs(max_premium):.2f}%）')
         add_paragraph(document, f'• 如区间较大，可在{min_premium:.2f}%至{max_premium:.2f}%范围内根据风险偏好调整')
         add_paragraph(document, f'• 严格控制不超过区间上限，确保投资安全边际')
     else:
