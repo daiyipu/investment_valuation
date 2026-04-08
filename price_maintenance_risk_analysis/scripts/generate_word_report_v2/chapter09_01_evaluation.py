@@ -182,7 +182,7 @@ def generate_chapter(context):
     add_paragraph(document, '')
 
     # DCF估值数据（从第三章结果获取）
-    intrinsic_value = context['results'].get('intrinsic_value', 0)
+    intrinsic_value = context.get('intrinsic_value', 0)
     if intrinsic_value is not None and intrinsic_value > 0:
         dcf_discount = (intrinsic_value / current_price - 1) * 100
         dcf_discount_issue = (intrinsic_value / issue_price - 1) * 100
