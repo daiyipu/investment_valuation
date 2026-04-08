@@ -1210,15 +1210,24 @@ def generate_chapter(context):
 
     # 2. 参数构造场景阈值（如果有符合条件的）
     param_threshold = None
+    param_threshold_actual = None
     if 'environment_matched_scenarios' in locals() and environment_matched_scenarios:
-        param_threshold_actual = environment_matched_scenarios[0]['premium_rate']  # 实际溢价率
-        # 转换为名义溢价率（相对MA20）
-        param_threshold = param_threshold_actual + ((ma20_price - current_price_eval) / current_price_eval * 100)
+        param_nominal_premium = environment_matched_scenarios[0]['premium_rate']  # 名义溢价率（相对MA20）
+        # 基于名义溢价率计算发行价：发行价 = MA20 × (1 + 名义溢价率)
+        issue_price_from_nominal = ma20_price * (1 + param_nominal_premium / 100)
+        # 计算实际溢价率（相对当前价格）：实际溢价率 = 发行价 / 当前价格 - 1
+        param_threshold_actual = (issue_price_from_nominal / current_price_eval - 1) * 100
+        # 名义溢价率（保持不变）
+        param_threshold = param_nominal_premium
 
-    # 3. 反向推算阈值（使用实际溢价率相对发行日价格）
-    reverse_threshold_actual = premium_to_current_adjusted  # 从9.3.2.1节获取实际溢价率
-    # 转换为名义溢价率（相对MA20）
-    reverse_threshold = premium_to_ma20_adjusted  # 名义溢价率相对MA20
+    # 3. 反向推算阈值（使用名义溢价率相对MA20）
+    reverse_nominal_premium = premium_to_ma20_adjusted  # 从9.3.2.1节获取名义溢价率（相对MA20）
+    # 基于名义溢价率计算发行价：发行价 = MA20 × (1 + 名义溢价率)
+    issue_price_from_nominal = ma20_price * (1 + reverse_nominal_premium / 100)
+    # 计算实际溢价率（相对当前价格）：实际溢价率 = 发行价 / 当前价格 - 1
+    reverse_threshold_actual = (issue_price_from_nominal / current_price_eval - 1) * 100
+    # 名义溢价率（保持不变）
+    reverse_threshold = reverse_nominal_premium
 
     # 汇总结果（统一使用名义溢价率）
     thresholds = []
@@ -1240,6 +1249,40 @@ def generate_chapter(context):
         add_paragraph(document, f'• 有效阈值数量：{len(thresholds)}个')
         for name, threshold in thresholds:
             add_paragraph(document, f'• {name}阈值：{threshold:+.2f}%（名义溢价率，相对MA20）')
+
+        # 显示实际溢价率计算详情
+        add_paragraph(document, '')
+        add_paragraph(document, '实际溢价率计算详情：', bold=True)
+
+        # 根据是否有确定发行日显示不同的说明
+        if date_source == "指定发行日":
+            add_paragraph(document, f'• 发行日当天价格：{current_price_eval:.2f}元')
+        else:
+            add_paragraph(document, f'• 当前价格（默认作为发行日价格）：{current_price_eval:.2f}元')
+        add_paragraph(document, f'• MA20价格（往前推20日）：{ma20_price:.2f}元')
+        add_paragraph(document, f'• 计算公式：发行价 = MA20价格 × (1 + 名义溢价率)')
+        add_paragraph(document, f'• 实际溢价率 = 发行价 / 发行日价格 - 1')
+
+        # 显示每个阈值的计算详情
+        if param_threshold is not None:
+            issue_price_param = ma20_price * (1 + param_threshold / 100)
+            add_paragraph(document, f'• 参数构造场景：名义溢价率{param_threshold:+.2f}% → 发行价{issue_price_param:.2f}元 → 实际溢价率{param_threshold_actual:+.2f}%')
+            add_paragraph(document, f'  计算：{ma20_price:.2f} × (1 + {param_threshold/100:+.4f}) = {issue_price_param:.2f}元，{issue_price_param:.2f} / {current_price_eval:.2f} - 1 = {param_threshold_actual/100:+.4f} = {param_threshold_actual:+.2f}%')
+
+        issue_price_reverse = ma20_price * (1 + reverse_threshold / 100)
+        add_paragraph(document, f'• 反向推算：名义溢价率{reverse_threshold:+.2f}% → 发行价{issue_price_reverse:.2f}元 → 实际溢价率{reverse_threshold_actual:+.2f}%')
+        add_paragraph(document, f'  计算：{ma20_price:.2f} × (1 + {reverse_threshold/100:+.4f}) = {issue_price_reverse:.2f}元，{issue_price_reverse:.2f} / {current_price_eval:.2f} - 1 = {reverse_threshold_actual/100:+.4f} = {reverse_threshold_actual:+.2f}%')
+
+        # 显示实际溢价率到名义溢价率的转换详情
+        conversion_factor = ((ma20_price - current_price_eval) / current_price_eval * 100)
+        add_paragraph(document, '')
+        add_paragraph(document, '溢价率转换详情：', bold=True)
+        add_paragraph(document, f'• 转换系数：{conversion_factor:+.2f}% = ((MA20价格{ma20_price:.2f}元 - 当前价格{current_price_eval:.2f}元) / 当前价格{current_price_eval:.2f}元 × 100%)')
+
+        # 显示每个阈值的实际溢价率和转换后的名义溢价率
+        if param_threshold_actual is not None:
+            add_paragraph(document, f'• 参数构造场景：实际溢价率{param_threshold_actual:+.2f}% → 名义溢价率{param_threshold:+.2f}%（转换系数{conversion_factor:+.2f}%）')
+        add_paragraph(document, f'• 反向推算：实际溢价率{reverse_threshold_actual:+.2f}% → 名义溢价率{reverse_threshold:+.2f}%（转换系数{conversion_factor:+.2f}%）')
 
         add_paragraph(document, '')
         add_paragraph(document, '最终溢价率区间建议：', bold=True)
