@@ -80,7 +80,7 @@ def _generate_multi_param_tables(document, multi_param_scenarios):
         # 筛选当前波动率区间的情景
         # 兼容新旧格式：新格式将数据嵌套在'scenario'键中
         scenarios_in_range = []
-        for s in all_scenarios_for_appendix:
+        for s in multi_param_scenarios:
             # 获取波动率值（兼容嵌套和扁平结构）
             if 'volatility' in s:
                 vol = s['volatility']
