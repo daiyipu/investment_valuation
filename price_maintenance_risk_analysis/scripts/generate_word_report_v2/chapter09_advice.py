@@ -784,15 +784,21 @@ def generate_chapter(context):
 
     add_paragraph(document, '计算方法：', bold=True)
     add_paragraph(document, '• 方法1（保守）：简单反推，不考虑波动率')
+    add_paragraph(document, f'  当前价格 = {current_price_eval:.2f}元（发行日价格）')
     add_paragraph(document, '  公式：最高发行价 = 当前价格 ÷ (1 + 目标收益率 × 锁定期年数)')
     add_paragraph(document, f'  最高发行价 = {current_price_eval:.2f} ÷ (1 + 8% × {lockup_years:.2f}) = {max_issue_price_simple:.2f}元')
+    add_paragraph(document, f'  对应名义溢价率（相对MA20）：{premium_to_ma20_simple:+.2f}%（MA20={ma20_price:.2f}元）')
+    add_paragraph(document, f'  对应实际溢价率（相对当前价）：{premium_to_current_simple:+.2f}%')
     add_paragraph(document, '')
 
     add_paragraph(document, '• 方法2（更保守）：考虑市场环境波动率安全边际')
+    add_paragraph(document, f'  当前价格 = {current_price_eval:.2f}元（发行日价格）')
     add_paragraph(document, f'  市场环境波动率 = {environment_volatility*100:.1f}%（基于评分{macro_score:.1f}分的映射值）')
     add_paragraph(document, f'  安全边际 = 0.5 × 波动率² = 0.5 × ({environment_volatility*100:.1f}%)² = {safety_margin*100:.2f}%')
     add_paragraph(document, f'  调整后收益率 = 目标收益率 + 安全边际 = 8% + {safety_margin*100:.2f}% = {adjusted_return*100:.2f}%')
     add_paragraph(document, f'  最高发行价 = {current_price_eval:.2f} ÷ (1 + {adjusted_return*100:.2f}% × {lockup_years:.2f}) = {max_issue_price_adjusted:.2f}元')
+    add_paragraph(document, f'  对应名义溢价率（相对MA20）：{premium_to_ma20_adjusted:+.2f}%（MA20={ma20_price:.2f}元）')
+    add_paragraph(document, f'  对应实际溢价率（相对当前价）：{premium_to_current_adjusted:+.2f}%')
     add_paragraph(document, '')
 
     # 推荐方案对比表
