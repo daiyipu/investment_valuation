@@ -488,7 +488,6 @@ def generate_chapter(context):
 
             # 显示WACC计算详情
             add_paragraph(document, '【WACC计算结果】')
-            add_paragraph(document, '')
 
             # 构建详细表格
             cap_struct = wacc_result['capital_structure']

@@ -321,49 +321,20 @@ def generate_chapter(context):
         ['VaR vs CVaR (99%)', f'{var_99*100:.1f}%', f'{cvar_99*100:.1f}%', f'{(cvar_99-var_99)*100:.1f}%', f'{(cvar_99/var_99-1)*100:.1f}%']
     ]
     add_table_data(document, ['项目', 'VaR', 'CVaR', '差值', 'CVaR/VaR'], cvar_comparison_data)
-
-    add_paragraph(document, '')
     add_paragraph(document, 'CVaR分析结论：')
     add_paragraph(document, f'• 95%置信水平下，CVaR比VaR高出 {(cvar_95/var_95-1)*100:.1f}%')
     add_paragraph(document, f'• 99%置信水平下，CVaR比VaR高出 {(cvar_99/var_99-1)*100:.1f}%')
     add_paragraph(document, '• 说明极端情况下的损失比VaR估计的更严重')
-    add_paragraph(document, '')
 
     # 增量风险分析
     add_paragraph(document, 'VaR vs CVaR 的区别：')
     add_paragraph(document, '• VaR：回答"有5%的概率损失至少多少"')
     add_paragraph(document, '• CVaR：回答"在最差5%的情况下，平均损失多少"')
     add_paragraph(document, '• CVaR > VaR，说明极端损失的"尾部"比VaR预测的更严重')
-    add_paragraph(document, '')
 
-    # ==================== 8.5 最大回撤分析 ====================
-    add_title(document, '8.5 最大回撤分析', level=2)
-
-    add_paragraph(document, '最大回撤是指从峰值到谷底的最大跌幅，是衡量投资风险的重要指标。')
-    add_paragraph(document, '')
-
-    # 估算最大回撤（使用120日波动率）
-    estimated_max_drawdown = mc_volatility * 2  # 简化估算
-    estimated_95_drawdown = mc_volatility * 1.5
-
-    drawdown_data = [
-        ['预估平均最大回撤', f'{estimated_max_drawdown*100:.1f}%', f'基于120日波动率({mc_volatility*100:.1f}%)估算'],
-        ['预估95%分位回撤', f'{estimated_95_drawdown*100:.1f}%', '95%的路径回撤不超过此值']
-    ]
-    add_table_data(document, ['回撤指标', '数值', '说明'], drawdown_data)
-
-    add_paragraph(document, '')
-    add_paragraph(document, '回撤分析：')
-    add_paragraph(document, f'• 预估平均最大回撤：{estimated_max_drawdown*100:.1f}%')
-    add_paragraph(document, f'• 预估95%分位回撤：{estimated_95_drawdown*100:.1f}%')
-    add_paragraph(document, f'• 最大回撤与VaR的关系：最大回撤通常大于VaR，因为它衡量整个持有期的最差情况')
-    add_paragraph(document, '')
-
-    # ==================== 8.6 潜在损失金额估算 ====================
-    add_title(document, '8.6 潜在损失金额估算', level=2)
-
+    # ==================== 8.5 潜在损失金额估算 ====================
+    add_title(document, '8.5 潜在损失金额估算', level=2)
     add_paragraph(document, '本节将VaR和CVaR转换为具体金额，直观展示潜在损失规模。')
-    add_paragraph(document, '')
 
     # 计算损失金额和剩余本金
     investment_amount = project_params['issue_price'] * project_params['issue_shares']
@@ -393,87 +364,6 @@ def generate_chapter(context):
     add_paragraph(document, f'• 95% CVaR：最差5%情况下平均损失{loss_cvar_95/10000:.2f}万元（{cvar_95*100:.2f}%），剩余本金{remaining_cvar_95/10000:.2f}万元')
     add_paragraph(document, '')
 
-    # ==================== 8.7 VaR风险测算综合结论 ====================
-    add_title(document, '8.7 VaR风险测算综合结论', level=2)
-
-    add_paragraph(document, '本节综合前面所有VaR分析，给出全面的风险评估结论。')
-    add_paragraph(document, '')
-
-    add_paragraph(document, '8.7.1 多窗口期VaR综合评估', bold=True)
-    add_paragraph(document, '')
-
-    # 总结三个窗口期的VaR
-    var_summary_headers = ['窗口期', '95% VaR', '风险特征', '适用场景']
-    var_summary_data = [
-        [
-            '60日',
-            f'{var_results["60日"]["var_95"]*100:.2f}%',
-            f'{"短期风险较高" if var_results["60日"]["var_95"] > var_results["120日"]["var_95"] else "短期风险可控"}',
-            '短期交易、波段操作'
-        ],
-        [
-            '120日',
-            f'{var_results["120日"]["var_95"]*100:.2f}%',
-            '中期基准，平衡稳定性',
-            '中期投资（推荐）'
-        ],
-        [
-            '250日',
-            f'{var_results["250日"]["var_95"]*100:.2f}%',
-            f'{"长期风险较低" if var_results["250日"]["var_95"] < var_results["120日"]["var_95"] else "长期风险特征"}',
-            '长期投资、价值投资'
-        ]
-    ]
-
-    add_table_data(document, var_summary_headers, var_summary_data)
-
-    add_paragraph(document, '')
-    add_paragraph(document, '8.7.2 VaR风险度量汇总', bold=True)
-    add_paragraph(document, '')
-
-    add_paragraph(document, f'基于{recommended_window}窗口的分析结果：')
-    add_paragraph(document, f'• 95%置信水平下，最大可能亏损约 {var_95*100:.1f}%，约 {loss_var_95/10000:.2f} 万元')
-    add_paragraph(document, f'• 极端情况下（1%概率），亏损可能达到 {var_99*100:.1f}%，约 {loss_var_99/10000:.2f} 万元')
-    add_paragraph(document, f'• CVaR显示，在最差5%情况下平均损失约 {cvar_95*100:.1f}%，约 {loss_cvar_95/10000:.2f} 万元')
-    add_paragraph(document, f'• 预估最大回撤约 {estimated_max_drawdown*100:.1f}%')
-    add_paragraph(document, f'• CVaR比VaR高出 {(cvar_95/var_95-1)*100:.1f}%，说明尾部风险严重')
-    add_paragraph(document, '')
-
-    # 综合风险评级
-    def get_comprehensive_risk_level(var_95_value, cvar_95_value):
-        """综合VaR和CVaR进行风险评级"""
-        # 加权平均：VaR权重0.6，CVaR权重0.4
-        weighted_risk = var_95_value * 0.6 + cvar_95_value * 0.4
-
-        if weighted_risk <= 0.15:
-            return "低风险", "🟢", "VaR和CVaR均处于较低水平，下行风险有限"
-        elif weighted_risk <= 0.25:
-            return "中等风险", "🟡", "VaR和CVaR处于中等水平，需关注下行风险"
-        elif weighted_risk <= 0.40:
-            return "较高风险", "🟠", "VaR和CVaR均较高，下行风险较大，需严格控制"
-        else:
-            return "高风险", "", "VaR和CVaR均很高，下行风险极大，需极度谨慎"
-
-    # 计算综合风险评级
-    risk_rating, risk_emoji, risk_description = get_comprehensive_risk_level(var_95, cvar_95)
-    print(f" 风险评级: {risk_rating} ({risk_emoji})")
-
-    add_paragraph(document, '8.7.3 VaR分析的局限性', bold=True)
-    add_paragraph(document, '')
-
-    add_paragraph(document, ' VaR分析的重要提示：')
-    add_paragraph(document, '• VaR基于历史数据，无法预测黑天鹅事件')
-    add_paragraph(document, '• VaR假设正态分布，实际市场可能出现肥尾效应')
-    add_paragraph(document, f'• {recommended_window}窗口的VaR为{var_95*100:.2f}%，但实际损失可能超过此值')
-    add_paragraph(document, '• CVaR比VaR更保守，应重点关注CVaR（尾部风险）')
-    add_paragraph(document, '• 建议结合压力测试（第七章）综合评估风险')
-    add_paragraph(document, '')
-
-    add_paragraph(document, '总结：')
-    add_paragraph(document, f'通过多窗口期VaR分析、CVaR分析和金额估算，我们得出{risk_rating}结论。')
-    add_paragraph(document, f'投资者应根据自身风险承受能力，审慎决策。')
-    add_paragraph(document, '')
-
     add_section_break(document)
 
     # 返回VaR相关变量供后续章节使用
@@ -485,7 +375,6 @@ def generate_chapter(context):
     context['results']['profit_losses'] = profit_losses
     context['results']['mc_volatility'] = mc_volatility
     context['results']['mc_drift'] = mc_drift
-    context['results']['risk_rating'] = risk_rating
     context['results']['var_results'] = var_results
 
     return context

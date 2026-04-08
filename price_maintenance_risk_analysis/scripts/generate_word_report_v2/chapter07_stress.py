@@ -154,14 +154,12 @@ def generate_chapter(context):
 
     add_paragraph(document, '本章节从多个维度模拟极端市场情况下的定增项目表现，包括估值回归风险、经济面极端情况、以及多重风险因素叠加的最差情景。')
     add_paragraph(document, '通过全面压力测试，评估项目在极端环境下的风险承受能力。')
-    add_paragraph(document, '')
 
     # ==================== 7.1 PE回归压力测试 ====================
     add_title(document, '7.1 PE回归压力测试', level=2)
 
     add_paragraph(document, '本节分析PE估值回归到行业极端情况时的情景，评估估值回归风险。')
     add_paragraph(document, '通过模拟PE回归到行业Q1（25分位，即下四分位数），评估最坏情况下估值回调对投资收益的影响。')
-    add_paragraph(document, '')
 
     # 计算回归情景
     current_price_rel = project_params['current_price']
@@ -190,7 +188,6 @@ def generate_chapter(context):
 
     add_paragraph(document, '')
     add_paragraph(document, 'PE回归压力测试分析：', bold=True)
-
     # 分析当前PE在行业中的位置
     current_pe = current_metrics_val['pe']
     pe_position = (peer_companies_val['pe'] < current_pe).sum() / len(peer_companies_val) * 100
@@ -198,9 +195,6 @@ def generate_chapter(context):
     add_paragraph(document, f'• 当前PE({current_pe:.2f}倍)位于行业{pe_position:.1f}%分位')
     add_paragraph(document, f'• 行业Q1 PE({pe_q1:.2f}倍)为25分位数，代表行业较低估值水平')
     add_paragraph(document, f'• 如果PE回归到行业Q1，目标价格为{target_price_q1:.2f}元，预期收益{return_q1:+.2f}%')
-
-    add_paragraph(document, '')
-
     # 风险提示
     add_paragraph(document, '风险评估：', bold=True)
     if return_q1 > 0:
@@ -209,9 +203,6 @@ def generate_chapter(context):
         add_paragraph(document, f' 在PE回归到行业Q1的极端情况下，预期收益为负({return_q1:+.2f}%)，存在一定估值回调风险，但风险可控')
     else:
         add_paragraph(document, f' 在PE回归到行业Q1的极端情况下，预期收益大幅为负({return_q1:+.2f}%)，估值回调风险较高，需谨慎投资')
-
-    add_paragraph(document, '')
-
     # 计算定增收益影响
     issue_price = project_params['issue_price']
     return_pe_stress = (target_price_q1 - issue_price) / issue_price * 100
@@ -229,16 +220,13 @@ def generate_chapter(context):
 
     add_paragraph(document, '本节模拟经济面极端情况（历史危机、黑天鹅事件）对定增项目的影响。')
     add_paragraph(document, '包括2008年金融危机、2020年疫情、行业政策收紧、个股重大利空等多种极端情景。')
-    add_paragraph(document, '')
 
     # 7.2.1 压力情景定义
     add_title(document, '7.2.1 压力情景定义', level=3)
-    add_paragraph(document, '')
 
     add_paragraph(document, '本节定义六种极端经济情景，基于历史事件和假设性风险构建。每种情景假设股价')
     add_paragraph(document, '在当前基础上下跌一定幅度，并伴随波动率飙升，用于评估定增项目在极端情况')
     add_paragraph(document, '下的最大损失和抗风险能力。')
-    add_paragraph(document, '')
 
     # 定义完整的压力测试情景（与notebook一致）
     stress_scenarios = {
@@ -288,21 +276,17 @@ def generate_chapter(context):
         ['流动性危机', '市场流动性枯竭', '-20%', '2.5x']
     ]
     add_table_data(document, scenario_headers, scenario_table_data)
-
-    add_paragraph(document, '')
     add_paragraph(document, '情景说明：')
-    add_paragraph(document, '• **市场危机_2008**：模拟2008年全球金融危机，A股市场暴跌约60%的极端情景')
-    add_paragraph(document, '• **市场危机_2020**：模拟2020年新冠疫情冲击，A股市场下跌约40%的情景')
-    add_paragraph(document, '• **极端熊市**：假设进入极端熊市周期，股价下跌50%，波动率上升30%')
-    add_paragraph(document, '• **个股重大利空**：公司突发重大利空（如财务造假、重大诉讼等），股价下跌35%')
-    add_paragraph(document, '• **行业政策收紧**：行业遭遇强监管政策（如教培、互联网金融等），股价下跌25%')
-    add_paragraph(document, '• **流动性危机**：市场流动性枯竭（如钱荒、信用违约等），股价下跌20%，波动率飙升150%')
-    add_paragraph(document, '')
+    add_paragraph(document, '• 市场危机_2008：模拟2008年全球金融危机，A股市场暴跌约60%的极端情景')
+    add_paragraph(document, '• 市场危机_2020：模拟2020年新冠疫情冲击，A股市场下跌约40%的情景')
+    add_paragraph(document, '• 极端熊市：假设进入极端熊市周期，股价下跌50%，波动率上升30%')
+    add_paragraph(document, '• 个股重大利空：公司突发重大利空（如财务造假、重大诉讼等），股价下跌35%')
+    add_paragraph(document, '• 行业政策收紧：行业遭遇强监管政策（如教培、互联网金融等），股价下跌25%')
+    add_paragraph(document, '• 流动性危机：市场流动性枯竭（如钱荒、信用违约等），股价下跌20%，波动率飙升150%')
     add_paragraph(document, '风险提示：')
     add_paragraph(document, '• 以上情景均为压力测试假设，不代表对未来市场的预测')
     add_paragraph(document, '• 实际极端情况可能比假设情景更严重或更轻微')
     add_paragraph(document, '• 投资决策应综合考虑多种情景下的风险敞口')
-    add_paragraph(document, '')
 
     # 定义完整的压力测试情景
     stress_scenarios = {
@@ -373,9 +357,7 @@ def generate_chapter(context):
     generate_stress_test_chart(scenario_names, scenario_returns_list, stress_chart_path)
 
     # 二、压力测试结果
-    add_paragraph(document, '')
     add_paragraph(document, '7.2.2 压力测试结果', bold=True)
-    add_paragraph(document, '')
 
     # 生成详细的结果表格
     stress_table = []
@@ -411,14 +393,11 @@ def generate_chapter(context):
     add_paragraph(document, f'• 盈利情景: {profit_scenarios} 种')
     add_paragraph(document, f'• 亏损情景: {total_scenarios - profit_scenarios} 种')
     add_paragraph(document, f'• 盈利概率: {profit_scenarios/total_scenarios*100:.1f}%')
-
-    add_paragraph(document, '')
     add_paragraph(document, f'风险分析：')
     add_paragraph(document, f'• 最大潜在亏损: {abs(worst_loss):.2f} 万元')
     add_paragraph(document, f'• 最大亏损率: {worst_loss_percent:.2f}%')
     add_paragraph(document, f'• 最坏情景: {scenario_names[worst_scenario_idx]}')
     add_paragraph(document, f'• 最好情景: {scenario_names[best_scenario_idx]}')
-
     # 风险等级评估
     if profit_scenarios >= total_scenarios * 0.7:
         risk_level = "低风险 - 大部分情景下盈利"
@@ -438,7 +417,7 @@ def generate_chapter(context):
     add_title(document, '7.3 多重敏感性指标极端情况压力测试', level=2)
 
     add_paragraph(document, '本节分析当多个敏感性指标同时发生极端情况时的最差情景。')
-    add_paragraph(document, '通过组合最不利的参数（深度溢价发行 + 高波动率 + 负向漂移率），评估项目的风险承受边界。')
+    add_paragraph(document, '通过组合最不利的参数（平价发行 + 高波动率 + 负向漂移率），评估项目的风险承受边界。')
     add_paragraph(document, '')
 
     add_paragraph(document, '7.3.1 极端情景组合定义', bold=True)
@@ -446,7 +425,7 @@ def generate_chapter(context):
 
     # 定义多重极端情景
     # 同时考虑：
-    # 1. 深度溢价发行（+20%溢价）
+    # 1. 平价发行（0%溢价，不溢价）
     # 2. 高波动率（当前波动率 × 1.5）
     # 3. 负向漂移率（当前漂移率 × 1.5，使情况更糟）
 
@@ -455,8 +434,8 @@ def generate_chapter(context):
     current_price_multi = market_data['current_price']
     lockup_months = project_params['lockup_period']
 
-    # 情景1：深度溢价 + 高波动 + 负向漂移（三重打击）
-    premium_rate_extreme = 0.20  # 20%溢价
+    # 情景1：平价发行 + 高波动 + 负向漂移（三重打击）
+    premium_rate_extreme = 0.0  # 0%溢价（平价）
     vol_multiplier_extreme = 1.5  # 波动率放大1.5倍
     drift_extreme = current_drift_120d * 1.5  # 当前漂移率放大1.5倍（使情况更糟）
 
@@ -490,7 +469,7 @@ def generate_chapter(context):
     add_paragraph(document, '极端情景参数设置：')
     extreme_scenario_headers = ['参数', '正常值', '极端值', '变化幅度']
     extreme_scenario_data = [
-        ['发行价', f'{project_params["issue_price"]:.2f}元', f'{issue_price_extreme:.2f}元', f'+{premium_rate_extreme*100:.0f}%溢价'],
+        ['发行价', f'{project_params["issue_price"]:.2f}元', f'{issue_price_extreme:.2f}元', f'{premium_rate_extreme*100:.0f}%溢价（平价）' if premium_rate_extreme == 0 else f'+{premium_rate_extreme*100:.0f}%溢价'],
         ['波动率', f'{current_vol_120d*100:.2f}%', f'{vol_extreme*100:.2f}%', f'×{vol_multiplier_extreme:.1f}'],
         ['漂移率', f'{current_drift_120d*100:+.2f}%', f'{drift_rate_extreme*100:+.2f}%', f'×{vol_multiplier_extreme:.1f}'],
         ['窗口期', '120日', '120日', '保持不变'],
@@ -532,32 +511,42 @@ def generate_chapter(context):
     add_paragraph(document, '')
 
     add_paragraph(document, '关键发现：')
-    add_paragraph(document, f'• 在深度溢价（溢价率+20%）、高波动（×1.5）、负向漂移（{drift_extreme*100:+.2f}%）的三重打击下：')
+    add_paragraph(document, f'• 在平价发行（溢价率0%）、高波动（×1.5）、负向漂移（{drift_extreme*100:+.2f}%）的三重打击下：')
     add_paragraph(document, f'  - 预期年化收益率为{mean_return_extreme:+.2f}%')
     add_paragraph(document, f'  - 盈利概率为{profit_prob_extreme:.1f}%')
     add_paragraph(document, f'  - 95% VaR为{var_95_extreme:+.2f}%，表示95%置信度下最大损失为{abs(var_95_extreme):.2f}%')
     add_paragraph(document, f'  - 最差情况可能损失{abs(worst_loss_extreme):.2f}%')
     add_paragraph(document, '')
 
-    if profit_prob_extreme < 20:
-        add_paragraph(document, ' 风险提示：')
-        add_paragraph(document, '  在多重极端情况叠加下，项目面临极高的亏损风险。')
-        add_paragraph(document, '  建议采取以下风险控制措施：')
-        add_paragraph(document, '  1. 严格控制仓位，建议不超过总资产的5-10%')
-        add_paragraph(document, '  2. 设置严格的止损线（如-15%）')
-        add_paragraph(document, '  3. 考虑购买看跌期权进行对冲')
-        add_paragraph(document, '  4. 分批建仓，避免一次性大额投入')
-    elif profit_prob_extreme < 40:
-        add_paragraph(document, ' 风险提示：')
-        add_paragraph(document, '  在多重极端情况叠加下，项目风险显著上升。')
-        add_paragraph(document, '  建议采取以下风险控制措施：')
-        add_paragraph(document, '  1. 适度控制仓位')
-        add_paragraph(document, '  2. 设置止损线（如-20%）')
-        add_paragraph(document, '  3. 密切监控市场动态')
-    else:
-        add_paragraph(document, ' 风险评估：')
-        add_paragraph(document, '  即使在多重极端情况下，项目仍保持一定的抗风险能力。')
-        add_paragraph(document, '  但仍需警惕市场风险，做好仓位管理。')
+    # ==================== 7.4 压力测试综合结论 ====================
+    add_paragraph(document, '')
+    add_title(document, '7.4 压力测试综合结论', level=2)
+
+    add_paragraph(document, '本节综合前面7.1、7.2、7.3的压力测试结果，总结定增项目在各类极端情况下的风险表现。')
+    add_paragraph(document, '')
+
+    add_paragraph(document, '7.4.1 压力测试全景汇总', bold=True)
+    add_paragraph(document, '')
+
+    # 创建综合汇总表
+    summary_headers = ['压力测试类型', '测试情景', '最差结果', '风险评估', '风险等级']
+    summary_data = [
+        ['7.1 PE回归压力测试', f'PE回归至行业Q1({pe_q1:.2f}倍)', f'{return_pe_stress:+.2f}%',
+         '估值回归风险' if return_pe_stress < 0 else '估值安全边际充足',
+         '高风险' if return_pe_stress <= -10 else '中等风险' if return_pe_stress <= 0 else '低风险'],
+        ['7.2 经济面极端情况', f'{scenario_names[worst_scenario_idx]}（股价下跌{int(stress_scenarios[scenario_names[worst_scenario_idx]]["price_drop"]*100)}%）',
+         f'{worst_loss_percent:+.2f}%', f'最大亏损{abs(worst_loss):.2f}万元',
+         '高风险' if profit_scenarios <= total_scenarios * 0.4 else '中等风险' if profit_scenarios <= total_scenarios * 0.7 else '低风险'],
+        ['7.3 多重敏感性指标极端', '平价发行+高波动+负向漂移', f'{mean_return_extreme:+.2f}%',
+         f'盈利概率{profit_prob_extreme:.1f}%',
+         '极高风险' if profit_prob_extreme < 20 else '高风险' if profit_prob_extreme < 40 else '中等风险' if profit_prob_extreme < 60 else '低风险']
+    ]
+    add_table_data(document, summary_headers, summary_data)
+
+    add_paragraph(document, '')
+    add_section_break(document)
+
+    return context
 
     # ==================== 7.4 压力测试综合结论 ====================
     add_paragraph(document, '')
@@ -578,7 +567,7 @@ def generate_chapter(context):
         ['7.2 经济面极端情况', f'{scenario_names[worst_scenario_idx]}（股价下跌{int(stress_scenarios[scenario_names[worst_scenario_idx]]["price_drop"]*100)}%）',
          f'{worst_loss_percent:+.2f}%', f'最大亏损{abs(worst_loss):.2f}万元',
          '🟢低风险' if profit_scenarios >= total_scenarios * 0.7 else '🟡中等风险' if profit_scenarios >= total_scenarios * 0.4 else '高风险'],
-        ['7.3 多重敏感性指标极端', '深度溢价+高波动+负向漂移', f'{mean_return_extreme:+.2f}%',
+        ['7.3 多重敏感性指标极端', '平价发行+高波动+负向漂移', f'{mean_return_extreme:+.2f}%',
          f'盈利概率{profit_prob_extreme:.1f}%',
          '🟡中等风险' if profit_prob_extreme >= 40 else '🟠较高风险' if profit_prob_extreme >= 20 else '极高风险']
     ]

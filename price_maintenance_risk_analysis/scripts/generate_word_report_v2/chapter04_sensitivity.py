@@ -761,12 +761,10 @@ def generate_chapter(context):
     add_title(document, '4.2 发行价折扣敏感性分析', level=2)
 
     add_paragraph(document, '本节分析不同发行价情景下的盈利概率和预期收益率，统一分析从折价20%到溢价20%的所有情景。')
-    add_paragraph(document, '')
     add_paragraph(document, '发行类型定义（基于20日均线MA20）：')
     add_paragraph(document, '• 折价发行：发行价 < MA20，有安全边际，盈利阈值 = 发行价')
     add_paragraph(document, '• 平价发行：发行价 = MA20')
     add_paragraph(document, '• 溢价发行：发行价 > MA20，无安全边际，盈利阈值 = max(MA20, 发行价×1.02)')
-    add_paragraph(document, '')
 
     # 计算并显示实际溢价率
     # 使用pricing_ma20（用于定价的MA20）确保整个报告统一
@@ -775,7 +773,7 @@ def generate_chapter(context):
     nominal_premium = (project_params['issue_price'] - pricing_ma20) / pricing_ma20 * 100
     actual_premium = (project_params['issue_price'] - project_params['current_price']) / project_params['current_price'] * 100
 
-    add_paragraph(document, '**重要说明：名义溢价率 vs 实际溢价率**')
+    add_paragraph(document, '重要说明：名义溢价率 vs 实际溢价率')
     add_paragraph(document, '')
     add_paragraph(document, f'• 名义溢价率（相对定价MA20）：{nominal_premium:+.2f}%')
     add_paragraph(document, f'  → 定增定价时参考，用于评估发行价相对20日均线的折溢价程度')
@@ -827,7 +825,6 @@ def generate_chapter(context):
 
     # 添加折扣率敏感性分析表
     add_paragraph(document, '【发行价折扣敏感性分析表】')
-    add_paragraph(document, '')
 
     # 定义折扣率情景（从折价20%到溢价20%）
     discount_scenarios = [
@@ -1192,12 +1189,12 @@ def generate_chapter(context):
     add_paragraph(document, '龙卷风图展示了各参数变化对盈利概率和预期收益率的影响程度，帮助识别最敏感的风险因子。')
     add_paragraph(document, '')
     add_paragraph(document, '双维度敏感性分析：')
-    add_paragraph(document, '• **A. 盈利概率敏感性**：参数变化对能否盈利（盈利概率>50%）的影响')
-    add_paragraph(document, '• **B. 预期收益率敏感性**：参数变化对盈利多少（预期年化收益率）的影响')
+    add_paragraph(document, '• A. 盈利概率敏感性：参数变化对能否盈利（盈利概率>50%）的影响')
+    add_paragraph(document, '• B. 预期收益率敏感性：参数变化对盈利多少（预期年化收益率）的影响')
     add_paragraph(document, '• 两个维度互为补充，全面评估风险')
     add_paragraph(document, '')
     add_paragraph(document, '敏感性分析方法说明：')
-    add_paragraph(document, '• 为公平比较各参数的敏感性，所有参数均使用**标准化的单位变化**：')
+    add_paragraph(document, '• 为公平比较各参数的敏感性，所有参数均使用标准化的单位变化：')
     add_paragraph(document, '  - 百分比参数（波动率、漂移率）：±5%')
     add_paragraph(document, '  - 时间参数（锁定期）：±1个月')
     add_paragraph(document, '• 通过比较相同单位变化下的影响幅度，识别最敏感的风险因子')
@@ -1223,15 +1220,15 @@ def generate_chapter(context):
 
     add_paragraph(document, '敏感性分析结论：')
     add_paragraph(document, '')
-    add_paragraph(document, '**分析方法说明**：')
-    add_paragraph(document, '• 采用**归一化敏感性**分析方法，确保不同参数的公平比较')
+    add_paragraph(document, '分析方法说明：')
+    add_paragraph(document, '• 采用归一化敏感性分析方法，确保不同参数的公平比较')
     add_paragraph(document, '• 归一化含义：将影响折算为"每单位变化"的效应')
     add_paragraph(document, '• 图表排序依据：归一化敏感性（单位变化的影响程度）')
     add_paragraph(document, '• 图表柱状显示：实际情景影响（便于直观理解）')
     add_paragraph(document, '• 优势：避免因变化幅度不同导致的排序偏差，真实反映参数敏感度')
     add_paragraph(document, '')
 
-    add_paragraph(document, '• **盈利概率敏感性**：')
+    add_paragraph(document, '• 盈利概率敏感性：')
 
     # 找出对盈利概率归一化敏感性最大的参数
     max_prob_sensitivity = max(top_prob, key=lambda x: abs(x.get('prob_sensitivity', x.get('prob_impact_pos', 0))))
@@ -1248,7 +1245,7 @@ def generate_chapter(context):
         add_paragraph(document, f"    最高敏感性参数：{max_prob_sensitivity['parameter']}（情景影响：{max_prob_impact:+.1f}%）")
 
     add_paragraph(document, '')
-    add_paragraph(document, '• **预期收益率敏感性**：')
+    add_paragraph(document, '• 预期收益率敏感性：')
 
     # 找出对预期收益率归一化敏感性最大的参数
     max_return_sensitivity = max(top_return, key=lambda x: abs(x.get('return_sensitivity', x.get('return_impact_pos', 0))))
@@ -1265,12 +1262,12 @@ def generate_chapter(context):
         add_paragraph(document, f"    最高敏感性参数：{max_return_sensitivity['parameter']}（情景影响：{max_return_impact:+.1f}%）")
 
     add_paragraph(document, '')
-    add_paragraph(document, '• **综合判断**：')
+    add_paragraph(document, '• 综合判断：')
     add_paragraph(document, '  - 价格类参数（发行价、当前价）通常是盈利概率的主要敏感性因素')
     add_paragraph(document, '  - 波动率和漂移率主要影响预期收益率（高波动率可能带来更高收益，但风险也更大）')
     add_paragraph(document, '  - 归一化分析揭示了各参数的真实敏感程度，便于风险识别和管理')
     add_paragraph(document, '')
-    add_paragraph(document, '• **投资建议**：')
+    add_paragraph(document, '• 投资建议：')
     add_paragraph(document, '  - 重点关注高敏感性参数，这些是项目的主要风险因子')
     add_paragraph(document, '  - 根据自身风险偏好，平衡盈利概率和预期收益率')
     add_paragraph(document, '  - 对于敏感性高的参数，建议设置更严格的风控阈值')

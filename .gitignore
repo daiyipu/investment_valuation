@@ -55,3 +55,4 @@ price_maintenance_risk_analysis/reports/images/*.jpg
 # 但保留 .gitkeep 文件
 !price_maintenance_risk_analysis/reports/outputs/.gitkeep
 !price_maintenance_risk_analysis/reports/images/.gitkeep
+*.bak

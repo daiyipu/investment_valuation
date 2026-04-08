@@ -30,10 +30,9 @@ def generate_chapter(context):
     market_data = context['market_data']
     IMAGES_DIR = context['IMAGES_DIR']
 
-    # 添加第九章主标题
-    add_title(document, '九、风控建议与风险提示', level=1)
-    add_paragraph(document, '本章节从风险控制角度，给出综合评估汇总、盈亏平衡分析、报价方案建议和全面的风险提示。')
-    add_paragraph(document, '基于保守原则，确保投资决策在合理风险可控范围内进行。')
+    # 添加第九章第一节标题（主标题已在chapter09_advice.py中添加）
+    # 不再添加重复的"九、风控建议与风险提示"标题
+    add_paragraph(document, '本章第一节从综合评估角度，汇总前面各章节的核心分析结果。')
     add_paragraph(document, '')
 
     # 从context['results']中获取其他章节的计算结果
@@ -45,7 +44,7 @@ def generate_chapter(context):
     mc_drift = context['results'].get('mc_drift', 0.08)
 
     # ==================== 9.1 综合评估汇总 ====================
-    add_title(document, '9.1 综合评估汇总', level=2)
+    # 注意：9.1的level=2标题已在chapter09_advice.py中生成，这里只生成内容
 
     add_paragraph(document, '本节对前面章节的分析结果进行综合汇总，涵盖相对估值、DCF估值、蒙特卡洛模拟、情景分析、压力测试和VaR风险度量等核心内容。')
     add_paragraph(document, '')
@@ -171,7 +170,6 @@ def generate_chapter(context):
 
     # DCF估值方法说明
     add_paragraph(document, '【DCF估值方法】', bold=True)
-    add_paragraph(document, '')
     add_paragraph(document, 'DCF（现金流折现）估值法通过预测公司未来自由现金流，并以加权平均资本成本（WACC）')
     add_paragraph(document, '折现至现值，得出公司的内在价值。')
     add_paragraph(document, '')
@@ -191,7 +189,6 @@ def generate_chapter(context):
 
         # 显示关键估值参数
         add_paragraph(document, '【估值参数】', bold=True)
-        add_paragraph(document, '')
         wacc_result = context.get('wacc', None)
         net_debt_result = context.get('net_debt', None)
         enterprise_value_result = context.get('enterprise_value', None)
@@ -208,7 +205,6 @@ def generate_chapter(context):
 
         add_paragraph(document, '')
         add_paragraph(document, '【估值结果】', bold=True)
-        add_paragraph(document, '')
         add_paragraph(document, f'• DCF内在价值: {intrinsic_value:.2f} 元/股')
         add_paragraph(document, f'• 当前价格: {current_price:.2f} 元/股')
         add_paragraph(document, f'• 发行价格: {issue_price:.2f} 元/股')
@@ -218,16 +214,15 @@ def generate_chapter(context):
 
         # 估值结论
         add_paragraph(document, '【估值结论】', bold=True)
-        add_paragraph(document, '')
 
         if dcf_discount_issue > 15:
-            conclusion = "✓ DCF估值显示，相比发行价有显著安全边际（>15%），估值合理偏低，投资价值较高。"
+            conclusion = " DCF估值显示，相比发行价有显著安全边际（>15%），内在价值高于发行价。"
         elif dcf_discount_issue > 0:
-            conclusion = "✓ DCF估值显示，相比发行价有一定安全边际，估值相对合理，具有一定投资价值。"
+            conclusion = " DCF估值显示，相比发行价有一定安全边际，内在价值略高于发行价。"
         elif dcf_discount_issue > -10:
-            conclusion = "⚠ DCF估值显示，发行价略高于内在价值（<10%），需关注估值风险。"
+            conclusion = " DCF估值显示，发行价略高于内在价值（<10%）。"
         else:
-            conclusion = "✗ DCF估值显示，发行价显著高于内在价值（≥10%），估值偏高，需谨慎投资。"
+            conclusion = " DCF估值显示，发行价显著高于内在价值（≥10%）。"
 
         add_paragraph(document, conclusion)
         add_paragraph(document, '')
@@ -254,7 +249,7 @@ def generate_chapter(context):
         context['dcf_discount'] = dcf_discount
         context['dcf_discount_issue'] = dcf_discount_issue
     else:
-        add_paragraph(document, '⚠️  DCF估值不可用（内在价值为负或无法计算），请参见第三章"DCF估值分析"了解详情。')
+        add_paragraph(document, '  DCF估值不可用（内在价值为负或无法计算），请参见第三章"DCF估值分析"了解详情。')
         add_paragraph(document, '')
         add_paragraph(document, '可能原因：')
         add_paragraph(document, '• WACC计算失败（参数缺失或不合理）')
@@ -273,11 +268,10 @@ def generate_chapter(context):
 
     # 添加两种模拟方法的说明
     add_paragraph(document, '【两种模拟方法说明】', bold=True)
-    add_paragraph(document, '')
     add_paragraph(document, '本报告采用两种蒙特卡洛模拟方法，以全面评估定增项目的风险收益特征：')
     add_paragraph(document, '')
 
-    add_paragraph(document, '1. **历史参数模拟**（传统方法）')
+    add_paragraph(document, '1. 历史参数模拟（传统方法）')
     add_paragraph(document, '   • 数据来源：基于过去250个交易日的历史统计数据')
     add_paragraph(document, '   • 漂移率：使用历史对数收益率的年化均值')
     add_paragraph(document, '   • 波动率：使用历史对数收益率的年化标准差')
@@ -285,7 +279,7 @@ def generate_chapter(context):
     add_paragraph(document, '   • 缺点：无法反映市场结构变化和未来趋势')
     add_paragraph(document, '')
 
-    add_paragraph(document, '2. **预测参数模拟**（先进方法）')
+    add_paragraph(document, '2. 预测参数模拟（先进方法）')
     add_paragraph(document, '   • 漂移率：基于ARIMA时间序列模型预测未来收益趋势')
     add_paragraph(document, '   • 波动率：基于GARCH模型预测未来波动率变化')
     add_paragraph(document, '   • 优点：考虑时间序列的动态特征，反映市场变化趋势')
@@ -293,7 +287,6 @@ def generate_chapter(context):
     add_paragraph(document, '')
 
     add_paragraph(document, '【方法对比与选择】', bold=True)
-    add_paragraph(document, '')
     add_paragraph(document, '• 互补性：两种方法各有优劣，建议结合使用，互为验证')
     add_paragraph(document, '• 适用场景：')
     add_paragraph(document, '  - 历史参数：适用于市场稳定的成熟期公司')
@@ -364,177 +357,25 @@ def generate_chapter(context):
         add_paragraph(document, ' 蒙特卡洛模拟结果不可用，请参见第五章"蒙特卡洛模拟"获取详细信息。')
         add_paragraph(document, '')
 
-    # ==================== 9.1.5 情景分析汇总 ====================
-    add_title(document, '9.1.5 情景分析', level=3)
+    # ==================== 9.1.5 历史数据场景说明 ====================
+    add_title(document, '9.1.5 历史数据场景说明', level=3)
 
-    add_paragraph(document, '本节汇总情景分析的核心结果，展示不同市场环境下的投资表现。')
+    add_paragraph(document, '本节简要介绍报告中使用的历史数据场景分类和数量统计。')
     add_paragraph(document, '')
 
-    # 情景分析结果（从第六章结果获取）
-    if all_scenarios and len(all_scenarios) >= 15:
-        # 按盈利概率排序（从高到低）
-        sorted_scenarios = sorted(all_scenarios, key=lambda x: x.get('profit_prob', 0.0), reverse=True)
+    add_paragraph(document, '历史数据场景分类：', bold=True)
+    add_paragraph(document, '• 市场指数情景：基于市场历史数据的情景分析')
+    add_paragraph(document, '• 行业指数情景：基于行业历史数据的情景分析')
+    add_paragraph(document, '• 行业估值情景：基于行业PE历史分位数的情景分析')
+    add_paragraph(document, '• 个股估值情景：基于个股PE历史分位数的情景分析')
+    add_paragraph(document, '• DCF估值情景：基于绝对估值法的情景分析')
+    add_paragraph(document, '')
 
-        # 分为三组：Top 5, Middle 5, Tail 5
-        total_scenarios = len(sorted_scenarios)
-        top_5 = sorted_scenarios[:5]
-        middle_5 = sorted_scenarios[total_scenarios//2 - 2 : total_scenarios//2 + 3] if total_scenarios >= 10 else []
-        tail_5 = sorted_scenarios[-5:]
-
-        # 添加说明
-        add_paragraph(document, '本节展示15种市场情景下的投资表现，按盈利概率分为三组：')
-        add_paragraph(document, '')
-        add_paragraph(document, '• **Top 5**（最优情景）：盈利概率最高的5种情景')
-        add_paragraph(document, '• **Middle 5**（中等情景）：盈利概率居中的5种情景')
-        add_paragraph(document, '• **Tail 5**（最差情景）：盈利概率最低的5种情景')
-        add_paragraph(document, '')
-
-        # ==================== Top 5 最优情景 ====================
-        add_paragraph(document, '【Top 5 - 最优情景】', bold=True)
-        add_paragraph(document, '')
-
-        top_5_data = [['情景类型', '盈利概率', '中位数收益率', '评估']]
-        for scenario in top_5:
-            scenario_name = scenario.get('name', '情景')
-            prob = scenario.get('profit_prob', 0.0) * 100
-            median_ret = scenario.get('median_return', 0.0) * 100
-
-            if prob >= 70:
-                eval_text = "✓ 优秀"
-            elif prob >= 50:
-                eval_text = "✓ 良好"
-            elif prob >= 30:
-                eval_text = "○ 一般"
-            else:
-                eval_text = "✗ 较差"
-
-            top_5_data.append([
-                scenario_name,
-                f'{prob:.1f}%',
-                f'{median_ret:+.1f}%',
-                eval_text
-            ])
-
-        add_table_data(document, top_5_data[0], top_5_data[1:])
-        add_paragraph(document, '')
-
-        # ==================== Middle 5 中等情景 ====================
-        if middle_5:
-            add_paragraph(document, '【Middle 5 - 中等情景】', bold=True)
-            add_paragraph(document, '')
-
-            middle_5_data = [['情景类型', '盈利概率', '中位数收益率', '评估']]
-            for scenario in middle_5:
-                scenario_name = scenario.get('name', '情景')
-                prob = scenario.get('profit_prob', 0.0) * 100
-                median_ret = scenario.get('median_return', 0.0) * 100
-
-                if prob >= 70:
-                    eval_text = "✓ 优秀"
-                elif prob >= 50:
-                    eval_text = "✓ 良好"
-                elif prob >= 30:
-                    eval_text = "○ 一般"
-                else:
-                    eval_text = "✗ 较差"
-
-                middle_5_data.append([
-                    scenario_name,
-                    f'{prob:.1f}%',
-                    f'{median_ret:+.1f}%',
-                    eval_text
-                ])
-
-            add_table_data(document, middle_5_data[0], middle_5_data[1:])
-            add_paragraph(document, '')
-
-        # ==================== Tail 5 最差情景 ====================
-        add_paragraph(document, '【Tail 5 - 最差情景】', bold=True)
-        add_paragraph(document, '')
-
-        tail_5_data = [['情景类型', '盈利概率', '中位数收益率', '评估']]
-        for scenario in tail_5:
-            scenario_name = scenario.get('name', '情景')
-            prob = scenario.get('profit_prob', 0.0) * 100
-            median_ret = scenario.get('median_return', 0.0) * 100
-
-            if prob >= 70:
-                eval_text = "✓ 优秀"
-            elif prob >= 50:
-                eval_text = "✓ 良好"
-            elif prob >= 30:
-                eval_text = "○ 一般"
-            else:
-                eval_text = "✗ 较差"
-
-            tail_5_data.append([
-                scenario_name,
-                f'{prob:.1f}%',
-                f'{median_ret:+.1f}%',
-                eval_text
-            ])
-
-        add_table_data(document, tail_5_data[0], tail_5_data[1:])
-        add_paragraph(document, '')
-
-        # ==================== 情景分析总结 ====================
-        add_paragraph(document, '【情景分析总结】', bold=True)
-        add_paragraph(document, '')
-
-        # 计算统计信息
-        top_5_avg_prob = sum(s.get('profit_prob', 0.0) for s in top_5) / 5 * 100
-        tail_5_avg_prob = sum(s.get('profit_prob', 0.0) for s in tail_5) / 5 * 100
-        tail_5_worst = tail_5[0].get('profit_prob', 0.0) * 100
-
-        add_paragraph(document, f'• 最优情景平均盈利概率: {top_5_avg_prob:.1f}%')
-        add_paragraph(document, f'• 最差情景平均盈利概率: {tail_5_avg_prob:.1f}%')
-        add_paragraph(document, f'• 最差情景盈利概率: {tail_5_worst:.1f}%（极端情况）')
-        add_paragraph(document, '')
-
-        add_paragraph(document, '投资启示：')
-        add_paragraph(document, f'• 在Top 5情景下，盈利概率均在{top_5[4].get("profit_prob", 0.0)*100:.0f}%以上，投资价值较高')
-        add_paragraph(document, f'• 在Tail 5情景下，盈利概率均低于{tail_5[4].get("profit_prob", 0.0)*100:.0f}%，需警惕极端风险')
-        add_paragraph(document, f'• 建议关注最差情景的风险评估，确保在极端情况下损失可控')
-        add_paragraph(document, '')
-
-        add_paragraph(document, '注：详细的情景分析请参见第六章"情景分析"。')
-        add_paragraph(document, '')
-
-    elif all_scenarios:
-        # 如果情景数量不足15个，显示所有情景
-        add_paragraph(document, f'⚠️  当前共有{len(all_scenarios)}个情景，不足15个。显示所有情景如下：')
-        add_paragraph(document, '')
-
-        scenario_summary_data = [
-            ['情景类型', '盈利概率', '中位数收益率', '评估']
-        ]
-
-        for scenario in all_scenarios:
-            scenario_name = scenario.get('name', f'情景')
-            prob = scenario.get('profit_prob', 0.0) * 100
-            median_ret = scenario.get('median_return', 0.0) * 100
-
-            if prob >= 70:
-                eval_text = "✓ 优秀"
-            elif prob >= 50:
-                eval_text = "✓ 良好"
-            elif prob >= 30:
-                eval_text = "○ 一般"
-            else:
-                eval_text = "✗ 较差"
-
-            scenario_summary_data.append([
-                scenario_name,
-                f'{prob:.1f}%',
-                f'{median_ret:+.1f}%',
-                eval_text
-            ])
-
-        add_table_data(document, scenario_summary_data[0], scenario_summary_data[1:])
-        add_paragraph(document, '')
-    else:
-        add_paragraph(document, '⚠️  情景分析结果不可用，请参见第六章"情景分析"获取详细信息。')
-        add_paragraph(document, '')
+    add_paragraph(document, '情景数量统计：', bold=True)
+    add_paragraph(document, '• 历史数据场景共计5大类')
+    add_paragraph(document, '• 每类场景包含多个档位设置（如高、中、低档位）')
+    add_paragraph(document, '• 具体情景数量和详细分析请参见第六章"情景分析"')
+    add_paragraph(document, '')
 
     # ==================== 9.1.6 压力测试结果 ====================
     add_title(document, '9.1.6 压力测试结果', level=3)
@@ -546,7 +387,6 @@ def generate_chapter(context):
 
     # 添加压力测试说明
     add_paragraph(document, '【压力测试说明】', bold=True)
-    add_paragraph(document, '')
     add_paragraph(document, '压力测试模拟历史危机和黑天鹅事件对股价的冲击，评估定增项目在极端情况下的抗风险能力。')
     add_paragraph(document, '本报告测试六种极端情景：2008年金融危机、2020年疫情、极端熊市、个股重大利空、行业政策收紧、流动性危机。')
     add_paragraph(document, '')
@@ -603,7 +443,6 @@ def generate_chapter(context):
 
     # 计算各情景的定增收益
     add_paragraph(document, '【极端情景测试结果】', bold=True)
-    add_paragraph(document, '')
 
     stress_results_data = [['情景名称', '情景描述', '股价跌幅', '压力后价格', '定增收益率', '亏损金额', '风险评估']]
 
@@ -650,40 +489,12 @@ def generate_chapter(context):
     add_table_data(document, stress_results_data[0], stress_results_data[1:])
     add_paragraph(document, '')
 
-    # 添加压力测试总结
-    add_paragraph(document, '【压力测试总结】', bold=True)
-    add_paragraph(document, '')
-
-    if worst_scenario:
-        add_paragraph(document, f'• **最坏情景**：{worst_scenario["description"]}（股价下跌{int(worst_scenario["price_drop"]*100)}%）')
-        add_paragraph(document, f'• **最大亏损**：{abs(worst_loss):.1f}%（约{abs((issue_price - current_price * (1 - worst_scenario["price_drop"])) * issue_shares / 100000000):.2f}万元）')
-        add_paragraph(document, f'• **亏损情景数量**：{sum(1 for s in stress_scenarios if (current_price * (1 - s["price_drop"]) < issue_price))} / 6 种情景出现亏损')
-        add_paragraph(document, '')
-
     # 风险提示
     add_paragraph(document, '【风险提示】', bold=True)
-    add_paragraph(document, '')
     add_paragraph(document, '• 压力测试情景基于历史事件，但实际极端情况可能更严重')
     add_paragraph(document, '• 投资决策应充分考虑极端情景下的最大承受能力')
-    add_paragraph(document, '• 建议设置止损机制，控制单一项目投资比例')
-    add_paragraph(document, '• 在市场出现极端情况时，应及时评估并调整投资策略')
-    add_paragraph(document, '')
-
-    # 抗风险能力评估
-    add_paragraph(document, '【抗风险能力评估】', bold=True)
-    add_paragraph(document, '')
-
-    profitable_scenarios = sum(1 for s in stress_scenarios if (current_price * (1 - s['price_drop']) >= issue_price))
-
-    if profitable_scenarios == 6:
-        add_paragraph(document, '✓ 极强：在所有6种极端情景下仍能保持盈利')
-    elif profitable_scenarios >= 4:
-        add_paragraph(document, f'✓ 较强：在{profitable_scenarios}/6种极端情景下保持盈利')
-    elif profitable_scenarios >= 2:
-        add_paragraph(document, f'⚠️ 中等：在{profitable_scenarios}/6种极端情景下保持盈利，需谨慎')
-    else:
-        add_paragraph(document, f'✗ 较弱：仅在{profitable_scenarios}/6种极端情景下保持盈利，风险较高')
-
+    add_paragraph(document, '• 设置止损机制，控制单一项目投资比例')
+    add_paragraph(document, '• 在市场出现极端情况时，及时评估并调整投资策略')
     add_paragraph(document, '')
     add_paragraph(document, '注：详细的压力测试分析请参见第七章"情景分析与压力测试"。')
     add_paragraph(document, '')
@@ -726,317 +537,6 @@ def generate_chapter(context):
     add_paragraph(document, f'• 95% VaR：{var_95_simple*100:.2f}%，表示在95%置信水平下，锁定期末的最大可能损失')
     add_paragraph(document, f'• 99% VaR：{var_99_simple*100:.2f}%，表示在99%置信水平下，锁定期末的最大可能损失')
     add_paragraph(document, f'• 风险等级：{var_risk_level}')
-    add_paragraph(document, '')
-
-    # ==================== 9.1.8 综合评估汇总 ====================
-    add_title(document, '9.1.8 综合评估汇总', level=3)
-
-    add_paragraph(document, '本节汇总9.1.1至9.1.7的分析结果，提供综合性的投资决策参考。')
-    add_paragraph(document, '')
-
-    # 获取120日窗口蒙特卡洛结果
-    if multi_window_results and '120d' in multi_window_results:
-        mc_120_result = multi_window_results['120d']
-        profit_prob_display = mc_120_result.get('profit_prob', 0.5) * 100
-        mean_return_display = mc_120_result.get('mean_return', 0.0) * 100
-    else:
-        profit_prob_display = 50.0
-        mean_return_display = 0.0
-
-    # DCF估值评估
-    if intrinsic_value and intrinsic_value > 0:
-        dcf_premium = (intrinsic_value / current_price - 1) * 100
-        if dcf_premium > 50:
-            dcf_eval = "显著低估"
-        elif dcf_premium > 20:
-            dcf_eval = "低估"
-        elif dcf_premium > -20:
-            dcf_eval = "合理估值"
-        elif dcf_premium > -50:
-            dcf_eval = "高估"
-        else:
-            dcf_eval = "显著高估"
-        dcf_display = f"{intrinsic_value:.2f}元/股"
-    else:
-        dcf_eval = "数据不可用"
-        dcf_display = "N/A"
-
-    # 蒙特卡洛评估
-    if profit_prob_display >= 70:
-        mc_eval = "风险较低"
-    elif profit_prob_display >= 50:
-        mc_eval = "风险适中"
-    else:
-        mc_eval = "风险较高"
-
-    # VaR评估
-    if var_95_simple < 0.15:
-        var_eval = "风险可控"
-    elif var_95_simple < 0.30:
-        var_eval = "风险较高"
-    else:
-        var_eval = "风险极高"
-
-    # 综合评估表格
-    comprehensive_summary_data = [
-        ['评估维度', '指标值', '评估结果', '说明'],
-        ['DCF内在价值', dcf_display, dcf_eval, '基于自由现金流折现（9.1.3）'],
-        ['蒙特卡洛盈利概率', f'{profit_prob_display:.1f}%', mc_eval, '120日窗口模拟（9.1.4）'],
-        ['预期年化收益率', f'{mean_return_display:.2f}%', '较高' if mean_return_display > 10 else '中等' if mean_return_display > 0 else '负收益', '模拟平均年化收益率（9.1.4）'],
-        ['95% VaR（锁定期）', f'{var_95_simple*100:.2f}%', var_eval, '锁定期最大损失（9.1.7）'],
-        ['', '', '', ''],
-        ['综合建议', '', '', ''],
-    ]
-
-    # 根据多维度结果给出综合建议
-    positive_signals = 0
-    negative_signals = 0
-
-    if dcf_eval in ['显著低估', '低估']:
-        positive_signals += 1
-    elif dcf_eval in ['高估', '显著高估']:
-        negative_signals += 1
-
-    if profit_prob_display >= 60:
-        positive_signals += 1
-    elif profit_prob_display < 40:
-        negative_signals += 1
-
-    if var_95_simple < 0.25:
-        positive_signals += 1
-    elif var_95_simple > 0.40:
-        negative_signals += 1
-
-    if positive_signals >= 2:
-        comprehensive_advice = "建议积极参与"
-        comprehensive_reason = "多个评估维度显示投资价值较高"
-    elif negative_signals >= 2:
-        comprehensive_advice = "建议谨慎参与"
-        comprehensive_reason = "多个评估维度显示风险较高"
-    else:
-        comprehensive_advice = "建议中性参与"
-        comprehensive_reason = "评估维度显示风险收益平衡"
-
-    comprehensive_summary_data.append([
-        '综合建议',
-        comprehensive_advice,
-        comprehensive_reason,
-        '基于9.1.1至9.1.7的综合评估'
-    ])
-
-    add_table_data(document, comprehensive_summary_data[0], comprehensive_summary_data[1:])
-
-    add_paragraph(document, '')
-    add_paragraph(document, ' 综合评估解读：', bold=True)
-    add_paragraph(document, f'• DCF估值：{dcf_display}（{dcf_eval}）')
-    add_paragraph(document, f'• 蒙特卡洛盈利概率：{profit_prob_display:.1f}%（{mc_eval}）')
-    add_paragraph(document, f'• 预期年化收益率：{mean_return_display:.2f}%')
-    add_paragraph(document, f'• 95% VaR：{var_95_simple*100:.2f}%（{var_eval}）')
-    add_paragraph(document, f'• 综合建议：{comprehensive_advice} - {comprehensive_reason}')
-    add_paragraph(document, '')
-
-    # ==================== 9.1 综合分析 ====================
-    add_title(document, '9.1 综合分析', level=2)
-
-    add_paragraph(document, '本节综合汇总前面各小节的核心信息，从多个维度全面评估定增项目的投资价值和风险。')
-    add_paragraph(document, '')
-
-    # ==================== 9.1.1 各小节核心信息汇总 ====================
-    add_title(document, '9.1.1 各维度分析汇总', level=3)
-
-    add_paragraph(document, '以下从相对估值、绝对估值、蒙特卡洛模拟、情景分析、压力测试、VaR风险度量六个维度，')
-    add_paragraph(document, '全面汇总定增项目的投资价值和风险特征。')
-    add_paragraph(document, '')
-
-    # 创建综合汇总表格
-    all_analysis_summary = []
-
-    # 9.1.2 相对估值分析汇总
-    if current_pe and current_pb:
-        all_analysis_summary.append([
-            '9.1.2 相对估值',
-            f'PE: {current_pe:.2f}倍 vs 行业{industry_pe:.2f}倍',
-            f'PB: {current_pb:.2f}倍 vs 行业{industry_pb:.2f}倍',
-            f'{pe_eval}' if 'pe_eval' in locals() else '数据不可用'
-        ])
-
-    # 9.1.3 DCF绝对估值汇总
-    if intrinsic_value and intrinsic_value > 0:
-        dcf_premium = (intrinsic_value / current_price - 1) * 100
-        all_analysis_summary.append([
-            '9.1.3 DCF估值',
-            f'内在价值: {intrinsic_value:.2f}元',
-            f'相对市价: {dcf_premium:+.1f}%',
-            dcf_eval
-        ])
-    else:
-        all_analysis_summary.append([
-            '9.1.3 DCF估值',
-            '内在价值: N/A',
-            'DCF估值不可用',
-            '数据不可用'
-        ])
-
-    # 9.1.4 蒙特卡洛模拟汇总
-    all_analysis_summary.append([
-        '9.1.4 蒙特卡洛',
-        f'盈利概率: {profit_prob_display:.1f}%',
-        f'预期年化收益: {mean_return_display:+.2f}%',
-        mc_eval
-    ])
-
-    # 9.1.5 情景分析汇总
-    if all_scenarios and len(all_scenarios) >= 15:
-        sorted_scenarios = sorted(all_scenarios, key=lambda x: x.get('profit_prob', 0.0), reverse=True)
-        top_5_avg_prob = sum(s.get('profit_prob', 0.0) for s in sorted_scenarios[:5]) / 5 * 100
-        tail_5_avg_prob = sum(s.get('profit_prob', 0.0) for s in sorted_scenarios[-5:]) / 5 * 100
-        all_analysis_summary.append([
-            '9.1.5 情景分析',
-            f'Top 5情景平均: {top_5_avg_prob:.1f}%',
-            f'Tail 5情景平均: {tail_5_avg_prob:.1f}%',
-            f'情景数量: {len(all_scenarios)}个'
-        ])
-    elif all_scenarios:
-        all_analysis_summary.append([
-            '9.1.5 情景分析',
-            f'情景数量: {len(all_scenarios)}个',
-            '数据不足',
-            '数据不可用'
-        ])
-    else:
-        all_analysis_summary.append([
-            '9.1.5 情景分析',
-            '情景数量: 0个',
-            '数据不可用',
-            '数据不可用'
-        ])
-
-    # 9.1.6 压力测试汇总
-    if worst_scenario:
-        all_analysis_summary.append([
-            '9.1.6 压力测试',
-            f'最坏情景: {worst_scenario["description"]}',
-            f'最大亏损: {abs(worst_loss):.1f}%',
-            f'亏损情景: {sum(1 for s in stress_scenarios if (current_price * (1 - s["price_drop"]) < issue_price))}/6 种'
-        ])
-    else:
-        all_analysis_summary.append([
-            '9.1.6 压力测试',
-            '压力测试: N/A',
-            '数据不可用',
-            '数据不可用'
-        ])
-
-    # 9.1.7 VaR风险度量汇总
-    all_analysis_summary.append([
-        '9.1.7 VaR度量',
-        f'95% VaR: {var_95_simple*100:.2f}%',
-        f'99% VaR: {var_99_simple*100:.2f}%',
-        var_eval
-    ])
-
-    # 添加综合汇总表格
-    if all_analysis_summary:
-        summary_headers = ['分析维度', '核心指标1', '核心指标2', '评估结论']
-        add_table_data(document, summary_headers, all_analysis_summary)
-        add_paragraph(document, '')
-
-    # ==================== 9.1.2 投资建议与风险提示 ====================
-    add_title(document, '9.1.2 投资建议与风险提示', level=3)
-
-    add_paragraph(document, '基于以上多维度综合分析，本节给出投资建议和风险提示。')
-    add_paragraph(document, '')
-
-    # 投资亮点
-    add_paragraph(document, '【投资亮点】', bold=True)
-    add_paragraph(document, '')
-
-    highlights = []
-    if dcf_eval in ['显著低估', '低估']:
-        highlights.append(f'✓ DCF估值显示{dcf_eval}，内在价值{dcf_display}高于市价')
-
-    if profit_prob_display >= 60:
-        highlights.append(f'✓ 蒙特卡洛模拟显示盈利概率{profit_prob_display:.1f}%，{mc_eval}')
-
-    if mean_return_display > 10:
-        highlights.append(f'✓ 预期年化收益率{mean_return_display:.2f}%，收益空间较大')
-
-    if var_95_simple < 0.25:
-        highlights.append(f'✓ 95% VaR风险{var_eval}，最大损失可控')
-
-    if highlights:
-        for highlight in highlights:
-            add_paragraph(document, highlight)
-    else:
-        add_paragraph(document, '暂无明显投资亮点')
-
-    add_paragraph(document, '')
-
-    # 风险提示
-    add_paragraph(document, '【风险提示】', bold=True)
-    add_paragraph(document, '')
-
-    risks = []
-    if dcf_eval in ['高估', '显著高估']:
-        risks.append(f'⚠️ DCF估值显示{dcf_eval}，内在价值低于市价')
-
-    if profit_prob_display < 40:
-        risks.append(f'⚠️ 蒙特卡洛盈利概率{profit_prob_display:.1f}%，{mc_eval}')
-
-    if mean_return_display < 0:
-        risks.append(f'⚠️ 预期年化收益{mean_return_display:.2f}%，存在亏损风险')
-
-    if var_95_simple > 0.40:
-        risks.append(f'⚠️ 95% VaR风险{var_eval}，潜在损失较大')
-
-    if worst_scenario and worst_loss < -40:
-        risks.append(f'⚠️ 压力测试显示极端情况最大亏损{abs(worst_loss):.1f}%，需警惕极端风险')
-
-    if risks:
-        for risk in risks:
-            add_paragraph(document, risk)
-    else:
-        add_paragraph(document, '暂无显著风险提示')
-
-    add_paragraph(document, '')
-
-    # 最终投资建议
-    add_paragraph(document, '【最终投资建议】', bold=True)
-    add_paragraph(document, '')
-
-    investment_advice = comprehensive_advice
-    investment_reason = comprehensive_reason
-
-    add_paragraph(document, f'**{investment_advice}**')
-    add_paragraph(document, f'理由：{investment_reason}')
-    add_paragraph(document, '')
-
-    # 操作建议
-    add_paragraph(document, '【操作建议】', bold=True)
-    add_paragraph(document, '')
-
-    if positive_signals >= 2:
-        add_paragraph(document, '• 建议积极参与，但建议控制单一项目投资比例（不超过总资产的20-30%）')
-        add_paragraph(document, '• 建议设置止损机制，当股价跌破发行价15%时及时止损')
-        add_paragraph(document, '• 建议分批建仓，降低择时风险')
-    elif negative_signals >= 2:
-        add_paragraph(document, '• 建议谨慎参与或要求更高的折价率（至少20%的安全边际）')
-        add_paragraph(document, '• 建议设置严格的止损机制，当股价下跌超过10%时考虑止损')
-        add_paragraph(document, '• 建议降低投资比例或观望等待更好的入场时机')
-    else:
-        add_paragraph(document, '• 建议中性参与，根据市场情况灵活调整仓位')
-        add_paragraph(document, '• 建议设置止损机制，控制下行风险')
-        add_paragraph(document, '• 建议结合其他投资机会进行分散投资')
-
-    add_paragraph(document, '')
-
-    # 重要提示
-    add_paragraph(document, '【重要提示】', bold=True)
-    add_paragraph(document, '')
-    add_paragraph(document, '• 本报告基于历史数据和模型假设，实际结果可能存在偏差')
-    add_paragraph(document, '• 市场有风险，投资需谨慎，本报告不构成投资建议')
-    add_paragraph(document, '• 建议结合公司基本面、行业趋势、宏观环境等因素综合判断')
-    add_paragraph(document, '• 建议定期回顾和调整投资策略，及时应对市场变化')
     add_paragraph(document, '')
 
     # 返回更新后的context

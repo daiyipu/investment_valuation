@@ -216,7 +216,7 @@ def _generate_appendix_scenarios(document, all_scenarios_for_appendix):
 
     # 检查是否有分组数据
     if not grouped_scenarios:
-        add_paragraph(document, '⚠️ 未找到6.2-6.5节的专项情景数据，请确认情景分析章节已正确生成。')
+        add_paragraph(document, '未找到6.2-6.5节的专项情景数据，请确认情景分析章节已正确生成。')
         add_paragraph(document, '')
         return
 
