@@ -327,7 +327,7 @@ def generate_chapter(context):
         ['参数', '范围', '步长', '组合数'],
         ['漂移率（年化收益率）', '-30% ~ +30%', '5%', len(drift_rates)],
         ['波动率（年化）', '10% ~ 50%', '10%', len(volatilities)],
-        ['折价率', '-20% ~ +20%', '5%', len(discounts)],
+        ['溢价率', '-20% ~ +20%', '5%', len(discounts)],
         ['总组合数', '-', '-', f'{len(drift_rates) * len(volatilities) * len(discounts)}']
     ]
     add_table_data(document, ['参数', '范围', '步长', '组合数'], param_data)
