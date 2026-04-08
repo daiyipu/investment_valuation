@@ -23,6 +23,9 @@ def generate_chapter(context):
     multi_param_scenarios = context['results'].get('multi_param_scenarios_585', [])
     historical_scenarios = context['results'].get('historical_scenarios_195', [])
 
+    print(f" DEBUG: 附件生成 - 多参数情景数量: {len(multi_param_scenarios)}")
+    print(f" DEBUG: 附件生成 - 历史数据情景数量: {len(historical_scenarios)}")
+
     # 生成附件内容
     _generate_appendix_scenarios(document, multi_param_scenarios, historical_scenarios)
     return context
@@ -188,6 +191,10 @@ def _generate_multi_param_tables(document, multi_param_scenarios):
 def _generate_historical_tables(document, historical_scenarios):
     """生成195种历史数据情景的表格"""
     from module_utils import add_title, add_paragraph, add_table_data
+
+    print(f" DEBUG: _generate_historical_tables - 接收到的情景数量: {len(historical_scenarios)}")
+    if historical_scenarios:
+        print(f" DEBUG: 第一个情景的数据结构: {list(historical_scenarios[0].keys())}")
 
     # ==================== 6.2-6.5节情景数据表 ====================
     add_title(document, '附表：6.2-6.5节情景数据表', level=2)
