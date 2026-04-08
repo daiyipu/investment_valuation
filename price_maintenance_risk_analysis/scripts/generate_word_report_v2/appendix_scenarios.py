@@ -13,47 +13,59 @@
 
 def generate_chapter(context):
     """
-    生成附件：585种情景完整数据表（统一接口）
+    生成附件：情景分析完整数据表（统一接口）
 
     参数:
         context: 包含document和results的字典
     """
     document = context['document']
-    # 优先使用扁平结构的情景数据（包含6.2-6.5专项情景），否则使用嵌套结构
-    all_scenarios_for_appendix = context['results'].get('all_scenarios_for_appendix',
-                                                        context['results'].get('all_scenarios', []))
-    _generate_appendix_scenarios(document, all_scenarios_for_appendix)
+    # 分别获取两种情景数据
+    multi_param_scenarios = context['results'].get('multi_param_scenarios_585', [])
+    historical_scenarios = context['results'].get('historical_scenarios_195', [])
+
+    # 生成附件内容
+    _generate_appendix_scenarios(document, multi_param_scenarios, historical_scenarios)
     return context
 
 
-def _generate_appendix_scenarios(document, all_scenarios_for_appendix):
+def _generate_appendix_scenarios(document, multi_param_scenarios, historical_scenarios):
     """
-    生成附件：585种情景完整数据表
+    生成附件：情景分析完整数据表
 
     参数说明：
     - document: Word文档对象
-    - all_scenarios_for_appendix: 所有情景数据列表，每个元素为字典包含：
-        - drift: 漂移率
-        - volatility: 波动率
-        - discount: 溢价率
-        - issue_price: 发行价
-        - mean_return: 预期年化收益率
-        - median_return: 中位数收益率
-        - profit_prob: 盈利概率
-        - var_5: 5% VaR
-        - var_95: 95% VaR
+    - multi_param_scenarios: 6.1节的585种多参数构造情景
+    - historical_scenarios: 6.2-6.5节的195种历史数据情景
     """
     from module_utils import add_title, add_paragraph, add_table_data, add_section_break
 
-    # ==================== 附件：585种情景完整数据表 ====================
+    # ==================== 附件1：585种多参数构造情景完整数据表 ====================
     add_section_break(document)
-    add_title(document, '附件：585种情景完整数据表', level=1)
+    add_title(document, '附件1：585种多参数构造情景完整数据表', level=1)
 
-    add_paragraph(document, '本附件提供完整的585种情景组合数据，供备查参考。')
-    add_paragraph(document, f'情景组合：漂移率（-30%~+30%，13档）× 波动率（10%~50%，5档）× 溢价率（-20%~+20%，9档）= {len(all_scenarios_for_appendix)}种')
+    add_paragraph(document, '本附件提供完整的585种多参数构造情景组合数据，供备查参考。')
+    add_paragraph(document, f'情景组合：漂移率（-30%~+30%，13档）× 波动率（10%~50%，5档）× 溢价率（-20%~+20%，9档）= {len(multi_param_scenarios)}种')
     add_paragraph(document, '')
     add_paragraph(document, '说明：本表按波动率分块展示，便于根据实际市场波动率选择参考情景。在每个波动率区间内，按漂移率从高到低排序（漂移率相同时按溢价率从高到低排序）。建议参考创业板180日波动率（约36%）确定目标波动率区间。')
     add_paragraph(document, '')
+
+    _generate_multi_param_tables(document, multi_param_scenarios)
+
+    # ==================== 附件2：195种历史数据情景完整数据表 ====================
+    add_section_break(document)
+    add_title(document, '附件2：195种历史数据情景完整数据表', level=1)
+
+    add_paragraph(document, '本附件提供6.2-6.5节的195种历史数据情景，包括市场指数情景、行业指数情景、行业PE情景、个股PE情景和DCF估值情景。')
+    add_paragraph(document, f'情景总数：{len(historical_scenarios)}种')
+    add_paragraph(document, '')
+    add_paragraph(document, '说明：历史数据情景基于实际历史数据构建，参数范围可能与多参数构造情景不同。')
+    add_paragraph(document, '')
+
+    _generate_historical_tables(document, historical_scenarios)
+
+def _generate_multi_param_tables(document, multi_param_scenarios):
+    """生成585种多参数构造情景的表格"""
+    from module_utils import add_title, add_paragraph, add_table_data
 
     # 按波动率分块展示
     # 定义波动率区间
@@ -172,6 +184,11 @@ def _generate_appendix_scenarios(document, all_scenarios_for_appendix):
     add_paragraph(document, '• 对比不同情景下的预期收益和盈利概率，评估投资价值')
     add_paragraph(document, '')
 
+
+def _generate_historical_tables(document, historical_scenarios):
+    """生成195种历史数据情景的表格"""
+    from module_utils import add_title, add_paragraph, add_table_data
+
     # ==================== 6.2-6.5节情景数据表 ====================
     add_title(document, '附表：6.2-6.5节情景数据表', level=2)
     add_paragraph(document, '本附表展示6.2至6.5节的专项情景分析结果，包括市场指数情景、行业指数情景、行业PE情景、个股PE情景和DCF估值情景。')
@@ -188,7 +205,7 @@ def _generate_appendix_scenarios(document, all_scenarios_for_appendix):
 
     # 按情景类型分组
     grouped_scenarios = {}
-    for s in all_scenarios_for_appendix:
+    for s in historical_scenarios:
         # 获取情景名称（兼容嵌套和扁平结构）
         scenario_name = None
         if 'name' in s:

@@ -566,8 +566,10 @@ def generate_chapter(context):
     else:
         add_paragraph(document, f' 当前溢价率{current_discount*100:+.2f}%较为合理，提供了一定的安全边际')
 
-    # 保存all_scenarios供附件使用
-    all_scenarios_for_appendix = all_scenarios.copy()
+    # 保存情景数据供附件使用（分两种类型）
+    multi_param_scenarios = all_scenarios.copy()  # 6.1节的585种多参数构造情景
+    # 注意：不初始化historical_scenarios_for_appendix，避免6.2-6.5节情景混入585种情景表中
+    historical_scenarios_for_appendix = []  # 6.2-6.5节的历史数据情景
 
     # ==================== 6.2.1 市场指数情景分析 ====================
     add_paragraph(document, '')
@@ -682,7 +684,7 @@ def generate_chapter(context):
                 'var_95': scenario_result['var_95'],
                 'issue_price': scenario_result['scenario']['issue_price']
             })
-            all_scenarios_for_appendix.append(scenario_flat)
+            historical_scenarios_for_appendix.append(scenario_flat)
 
         # 生成市场指数情景对比表格
         if index_scenario_results:
@@ -827,7 +829,7 @@ def generate_chapter(context):
                 'var_95': scenario_result['var_95'],
                 'issue_price': scenario_result['scenario']['issue_price']
             })
-            all_scenarios_for_appendix.append(scenario_flat)
+            historical_scenarios_for_appendix.append(scenario_flat)
 
         # 生成行业指数情景对比表格
         if industry_scenario_results:
@@ -988,7 +990,7 @@ def generate_chapter(context):
                         'var_95': scenario_result['var_95'],
                         'issue_price': scenario_result['scenario']['issue_price']
                     })
-                    all_scenarios_for_appendix.append(scenario_flat)
+                    historical_scenarios_for_appendix.append(scenario_flat)
 
                 # 生成行业PE情景对比表格
                 if industry_pe_scenario_results:
@@ -1154,7 +1156,7 @@ def generate_chapter(context):
                         'var_95': scenario_result['var_95'],
                         'issue_price': scenario_result['scenario']['issue_price']
                     })
-                    all_scenarios_for_appendix.append(scenario_flat)
+                    historical_scenarios_for_appendix.append(scenario_flat)
 
                 # 生成个股PE情景对比表格
                 if stock_pe_scenario_results:
@@ -1306,7 +1308,7 @@ def generate_chapter(context):
                         'var_95': scenario_result['var_95'],
                         'issue_price': scenario_result['scenario']['issue_price']
                     })
-                    all_scenarios_for_appendix.append(scenario_flat)
+                    historical_scenarios_for_appendix.append(scenario_flat)
 
                 # 生成DCF估值情景对比表格
                 if dcf_scenario_results:
@@ -1475,14 +1477,13 @@ def generate_chapter(context):
 
     add_section_break(document)
 
-    # 保存all_scenarios和all_scenarios_for_appendix到context供附件使用
-    if 'all_scenarios' in locals() and len(all_scenarios) > 0:
-        context['results']['all_scenarios'] = all_scenarios
-        print(f" 已保存{len(all_scenarios)}个情景到context，供附件使用")
+    # 分别保存两种情景数据供附件使用
+    if 'multi_param_scenarios' in locals():
+        context['results']['multi_param_scenarios_585'] = multi_param_scenarios
+        print(f" 已保存6.1节{len(multi_param_scenarios)}种多参数构造情景到context")
 
-    # 保存扁平结构的情景数据供附件使用（包含6.2-6.5专项情景）
-    if 'all_scenarios_for_appendix' in locals() and len(all_scenarios_for_appendix) > 0:
-        context['results']['all_scenarios_for_appendix'] = all_scenarios_for_appendix
-        print(f" 已保存{len(all_scenarios_for_appendix)}个情景（扁平结构）到context，供6.2-6.5节附表使用")
+    if 'historical_scenarios_for_appendix' in locals() and len(historical_scenarios_for_appendix) > 0:
+        context['results']['historical_scenarios_195'] = historical_scenarios_for_appendix
+        print(f" 已保存6.2-6.5节{len(historical_scenarios_for_appendix)}种历史数据情景到context")
 
     return context
