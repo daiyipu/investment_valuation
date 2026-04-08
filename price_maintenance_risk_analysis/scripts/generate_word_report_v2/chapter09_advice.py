@@ -909,8 +909,10 @@ def generate_chapter(context):
     add_paragraph(document, '• 同等情况下选择保守程度更高的方案')
     add_paragraph(document, '')
 
-    # 从context获取all_scenarios（第六章所有情景分析结果）
-    comprehensive_results = context['results'].get('all_scenarios', [])
+    # 从context获取历史数据情景（第六章6.2-6.5节的情景）
+    comprehensive_results = context['results'].get('historical_scenarios_195', [])
+
+    print(f" DEBUG 9.3.2.2: historical_scenarios_195数量 = {len(comprehensive_results)}")
 
     # 确定当前应该选择的档位
     if macro_score >= 80:
@@ -1084,8 +1086,8 @@ def generate_chapter(context):
 
     add_paragraph(document, '本节从585种参数构造场景（漂移率13档 × 波动率5档 × 溢价率9档）中筛选符合条件的方案，提供更全面的报价参考。')
 
-    # 从context获取all_scenarios（第六章所有情景分析结果）
-    comprehensive_results = context['results'].get('all_scenarios', [])
+    # 从context获取多参数构造情景（第六章6.1节的情景）
+    comprehensive_results = context['results'].get('multi_param_scenarios_585', [])
 
     # 第一步：筛选符合基础条件的585种参数构造场景
     qualified_585_scenarios = []
