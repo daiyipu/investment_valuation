@@ -157,10 +157,72 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技'):
         print("="*70)
         user_input = input("\n是否继续使用过期数据生成报告？(yes/no): ").strip().lower()
         if user_input not in ['yes', 'y', '是']:
-            print("报告生成已取消。")
-            print("请运行以下命令更新数据后重新生成：")
-            print("  python scripts/update_indices_data.py")
-            sys.exit(0)
+            # 询问是否需要自动更新数据
+            update_input = input("\n是否需要自动更新数据？(yes/no): ").strip().lower()
+            if update_input in ['yes', 'y', '是']:
+                print("\n开始自动更新数据...")
+                print("="*70)
+
+                # 导入更新脚本并执行
+                try:
+                    import sys
+                    import subprocess
+                    update_script = os.path.join(PROJECT_DIR, 'scripts', 'update_indices_data.py')
+
+                    if os.path.exists(update_script):
+                        # 运行数据更新脚本
+                        result = subprocess.run([sys.executable, update_script],
+                                              capture_output=True,
+                                              text=True,
+                                              timeout=300)  # 5分钟超时
+
+                        if result.returncode == 0:
+                            print("✅ 数据更新成功！")
+                            print(result.stdout)
+
+                            # 重新加载数据
+                            print("\n重新加载更新后的数据...")
+                            project_params, risk_params, market_data = load_placement_config(stock_code)
+                            industry_data = _load_industry_data(stock_code)
+
+                            # 检查更新后的数据新鲜度
+                            is_fresh_updated, data_msg_updated = check_data_freshness(market_data)
+                            print(f" {data_msg_updated}")
+
+                            if is_fresh_updated:
+                                print("✅ 数据已更新到最新，现在生成报告...")
+                            else:
+                                print("⚠️  数据更新后仍未达到最新，但已有改善")
+                                continue_input = input("\n是否继续生成报告？(yes/no): ").strip().lower()
+                                if continue_input not in ['yes', 'y', '是']:
+                                    print("报告生成已取消。")
+                                    sys.exit(0)
+                        else:
+                            print("❌ 数据更新失败！")
+                            print(result.stderr)
+                            print("\n请手动运行以下命令更新数据：")
+                            print(f"  python {update_script}")
+                            sys.exit(1)
+                    else:
+                        print(f"❌ 找不到更新脚本：{update_script}")
+                        print("请手动检查脚本路径或手动更新数据。")
+                        sys.exit(1)
+
+                except subprocess.TimeoutExpired:
+                    print("❌ 数据更新超时（超过5分钟）")
+                    print("请手动运行以下命令更新数据：")
+                    print("  python scripts/update_indices_data.py")
+                    sys.exit(1)
+                except Exception as e:
+                    print(f"❌ 数据更新过程出错：{e}")
+                    print("请手动运行以下命令更新数据：")
+                    print("  python scripts/update_indices_data.py")
+                    sys.exit(1)
+            else:
+                print("报告生成已取消。")
+                print("请运行以下命令更新数据后重新生成：")
+                print("  python scripts/update_indices_data.py")
+                sys.exit(0)
 
     # 创建分析器（注意参数顺序：issue_price, issue_shares, lockup_period, current_price, risk_free_rate）
     analyzer = PrivatePlacementRiskAnalyzer(
