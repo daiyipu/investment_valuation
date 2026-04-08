@@ -1288,7 +1288,7 @@ def generate_chapter(context):
         add_paragraph(document, '最终溢价率区间建议：', bold=True)
         add_paragraph(document, f'• 名义溢价率区间（相对MA20）：[{min_premium:+.2f}%, {max_premium:+.2f}%]')
         add_paragraph(document, f'• 区间宽度：{premium_range:.2f}%')
-        add_paragraph(document, f'• 折价区间：[{abs(max_premium):.2f}%, {abs(min_premium):.2f}%]')
+        add_paragraph(document, f'• 溢价区间：[{abs(max_premium):.2f}%, {abs(min_premium):.2f}%]')
         add_paragraph(document, f'• 说明：MA20价格{ma20_price:.2f}元，当前价格{current_price_eval:.2f}元，差异{((ma20_price-current_price_eval)/current_price_eval*100):+.2f}%')
 
         add_paragraph(document, '')
