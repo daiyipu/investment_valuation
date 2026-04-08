@@ -932,17 +932,20 @@ def generate_chapter(context):
                     continue
 
                 # 根据市场环境评分筛选对应档位的场景
+                # 档位信息存储在drift_level和vol_level字段中，不是在名称里
                 is_target_tier = False
+                drift_level = scenario_obj.get('drift_level', '')
+                vol_level = scenario_obj.get('vol_level', '')
+
                 if target_tier == "高":
-                    # 检查是否为高档位
-                    is_target_tier = any(keyword in scenario_name for keyword in tier_keywords)
+                    # 检查漂移率和波动率是否都为高档位
+                    is_target_tier = (drift_level == "高" and vol_level == "高")
                 elif target_tier == "中":
-                    # 检查是否为中档位，或者不包含明确档位信息的默认为中档位
-                    is_target_tier = (any(keyword in scenario_name for keyword in tier_keywords) or
-                                  not any(keyword in scenario_name for keyword in ["75%", "25%", "高", "低", "upper", "lower"]))
+                    # 检查漂移率和波动率是否都为中档位
+                    is_target_tier = (drift_level == "中" and vol_level == "中")
                 else:  # 低档位
-                    # 检查是否为低档位
-                    is_target_tier = any(keyword in scenario_name for keyword in tier_keywords)
+                    # 检查漂移率和波动率是否都为低档位
+                    is_target_tier = (drift_level == "低" and vol_level == "低")
 
                 # 如果不符合目标档位，跳过该场景
                 if not is_target_tier:
