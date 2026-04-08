@@ -15,7 +15,7 @@
 
 import sys
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from docx import Document
 
 # 添加项目路径
@@ -59,6 +59,65 @@ os.makedirs(OUTPUTS_DIR, exist_ok=True)
 font_prop = get_font_prop()
 
 
+def check_data_freshness(market_data, max_trading_days=0):
+    """
+    检查数据是否过期（基于交易日历）
+
+    参数:
+        market_data: 市场数据字典，应包含'analysis_date'
+        max_trading_days: 允许的最大落后交易日数（默认0天，不允许落后）
+
+    返回:
+        bool: 数据是否新鲜（未过期）
+        str: 信息/警告信息
+    """
+    if 'analysis_date' not in market_data:
+        return True, "数据文件中未找到analysis_date字段"
+
+    try:
+        analysis_date_str = market_data['analysis_date']
+        analysis_date = datetime.strptime(analysis_date_str, '%Y%m%d')
+        current_date = datetime.now()
+
+        # 计算交易日差距（排除周末）
+        trading_days_diff = 0
+        temp_date = analysis_date
+        while temp_date < current_date:
+            temp_date += timedelta(days=1)
+            # 只计算周一到周五（0-4），排除周六周日（5-6）
+            if temp_date.weekday() < 5:  # 0=周一, 4=周五
+                trading_days_diff += 1
+
+        # 如果当天是周末或节假日，可能没有最新数据，给予宽容
+        current_weekday = current_date.weekday()
+        if current_weekday >= 5:  # 周末
+            # 周末时多给2天宽容期
+            trading_days_diff = max(0, trading_days_diff - 2)
+
+        if trading_days_diff > max_trading_days:
+            warning_msg = f"""
+⚠️  数据过期警告：
+   数据文件日期：{analysis_date_str}（{analysis_date.strftime('%Y年%m月%d日')} {['周一','周二','周三','周四','周五','周六','周日'][analysis_date.weekday()]}）
+   当前系统日期：{current_date.strftime('%Y%m%d')}（{current_date.strftime('%Y年%m月%d日')} {['周一','周二','周三','周四','周五','周六','周日'][current_weekday]}）
+   交易日落后：{trading_days_diff}个交易日
+   最大允许：{max_trading_days}个交易日
+
+   建议：请运行以下命令更新数据：
+   python scripts/update_indices_data.py
+
+   注意：股票价格实时变动，使用过期数据可能导致分析结果不准确！
+            """
+            return False, warning_msg.strip()
+        else:
+            if trading_days_diff == 0:
+                return True, "数据最新，无交易日落后"
+            else:
+                return True, f"数据新鲜，落后{trading_days_diff}个交易日（在{max_trading_days}个交易日允许范围内）"
+
+    except Exception as e:
+        return True, f"无法解析数据日期：{e}"
+
+
 def generate_report(stock_code='300735.SZ', stock_name='光弘科技'):
     """
     生成完整的定增风险分析报告
@@ -86,6 +145,22 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技'):
     print("\n 加载配置数据...")
     project_params, risk_params, market_data = load_placement_config(stock_code)
     industry_data = _load_industry_data(stock_code)
+
+    # 检查数据新鲜度
+    print("\n 检查数据新鲜度...")
+    is_fresh, data_msg = check_data_freshness(market_data)
+    print(f" {data_msg}")
+
+    if not is_fresh:
+        print("="*70)
+        print(" 警告：数据已过期，建议更新后重新生成报告！")
+        print("="*70)
+        user_input = input("\n是否继续使用过期数据生成报告？(yes/no): ").strip().lower()
+        if user_input not in ['yes', 'y', '是']:
+            print("报告生成已取消。")
+            print("请运行以下命令更新数据后重新生成：")
+            print("  python scripts/update_indices_data.py")
+            sys.exit(0)
 
     # 创建分析器（注意参数顺序：issue_price, issue_shares, lockup_period, current_price, risk_free_rate）
     analyzer = PrivatePlacementRiskAnalyzer(
