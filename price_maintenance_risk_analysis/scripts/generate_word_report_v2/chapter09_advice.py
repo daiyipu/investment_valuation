@@ -927,6 +927,8 @@ def generate_chapter(context):
     scenario_options = []
 
     if comprehensive_results:
+        print(f" DEBUG 9.3.2.2: comprehensive_results数量 = {len(comprehensive_results)}")
+
         # 从comprehensive_results提取所有情景
         for result in comprehensive_results:
             if 'scenario' in result and 'median_return' in result and 'profit_prob' in result:
@@ -943,6 +945,8 @@ def generate_chapter(context):
                 drift_level = scenario_obj.get('drift_level', '')
                 vol_level = scenario_obj.get('vol_level', '')
 
+                print(f" DEBUG: 情景 {scenario_name}, drift_level='{drift_level}', vol_level='{vol_level}', target_tier='{target_tier}'")
+
                 if target_tier == "高":
                     # 检查漂移率和波动率是否都为高档位
                     is_target_tier = (drift_level == "高" and vol_level == "高")
@@ -952,6 +956,8 @@ def generate_chapter(context):
                 else:  # 低档位
                     # 检查漂移率和波动率是否都为低档位
                     is_target_tier = (drift_level == "低" and vol_level == "低")
+
+                print(f" DEBUG: is_target_tier = {is_target_tier}")
 
                 # 如果不符合目标档位，跳过该场景
                 if not is_target_tier:
@@ -996,6 +1002,7 @@ def generate_chapter(context):
         # 对每个大场景应用基础筛选条件
         qualified_by_category = {}
         for category, scenarios in scenario_categories.items():
+            print(f" DEBUG: {category} 共有 {len(scenarios)} 个档位匹配的场景")
             qualified = []
             for scenario in scenarios:
                 # 检查四个基础条件
@@ -1004,8 +1011,13 @@ def generate_chapter(context):
                 condition_3 = abs(scenario['var_95']) < 60  # |95% VaR| < 60%
                 condition_4 = scenario['profit_prob'] > 50  # 盈利概率 > 50%
 
+                print(f" DEBUG: {scenario['name']}: premium={scenario['premium_rate']:+.1f}%, median_return={scenario['median_return']:+.1f}%, var_95={scenario['var_95']:+.1f}%, profit_prob={scenario['profit_prob']:.1f}%")
+                print(f" DEBUG: 条件检查: c1={condition_1}, c2={condition_2}, c3={condition_3}, c4={condition_4}")
+
                 if condition_1 and condition_2 and condition_3 and condition_4:
                     qualified.append(scenario)
+                    print(f" DEBUG: {scenario['name']} 符合所有条件！")
+            print(f" DEBUG: {category} 符合条件的场景数: {len(qualified)}")
             qualified_by_category[category] = qualified
 
         # 统计结果
@@ -1077,6 +1089,10 @@ def generate_chapter(context):
 
     # 第一步：筛选符合基础条件的585种参数构造场景
     qualified_585_scenarios = []
+    checked_count = 0
+
+    print(f" DEBUG 9.3.2.3: comprehensive_results数量 = {len(comprehensive_results)}")
+
     for result in comprehensive_results:
         # 兼容新旧格式
         scenario_obj = result.get('scenario', result)
@@ -1085,6 +1101,8 @@ def generate_chapter(context):
         scenario_name = scenario_obj.get('name', '')
         if any(prefix in scenario_name for prefix in ['市场指数', '行业指数', '行业PE', '个股PE', 'DCF估值']):
             continue
+
+        checked_count += 1
 
         # 获取实际溢价率（百分比形式）
         premium_rate_pct = scenario_obj.get('premium_rate', scenario_obj.get('discount', 0)) * 100
@@ -1099,6 +1117,10 @@ def generate_chapter(context):
         condition_3 = var_95_pct < 60  # |95% VaR| < 60%
         condition_4 = profit_prob_pct > 50  # 盈利概率 > 50%
 
+        if checked_count <= 5:  # 只打印前5个用于调试
+            print(f" DEBUG: {scenario_name}: premium={premium_rate_pct:+.1f}%, median={median_return_pct:+.1f}%, var_95={var_95_pct:+.1f}%, profit={profit_prob_pct:.1f}%")
+            print(f" DEBUG: 条件: c1={condition_1}, c2={condition_2}, c3={condition_3}, c4={condition_4}")
+
         if condition_1 and condition_2 and condition_3 and condition_4:
             qualified_585_scenarios.append({
                 'name': scenario_name,
@@ -1110,6 +1132,9 @@ def generate_chapter(context):
                 'var_95': var_5_raw,
                 'profit_prob': profit_prob_pct
             })
+            print(f" DEBUG: {scenario_name} 符合所有条件！")
+
+    print(f" DEBUG: 检查了{checked_count}个多参数情景，找到{len(qualified_585_scenarios)}个符合条件")
 
     if qualified_585_scenarios:
         add_paragraph(document, f'参数构造场景筛选结果：', bold=True)
