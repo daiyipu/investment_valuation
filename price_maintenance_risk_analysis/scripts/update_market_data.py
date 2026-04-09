@@ -362,22 +362,175 @@ def fetch_market_turnover_data(target_days=1200):
         return None
 
 
-def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技'):
+def calculate_ma20_from_base_date(df, base_date_str):
+    """
+    基于基准日期（发行日/报价日）计算MA20价格（成交量加权均价）
+
+    规则：从发行日前一个交易日（含）开始往前累计20个交易日
+         如果发行日当天不是交易日或发行日是未来日期，使用最新可用交易日
+         使用成交量加权均价：累计成交额/累计成交量
+
+    参数:
+        df: 股票历史数据DataFrame
+        base_date_str: 基准日期字符串（YYYYMMDD格式）
+
+    返回:
+        float: MA20价格（成交量加权均价），如果计算失败返回None
+    """
+    try:
+        import pandas as pd
+
+        # 确保数据按日期排序
+        df_sorted = df.sort_values('trade_date').reset_index(drop=True)
+
+        # 找到发行日或之前的最近交易日作为起点
+        df_before_base = df_sorted[df_sorted['trade_date'] <= base_date_str]
+
+        # 如果发行日是未来日期或没有数据，使用最新交易日
+        if df_before_base.empty:
+            print(f"   发行日{base_date_str}是未来日期或无数据，使用最新交易日计算MA20")
+            # 使用最新交易日之前的20个交易日（不包括最新交易日）
+            if len(df_sorted) >= 21:
+                # 最新交易日之前20个交易日
+                df_20_days = df_sorted.iloc[-21:-1]  # 排除最后一天（最新交易日）
+                # 计算成交量加权均价
+                total_amount = df_20_days['amount'].sum()  # 千元
+                total_vol = df_20_days['vol'].sum()        # 手
+
+                if total_vol > 0:
+                    # 加权均价（元）= 累计成交额(千元) / 累计成交量(手) * 10
+                    ma20_price = (total_amount / total_vol) * 10
+                else:
+                    # 如果成交量为0（极罕见），使用简单收盘价平均
+                    ma20_price = df_20_days['close'].mean()
+
+                actual_start_date = df_20_days['trade_date'].iloc[0]
+                actual_end_date = df_20_days['trade_date'].iloc[-1]
+                print(f"   计算MA20（使用最新20个交易日）...")
+                print(f"   实际使用区间：{actual_start_date} ~ {actual_end_date}（最新交易日前20个交易日，不含最新交易日）")
+                print(f"   计算方式：成交量加权均价")
+                return float(ma20_price)
+            else:
+                print(f"警告：历史交易日数据不足21天，无法计算MA20")
+                return None
+
+        # 从发行日或之前的最近交易日开始，往前找20个交易日（不包括基准日当天）
+        start_index = df_before_base.index[-1]
+
+        # 检查是否有足够的交易日数据（需要基准日前20个交易日）
+        if start_index >= 20:
+            # 有足够的交易日数据，往前取20个交易日（不包括基准日）
+            df_20_days = df_sorted.iloc[start_index - 20:start_index]
+
+            # 计算成交量加权均价
+            # vol: 成交量（手），amount: 成交额（千元）
+            # 加权均价 = 累计成交额 / 累计成交量
+            # 注意单位转换：amount是千元，vol是手
+            # 需要将成交额转换为元，或者保持一致的单位
+            total_amount = df_20_days['amount'].sum()  # 千元
+            total_vol = df_20_days['vol'].sum()        # 手
+
+            if total_vol > 0:
+                # 加权均价（元）= (累计成交额(千元) * 1000) / (累计成交量(手) * 100)
+                # 简化：加权均价 = 累计成交额(千元) / 累计成交量(手) * 10
+                ma20_price = (total_amount / total_vol) * 10
+            else:
+                # 如果成交量为0（极罕见），使用简单收盘价平均
+                ma20_price = df_20_days['close'].mean()
+
+            actual_start_date = df_20_days['trade_date'].iloc[0]
+            actual_end_date = df_20_days['trade_date'].iloc[-1]
+            print(f"   计算MA20（基于发行日{base_date_str}）...")
+            print(f"   实际使用区间：{actual_start_date} ~ {actual_end_date}（基准日前20个交易日，不含基准日）")
+            print(f"   计算方式：成交量加权均价")
+            return float(ma20_price)
+        else:
+            # 数据不足，使用最新20个交易日作为fallback（排除最新交易日）
+            print(f"   从发行日{base_date_str}往前推的数据不足20天，使用最新交易日前20个交易日")
+            if len(df_sorted) >= 21:
+                # 最新交易日之前20个交易日
+                df_20_days = df_sorted.iloc[-21:-1]  # 排除最后一天（最新交易日）
+                total_amount = df_20_days['amount'].sum()  # 千元
+                total_vol = df_20_days['vol'].sum()        # 手
+
+                if total_vol > 0:
+                    ma20_price = (total_amount / total_vol) * 10
+                else:
+                    ma20_price = df_20_days['close'].mean()
+
+                actual_start_date = df_20_days['trade_date'].iloc[0]
+                actual_end_date = df_20_days['trade_date'].iloc[-1]
+                print(f"   实际使用区间：{actual_start_date} ~ {actual_end_date}（最新交易日前20个交易日，不含最新交易日）")
+                print(f"   计算方式：成交量加权均价")
+                return float(ma20_price)
+            else:
+                print(f"警告：历史交易日数据不足21天，无法计算MA20")
+                return None
+
+    except Exception as e:
+        print(f"计算MA20失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技', issue_date=None):
     """
     生成市场数据
+
+    参数:
+        stock_code: 股票代码
+        stock_name: 股票名称
+        issue_date: 发行日/报价日（格式YYYYMMDD），用于计算MA20
+                   如果为None，则使用当前日期作为发行日
     """
     # 获取历史数据
     df = fetch_latest_data(stock_code)
     if df is None:
         return None
 
-    # 基本信息
-    latest_date = df['trade_date'].iloc[-1]
-    current_price = df['close'].iloc[-1]
+    # 确定发行日（报价日）
+    if issue_date is None:
+        issue_date = datetime.now().strftime('%Y%m%d')
+        print(f"   使用当前日期作为发行日：{issue_date}")
+    else:
+        print(f"   使用指定发行日：{issue_date}")
+
+    # 计算询价邀请日（发行日-3天）
+    from datetime import timedelta
+    issue_date_obj = datetime.strptime(issue_date, '%Y%m%d')
+    invitation_date = (issue_date_obj - timedelta(days=3)).strftime('%Y%m%d')
+    print(f"   询价邀请日：{invitation_date}（发行日-3天）")
+
+    # 基本信息 - 获取指定发行日的价格
+    # 首先尝试获取指定发行日的价格，如果当天不是交易日，获取最近的交易日价格
+    df_sorted = df.sort_values('trade_date').reset_index(drop=True)
+
+    # 找到发行日或之后的最近交易日
+    df_on_or_after_issue = df_sorted[df_sorted['trade_date'] >= issue_date]
+    if not df_on_or_after_issue.empty:
+        # 有发行日或之后的数据，使用第一个交易日（最接近发行日）
+        latest_date = df_on_or_after_issue['trade_date'].iloc[0]
+        current_price = df_on_or_after_issue['close'].iloc[0]
+        print(f"   使用{latest_date}的价格（最接近发行日{issue_date}）")
+    else:
+        # 没有发行日或之后的数据，使用最新交易日
+        latest_date = df_sorted['trade_date'].iloc[-1]
+        current_price = df_sorted['close'].iloc[-1]
+        print(f"   发行日{issue_date}暂无数据，使用最新交易日{latest_date}的价格")
 
     print(f"\n📊 计算市场指标...")
-    print(f"   最新交易日: {latest_date}")
-    print(f"   最新收盘价: {current_price:.2f} 元")
+    print(f"   发行日: {issue_date}")
+    print(f"   实际使用交易日: {latest_date}")
+    print(f"   实际使用收盘价: {current_price:.2f} 元")
+
+    # 计算MA20（基于发行日）
+    print(f"   计算MA20（基于发行日{issue_date}）...")
+    ma_20 = calculate_ma20_from_base_date(df, issue_date)
+    if ma_20 is None:
+        print(f"无法基于发行日{issue_date}计算MA20")
+        return None
+    print(f"   MA20（基于发行日{issue_date}的成交量加权均价）: {ma_20:.2f} 元")
 
     # 计算波动率（多窗口）
     vol_20 = calculate_rolling_volatility(df, 20)
@@ -436,7 +589,10 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技'):
     market_data = {
         'stock_code': stock_code,
         'stock_name': stock_name,
-        'analysis_date': latest_date,
+        'analysis_date': datetime.now().strftime('%Y%m%d'),  # 使用当前日期，而不是最后交易日期
+        'latest_trading_date': latest_date,  # 新增：最后交易日期字段
+        'issue_date': issue_date,  # 新增：发行日/报价日
+        'invitation_date': invitation_date,  # 新增：询价邀请日
         'current_price': round(float(current_price), 2),
         'avg_price_all': round(float(avg_price_all), 2),
         'median_price': round(float(median_price), 2),
@@ -490,7 +646,9 @@ def print_market_data_summary(market_data):
     print(f"\n📈 基本信息:")
     print(f"   股票代码: {market_data['stock_code']}")
     print(f"   股票名称: {market_data['stock_name']}")
-    print(f"   分析日期: {market_data['analysis_date']}")
+    print(f"   分析日期: {market_data['analysis_date']} (数据生成日期)")
+    if 'latest_trading_date' in market_data:
+        print(f"   最后交易日: {market_data['latest_trading_date']} (市场数据日期)")
     print(f"   当前价格: {market_data['current_price']:.2f} 元")
 
     print(f"\n⚠️ 波动率:")

@@ -311,8 +311,7 @@ def generate_chapter(context):
     add_title(document, '6.1 多参数情景分析', level=2)
 
     add_paragraph(document, '本节通过穷举漂移率、波动率、溢价率三个参数的组合，全面分析不同市场环境下的定增项目收益预期。')
-    add_paragraph(document, '')
-
+    
     # ====== 参数空间定义 ======
     add_paragraph(document, '6.1.1 参数空间定义', bold=True, font_size=14)
     add_paragraph(document, '通过以下参数的穷举组合，模拟585种不同市场情景：')
@@ -340,8 +339,7 @@ def generate_chapter(context):
     add_paragraph(document, f'• 漂移率: 反映股价的预期趋势（负值=下跌，正值=上涨）')
     add_paragraph(document, f'• 波动率: 反映股价的不确定性（越高=风险越大）')
     add_paragraph(document, f'• 溢价率: 发行价相对MA20的溢价（负值=折价，正值=溢价，与配置的premium_rate一致）')
-    add_paragraph(document, '')
-
+    
     # ====== 模拟所有组合 ======
     print("\n运行多参数组合模拟...")
 
@@ -716,8 +714,7 @@ def generate_chapter(context):
             add_paragraph(document, f'• 最差情景：{worst_scenario["scenario"]["name"]}，盈利概率{worst_scenario["profit_prob"]:.1f}%，中位数收益{worst_scenario["median_return"]*100:+.1f}%')
             add_paragraph(document, f'• 投资建议：市场指数环境对定增收益有显著影响，建议关注市场整体趋势，在低波动高增长环境下积极参与')
 
-        add_paragraph(document, '')
-
+        
     # ==================== 6.2.2 行业指数情景分析 ====================
     add_paragraph(document, '')
     add_title(document, '6.2.2 行业指数情景分析', level=2)
@@ -861,8 +858,7 @@ def generate_chapter(context):
             add_paragraph(document, f'• 最差情景：{worst_scenario["scenario"]["name"]}，盈利概率{worst_scenario["profit_prob"]:.1f}%，中位数收益{worst_scenario["median_return"]*100:+.1f}%')
             add_paragraph(document, f'• 投资建议：行业景气度对定增收益有重要影响，建议关注行业周期，在行业上升期积极布局')
 
-        add_paragraph(document, '')
-
+        
         # ==================== 6.3 基于行业PE分位数的情景分析 ====================
         add_paragraph(document, '')
         add_title(document, '6.3 基于行业PE分位数的情景分析', level=2)
@@ -1481,9 +1477,18 @@ def generate_chapter(context):
     if 'multi_param_scenarios' in locals():
         context['results']['multi_param_scenarios_585'] = multi_param_scenarios
         print(f" 已保存6.1节{len(multi_param_scenarios)}种多参数构造情景到context")
+    else:
+        print(f" 警告：6.1节多参数构造情景未生成")
 
     if 'historical_scenarios_for_appendix' in locals() and len(historical_scenarios_for_appendix) > 0:
         context['results']['historical_scenarios_195'] = historical_scenarios_for_appendix
         print(f" 已保存6.2-6.5节{len(historical_scenarios_for_appendix)}种历史数据情景到context")
+    else:
+        print(f" 警告：6.2-6.5节历史数据情景未生成或为空")
+        print(f"   可能原因：")
+        print(f"   - 市场指数数据文件不可用")
+        print(f"   - PE数据获取失败（已在第二章尝试获取）")
+        print(f"   - DCF估值计算失败")
+        print(f"   - 情景模拟过程中出现异常")
 
     return context

@@ -32,6 +32,11 @@ from utils.analysis_tools import PrivatePlacementRiskAnalyzer
 from utils.font_manager import get_font_prop
 
 # 导入本模块的工具函数和章节模块
+# 添加当前目录到路径以支持模块导入
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if CURRENT_DIR not in sys.path:
+    sys.path.insert(0, CURRENT_DIR)
+
 import module_utils as utils
 import chapter01_overview
 import chapter02_valuation
@@ -59,6 +64,45 @@ os.makedirs(OUTPUTS_DIR, exist_ok=True)
 font_prop = get_font_prop()
 
 
+def _get_historical_price_and_ma20(stock_code, issue_date_str):
+    """
+    获取指定日期的股票价格和MA20（基于发行日）
+
+    参数:
+        stock_code: 股票代码
+        issue_date_str: 发行日/报价日字符串（YYYYMMDD格式）
+
+    返回:
+        tuple: (bidding_date_price, ma20_price) 或 (None, None)
+    """
+    try:
+        import sys
+        import os
+        from datetime import datetime
+        # 添加scripts目录到路径
+        scripts_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'scripts')
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+
+        # 导入数据更新模块
+        from update_market_data import generate_market_data, fetch_latest_data
+
+        # 使用update_market_data生成市场数据（基于发行日）
+        market_data = generate_market_data(stock_code, stock_code, issue_date_str)
+
+        if market_data is None:
+            return None, None
+
+        ma20_price = market_data.get('ma_20')
+        current_price = market_data.get('current_price')
+
+        return current_price, ma20_price
+
+    except Exception as e:
+        print(f"  获取历史价格和MA20失败: {e}")
+        return None, None
+
+
 def check_data_freshness(market_data, max_trading_days=0):
     """
     检查数据是否过期（基于交易日历）
@@ -82,11 +126,15 @@ def check_data_freshness(market_data, max_trading_days=0):
         # 计算交易日差距（排除周末）
         trading_days_diff = 0
         temp_date = analysis_date
-        while temp_date < current_date:
+        while temp_date.date() < current_date.date():  # 只比较日期部分，忽略时间
             temp_date += timedelta(days=1)
             # 只计算周一到周五（0-4），排除周六周日（5-6）
             if temp_date.weekday() < 5:  # 0=周一, 4=周五
                 trading_days_diff += 1
+
+        # 检查宽容期：如果交易日差距为1天且当前时间在20:00之前，给予宽容
+        if trading_days_diff == 1 and current_date.hour < 20:
+            return True, f"数据新鲜（当日20:00前，使用{analysis_date_str}数据）"
 
         # 如果当天是周末或节假日，可能没有最新数据，给予宽容
         current_weekday = current_date.weekday()
@@ -96,7 +144,7 @@ def check_data_freshness(market_data, max_trading_days=0):
 
         if trading_days_diff > max_trading_days:
             warning_msg = f"""
-⚠️  数据过期警告：
+数据过期警告：
    数据文件日期：{analysis_date_str}（{analysis_date.strftime('%Y年%m月%d日')} {['周一','周二','周三','周四','周五','周六','周日'][analysis_date.weekday()]}）
    当前系统日期：{current_date.strftime('%Y%m%d')}（{current_date.strftime('%Y年%m月%d日')} {['周一','周二','周三','周四','周五','周六','周日'][current_weekday]}）
    交易日落后：{trading_days_diff}个交易日
@@ -118,17 +166,21 @@ def check_data_freshness(market_data, max_trading_days=0):
         return True, f"无法解析数据日期：{e}"
 
 
-def generate_report(stock_code='300735.SZ', stock_name='光弘科技'):
+def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_date=None, force=False):
     """
     生成完整的定增风险分析报告
 
     参数:
         stock_code: 股票代码
         stock_name: 股票名称
+        issue_date: 报价日（字符串格式，如'20240315'），可选
+        force: 是否强制使用过期数据（跳过用户确认），默认False
 
     返回:
         document: Word文档对象
     """
+    import sys
+    from datetime import datetime, timedelta
     print("="*70)
     print(" 定增风险分析报告生成器（模块化版本 V2.0）")
     print("="*70)
@@ -146,6 +198,73 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技'):
     project_params, risk_params, market_data = load_placement_config(stock_code)
     industry_data = _load_industry_data(stock_code)
 
+    # 处理报价日和询价邀请日
+    if issue_date:
+        # 情况1：指定报价日（需要获取历史价格）
+        from datetime import datetime, timedelta
+        issue_date_obj = datetime.strptime(issue_date, '%Y%m%d')
+        invitation_date = issue_date_obj - timedelta(days=3)
+        invitation_date_str = invitation_date.strftime('%Y%m%d')
+
+        # 获取报价日当天的股票价格和MA20（基于发行日）
+        print(f" 获取报价日{issue_date}的历史价格和MA20（基于发行日{issue_date}）...")
+        bidding_date_price, ma20_price = _get_historical_price_and_ma20(stock_code, issue_date)
+
+        if bidding_date_price is None or ma20_price is None:
+            print(f"错误：无法获取报价日{issue_date}的历史价格或MA20")
+            print(f"请检查网络连接和数据可用性")
+            sys.exit(1)
+
+        # 更新market_data中的MA20和current_price（使用基于发行日的价格）
+        market_data['ma_20'] = ma20_price
+        market_data['current_price'] = bidding_date_price  # 更新为基于发行日的价格
+
+        project_params['ma20_from_issue'] = ma20_price
+        project_params['current_price'] = bidding_date_price  # 更新为基于发行日的价格，用于全文实际溢价率计算
+        print(f"  MA20价格（基于发行日{issue_date}的成交量加权均价）：{ma20_price:.2f}元")
+        print(f"  发行日价格（用于实际溢价率计算）：{bidding_date_price:.2f}元")
+
+        project_params['issue_date'] = issue_date
+        project_params['invitation_date'] = invitation_date_str
+        project_params['invitation_date_fixed'] = True  # 标记为固定日期
+        project_params['bidding_date_price'] = bidding_date_price
+        print(f" 使用指定报价日：{issue_date}")
+        print(f" 询价邀请日：{project_params['invitation_date']}（报价日-3天，固定）")
+        print(f" 报价日当天价格：{bidding_date_price:.2f}元")
+    else:
+        # 情况2：使用当前日期作为报价日
+        from datetime import datetime, timedelta
+        today = datetime.now()
+        invitation_date = today - timedelta(days=3)
+        invitation_date_str = invitation_date.strftime('%Y%m%d')
+
+        # 如果没有具体报价日，使用当前日
+        issue_date = today.strftime('%Y%m%d')
+
+        # 获取当前价格和MA20（基于发行日）
+        print(f" 计算当前价格和MA20（基于发行日{issue_date}）...")
+        bidding_date_price, ma20_price = _get_historical_price_and_ma20(stock_code, issue_date)
+
+        if bidding_date_price is None or ma20_price is None:
+            print(f"错误：无法获取当前价格或MA20")
+            print(f"请检查网络连接和数据可用性")
+            sys.exit(1)
+
+        # 更新market_data中的MA20和current_price（使用基于发行日的价格）
+        market_data['ma_20'] = ma20_price
+        market_data['current_price'] = bidding_date_price  # 更新为基于发行日的价格
+
+        project_params['issue_date'] = issue_date
+        project_params['invitation_date'] = invitation_date_str
+        project_params['invitation_date_fixed'] = False  # 标记为动态日期
+        project_params['bidding_date_price'] = bidding_date_price
+        project_params['current_price'] = bidding_date_price  # 更新为基于发行日的价格，用于全文实际溢价率计算
+        project_params['ma20_from_issue'] = ma20_price
+        print(f" 使用当前日期作为报价日：{issue_date}")
+        print(f" 询价邀请日：{invitation_date_str}（报价日-3天，动态）")
+        print(f" 报价日当天价格：{bidding_date_price:.2f}元")
+        print(f" MA20价格（基于发行日{issue_date}的成交量加权均价）：{ma20_price:.2f}元")
+
     # 检查数据新鲜度
     print("\n 检查数据新鲜度...")
     is_fresh, data_msg = check_data_freshness(market_data)
@@ -155,74 +274,79 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技'):
         print("="*70)
         print(" 警告：数据已过期，建议更新后重新生成报告！")
         print("="*70)
-        user_input = input("\n是否继续使用过期数据生成报告？(yes/no): ").strip().lower()
-        if user_input not in ['yes', 'y', '是']:
-            # 询问是否需要自动更新数据
-            update_input = input("\n是否需要自动更新数据？(yes/no): ").strip().lower()
-            if update_input in ['yes', 'y', '是']:
-                print("\n开始自动更新数据...")
-                print("="*70)
 
-                # 导入更新脚本并执行
-                try:
-                    import sys
-                    import subprocess
-                    update_script = os.path.join(PROJECT_DIR, 'scripts', 'update_indices_data.py')
+        if force:
+            print(" 强制模式：跳过确认，继续使用过期数据生成报告...")
+            print("="*70)
+        else:
+            user_input = input("\n是否继续使用过期数据生成报告？(yes/no): ").strip().lower()
+            if user_input not in ['yes', 'y', '是']:
+                # 询问是否需要自动更新数据
+                update_input = input("\n是否需要自动更新数据？(yes/no): ").strip().lower()
+                if update_input in ['yes', 'y', '是']:
+                    print("\n开始自动更新数据...")
+                    print("="*70)
 
-                    if os.path.exists(update_script):
-                        # 运行数据更新脚本
-                        result = subprocess.run([sys.executable, update_script],
-                                              capture_output=True,
-                                              text=True,
-                                              timeout=300)  # 5分钟超时
+                    # 导入更新脚本并执行
+                    try:
+                        import sys
+                        import subprocess
+                        update_script = os.path.join(PROJECT_DIR, 'scripts', 'update_indices_data.py')
 
-                        if result.returncode == 0:
-                            print("✅ 数据更新成功！")
-                            print(result.stdout)
+                        if os.path.exists(update_script):
+                            # 运行数据更新脚本
+                            result = subprocess.run([sys.executable, update_script],
+                                                  capture_output=True,
+                                                  text=True,
+                                                  timeout=300)  # 5分钟超时
 
-                            # 重新加载数据
-                            print("\n重新加载更新后的数据...")
-                            project_params, risk_params, market_data = load_placement_config(stock_code)
-                            industry_data = _load_industry_data(stock_code)
+                            if result.returncode == 0:
+                                print("数据更新成功！")
+                                print(result.stdout)
 
-                            # 检查更新后的数据新鲜度
-                            is_fresh_updated, data_msg_updated = check_data_freshness(market_data)
-                            print(f" {data_msg_updated}")
+                                # 重新加载数据
+                                print("\n重新加载更新后的数据...")
+                                project_params, risk_params, market_data = load_placement_config(stock_code)
+                                industry_data = _load_industry_data(stock_code)
 
-                            if is_fresh_updated:
-                                print("✅ 数据已更新到最新，现在生成报告...")
+                                # 检查更新后的数据新鲜度
+                                is_fresh_updated, data_msg_updated = check_data_freshness(market_data)
+                                print(f" {data_msg_updated}")
+
+                                if is_fresh_updated:
+                                    print("数据已更新到最新，现在生成报告...")
+                                else:
+                                    print("数据更新后仍未达到最新，但已有改善")
+                                    continue_input = input("\n是否继续生成报告？(yes/no): ").strip().lower()
+                                    if continue_input not in ['yes', 'y', '是']:
+                                        print("报告生成已取消。")
+                                        sys.exit(0)
                             else:
-                                print("⚠️  数据更新后仍未达到最新，但已有改善")
-                                continue_input = input("\n是否继续生成报告？(yes/no): ").strip().lower()
-                                if continue_input not in ['yes', 'y', '是']:
-                                    print("报告生成已取消。")
-                                    sys.exit(0)
+                                print("数据更新失败！")
+                                print(result.stderr)
+                                print("\n请手动运行以下命令更新数据：")
+                                print(f"  python {update_script}")
+                                sys.exit(1)
                         else:
-                            print("❌ 数据更新失败！")
-                            print(result.stderr)
-                            print("\n请手动运行以下命令更新数据：")
-                            print(f"  python {update_script}")
+                            print(f"找不到更新脚本：{update_script}")
+                            print("请手动检查脚本路径或手动更新数据。")
                             sys.exit(1)
-                    else:
-                        print(f"❌ 找不到更新脚本：{update_script}")
-                        print("请手动检查脚本路径或手动更新数据。")
-                        sys.exit(1)
 
-                except subprocess.TimeoutExpired:
-                    print("❌ 数据更新超时（超过5分钟）")
-                    print("请手动运行以下命令更新数据：")
+                    except subprocess.TimeoutExpired:
+                        print("数据更新超时（超过5分钟）")
+                        print("请手动运行以下命令更新数据：")
+                        print("  python scripts/update_indices_data.py")
+                        sys.exit(1)
+                    except Exception as e:
+                        print(f"数据更新过程出错：{e}")
+                        print("请手动运行以下命令更新数据：")
+                        print("  python scripts/update_indices_data.py")
+                        sys.exit(1)
+                else:
+                    print("报告生成已取消。")
+                    print("请运行以下命令更新数据后重新生成：")
                     print("  python scripts/update_indices_data.py")
-                    sys.exit(1)
-                except Exception as e:
-                    print(f"❌ 数据更新过程出错：{e}")
-                    print("请手动运行以下命令更新数据：")
-                    print("  python scripts/update_indices_data.py")
-                    sys.exit(1)
-            else:
-                print("报告生成已取消。")
-                print("请运行以下命令更新数据后重新生成：")
-                print("  python scripts/update_indices_data.py")
-                sys.exit(0)
+                    sys.exit(0)
 
     # 创建分析器（注意参数顺序：issue_price, issue_shares, lockup_period, current_price, risk_free_rate）
     analyzer = PrivatePlacementRiskAnalyzer(
@@ -256,43 +380,60 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技'):
     print("\n 生成第一章：项目概况...")
     context = chapter01_overview.generate_chapter(context)
 
+    # 第一章完成后，添加新节并设置页眉（从正文开始有页眉）
+    company_name = project_params.get('company_name', stock_name)
+    utils.add_new_section_with_headers(document, company_name)
+    utils.update_even_page_header(document, '一、项目概况')
+
     # 第二章：相对估值分析
     print("\n 生成第二章：相对估值分析...")
     context = chapter02_valuation.generate_chapter(context)
+    utils.update_even_page_header(document, '二、相对估值分析')
 
     # 第三章：DCF估值分析
     print("\n 生成第三章：DCF估值分析...")
     context = chapter03_dcf.generate_chapter(context)
+    utils.update_even_page_header(document, '三、DCF估值分析')
 
     # 第四章：敏感性分析
     print("\n 生成第四章：敏感性分析...")
     context = chapter04_sensitivity.generate_chapter(context)
+    utils.update_even_page_header(document, '四、敏感性分析')
 
     # 第五章：蒙特卡洛模拟
     print("\n 生成第五章：蒙特卡洛模拟...")
     context = chapter05_montecarlo.generate_chapter(context)
+    utils.update_even_page_header(document, '五、蒙特卡洛模拟')
 
     # 第六章：情景分析
     print("\n 生成第六章：情景分析...")
     context = chapter06_scenario.generate_chapter(context)
+    utils.update_even_page_header(document, '六、情景分析')
 
     # 第七章：压力测试
     print("\n 生成第七章：压力测试...")
     context = chapter07_stress.generate_chapter(context)
+    utils.update_even_page_header(document, '七、压力测试')
 
     # 第八章：VaR风险度量
     print("\n 生成第八章：VaR风险度量...")
     context = chapter08_var.generate_chapter(context)
+    utils.update_even_page_header(document, '八、VaR风险度量')
 
     # 第九章：风控建议与风险提示
     print("\n 生成第九章：风控建议与风险提示...")
-
     # 生成第九章全部内容（包括9.1综合评估汇总和9.2-9.6其他章节）
     context = chapter09_advice.generate_chapter(context)
+    utils.update_even_page_header(document, '九、风控建议与风险提示')
 
     # 附件：情景数据表
     print("\n 生成附件：情景数据表...")
     context = appendix_scenarios.generate_chapter(context)
+    utils.update_even_page_header(document, '附件：情景数据表')
+
+    # 添加页码
+    print("\n 添加页码...")
+    utils.add_page_numbers(document)
 
     print("\n" + "="*70)
     print(" 报告生成完成！")
@@ -331,12 +472,25 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='定增风险分析报告生成器（模块化版本）')
     parser.add_argument('--stock', type=str, default='300735.SZ', help='股票代码（默认：300735.SZ）')
     parser.add_argument('--name', type=str, default='光弘科技', help='股票名称（默认：光弘科技）')
+    parser.add_argument('--issue-date', type=str, default=None, help='报价日（格式：YYYYMMDD，如20240315，可选）')
     parser.add_argument('--output', type=str, default=None, help='输出文件名（可选）')
+    parser.add_argument('--force', action='store_true', help='强制使用过期数据，跳过用户确认')
 
     args = parser.parse_args()
 
+    # 验证报价日格式
+    if args.issue_date:
+        try:
+            from datetime import datetime
+            # 验证日期格式为YYYYMMDD
+            datetime.strptime(args.issue_date, '%Y%m%d')
+        except ValueError:
+            print(f"❌ 错误：报价日格式不正确 '{args.issue_date}'")
+            print("请使用格式：YYYYMMDD（例如：20240315）")
+            sys.exit(1)
+
     # 生成报告
-    doc = generate_report(args.stock, args.name)
+    doc = generate_report(args.stock, args.name, args.issue_date, args.force)
 
     # 保存报告
     if args.output:

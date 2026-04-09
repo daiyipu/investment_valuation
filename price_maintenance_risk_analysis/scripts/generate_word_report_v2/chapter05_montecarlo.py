@@ -281,8 +281,7 @@ def generate_chapter(context):
     add_paragraph(document, '• 年化收益率（单利）：年化R = R × (12 / 锁定期月数)')
     add_paragraph(document, '• 预期收益率：所有模拟路径年化收益率的算术平均值')
     add_paragraph(document, '• 收益率中位数：所有模拟路径年化收益率的中位数（更稳健，不受极端值影响）')
-    add_paragraph(document, '')
-
+    
     # ==================== 模拟参数 ====================
     add_paragraph(document, '1. 模拟参数', bold=True)
 
@@ -824,8 +823,7 @@ def generate_chapter(context):
     add_paragraph(document, '• d：差分阶数，通过差分实现序列平稳化')
     add_paragraph(document, '• q：滑动平均阶数，利用历史预测误差的线性组合')
     add_paragraph(document, '• 适用于捕捉趋势性和周期性模式')
-    add_paragraph(document, '')
-
+    
     # ==================== 获取价格序列数据 ====================
     # 直接从market_data获取（由update_market_data.py生成）
     prices_list = market_data.get('price_series', [])
@@ -1063,6 +1061,40 @@ def generate_chapter(context):
             'volatility': predicted_vol
         }
         print(f" 已保存预测参数模拟结果到context：盈利概率{profit_prob:.1f}%，预期收益{mean_return:.2f}%")
+
+        # 计算历史参数的模拟结果（120日）
+        historical_drift_120d = mc_drift_250d
+        historical_vol_120d = mc_volatility_250d
+
+        sim_historical_120d = analyzer.monte_carlo_simulation(
+            n_simulations=n_simulations,
+            time_steps=120,  # 120日
+            volatility=historical_vol_120d,
+            drift=historical_drift_120d,
+            seed=43
+        )
+
+        final_prices_hist_120d = sim_historical_120d.iloc[:, -1].values
+        log_returns_hist_120d = np.log(final_prices_hist_120d / project_params['issue_price'])
+        annualized_log_returns_hist_120d = log_returns_hist_120d * (252.0 / 120)
+
+        profit_prob_hist_120d = (log_returns_hist_120d > 0).mean() * 100
+        mean_return_hist_120d = annualized_log_returns_hist_120d.mean()
+        median_return_hist_120d = np.median(annualized_log_returns_hist_120d)
+        percentile_5_hist_120d = np.percentile(annualized_log_returns_hist_120d, 5)
+        percentile_95_hist_120d = np.percentile(annualized_log_returns_hist_120d, 95)
+
+        # 保存基于历史参数的模拟结果到context，供第九章使用
+        context['results']['mc_historical_120d'] = {
+            'profit_prob': profit_prob_hist_120d / 100,  # 转换为小数
+            'mean_return': mean_return_hist_120d / 100,   # 转换为小数
+            'median_return': median_return_hist_120d / 100,
+            'var_5': percentile_5_hist_120d / 100,
+            'var_95': percentile_95_hist_120d / 100,
+            'drift': historical_drift_120d,
+            'volatility': historical_vol_120d
+        }
+        print(f" 已保存历史参数模拟结果到context：盈利概率{profit_prob_hist_120d:.1f}%，预期收益{mean_return_hist_120d:.2f}%")
 
         # 添加模拟参数说明
         add_paragraph(document, '模拟参数：', bold=True)

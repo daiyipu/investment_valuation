@@ -23,9 +23,6 @@ def generate_chapter(context):
     multi_param_scenarios = context['results'].get('multi_param_scenarios_585', [])
     historical_scenarios = context['results'].get('historical_scenarios_195', [])
 
-    print(f" DEBUG: 附件生成 - 多参数情景数量: {len(multi_param_scenarios)}")
-    print(f" DEBUG: 附件生成 - 历史数据情景数量: {len(historical_scenarios)}")
-
     # 生成附件内容
     _generate_appendix_scenarios(document, multi_param_scenarios, historical_scenarios)
     return context
@@ -163,9 +160,7 @@ def _generate_multi_param_tables(document, multi_param_scenarios):
 
         appendix_headers = ['排名', '漂移率', '波动率', '溢价率', '发行价(元)', '预期年化收益', '中位数收益', '盈利概率', '5% VaR', '95% VaR']
         add_table_data(document, appendix_headers, appendix_data)
-        add_paragraph(document, '')
-
-    add_paragraph(document, '')
+        add_paragraph\(document, '')
     add_paragraph(document, '附表说明：')
     add_paragraph(document, '• 排序方式：')
     add_paragraph(document, '  - 按波动率分块（低波动、中低波动、中高波动、高波动）')
@@ -192,22 +187,18 @@ def _generate_historical_tables(document, historical_scenarios):
     """生成195种历史数据情景的表格"""
     from module_utils import add_title, add_paragraph, add_table_data
 
-    print(f" DEBUG: _generate_historical_tables - 接收到的情景数量: {len(historical_scenarios)}")
-    if historical_scenarios:
-        print(f" DEBUG: 第一个情景的数据结构: {list(historical_scenarios[0].keys())}")
-
     # ==================== 6.2-6.5节情景数据表 ====================
     add_title(document, '附表：6.2-6.5节情景数据表', level=2)
-    add_paragraph(document, '本附表展示6.2至6.5节的专项情景分析结果，包括市场指数情景、行业指数情景、行业PE情景、个股PE情景和DCF估值情景。')
+    add_paragraph(document, '本附表展示6.2至6.5节的专项情景分析结果，包括市场指数、行业指数、行业PE、个股PE和DCF估值的情景数据。')
     add_paragraph(document, '')
 
     # 按情景类型分组展示
     scenario_groups = {
-        '市场指数情景': '6.2.1',
-        '行业指数情景': '6.2.2',
-        '行业PE情景': '6.3',
-        '个股PE情景': '6.4',
-        'DCF估值情景': '6.5'
+        '市场指数': '6.2.1',
+        '行业指数': '6.2.2',
+        '行业PE': '6.3',
+        '个股PE': '6.4',
+        'DCF估值': '6.5'
     }
 
     # 按情景类型分组
@@ -251,14 +242,14 @@ def _generate_historical_tables(document, historical_scenarios):
 
         # 添加类型标题
         section_num = scenario_groups[scenario_type]
-        add_title(document, f'附表{section_num}：{scenario_type}数据表', level=3)
+        add_title(document, f'附表{section_num}：{scenario_type}情景数据表', level=3)
 
         # 按盈利概率排序
         scenarios_sorted = sorted(scenarios, key=lambda x: x.get('profit_prob', 0), reverse=True)
 
-        # 生成表格数据
+        # 生成表格数据（显示全部数据）
         table_data = []
-        for i, s in enumerate(scenarios_sorted[:20], 1):  # 只展示前20个
+        for i, s in enumerate(scenarios_sorted, 1):  # 显示全部数据
             # 兼容嵌套和扁平结构
             if 'drift' in s:
                 # 扁平结构
@@ -300,12 +291,9 @@ def _generate_historical_tables(document, historical_scenarios):
         headers = ['排名', '情景名称', '漂移率', '波动率', '溢价率', '发行价(元)', '中位数收益', '盈利概率']
         add_table_data(document, headers, table_data)
 
-        if len(scenarios_sorted) > 20:
-            add_paragraph(document, f'注：{scenario_type}共{len(scenarios_sorted)}个情景，此处仅展示前20个（按盈利概率排序）。')
+        add_paragraph(document, f'注：{scenario_type}共{len(scenarios_sorted)}个情景，按盈利概率从高到低排序。')
 
-        add_paragraph(document, '')
-
-    add_paragraph(document, '')
+        add_paragraph\(document, '')
     add_paragraph(document, '附表说明（6.2-6.5）：')
     add_paragraph(document, '• 本表展示6.2至6.5节的专项情景分析结果')
     add_paragraph(document, '• 每种情景类型按盈利概率从高到低排序')

@@ -378,7 +378,6 @@ def generate_chapter(context):
     # 三、经济面压力测试结论
     add_paragraph(document, '')
     add_paragraph(document, '7.2.3 经济面压力测试结论', bold=True)
-    add_paragraph(document, '')
 
     # 统计分析
     profit_scenarios = sum(1 for r in scenario_returns_list if r > 0)
@@ -409,19 +408,15 @@ def generate_chapter(context):
         risk_level = "高风险 - 大部分情景下亏损"
         risk_emoji = ""
 
-    add_paragraph(document, '')
     add_paragraph(document, f'{risk_emoji} 经济面压力测试评级: {risk_level}')
 
     # ==================== 7.3 多重敏感性指标极端情况压力测试 ====================
-    add_paragraph(document, '')
     add_title(document, '7.3 多重敏感性指标极端情况压力测试', level=2)
 
     add_paragraph(document, '本节分析当多个敏感性指标同时发生极端情况时的最差情景。')
     add_paragraph(document, '通过组合最不利的参数（平价发行 + 高波动率 + 负向漂移率），评估项目的风险承受边界。')
-    add_paragraph(document, '')
 
     add_paragraph(document, '7.3.1 极端情景组合定义', bold=True)
-    add_paragraph(document, '')
 
     # 定义多重极端情景
     # 同时考虑：
@@ -479,7 +474,6 @@ def generate_chapter(context):
 
     add_paragraph(document, '')
     add_paragraph(document, '7.3.2 极端情景模拟结果', bold=True)
-    add_paragraph(document, '')
 
     extreme_results_headers = ['指标', '正常情景', '极端情景（三重打击）', '差异']
     extreme_results_data = [
@@ -494,7 +488,6 @@ def generate_chapter(context):
 
     add_paragraph(document, '')
     add_paragraph(document, '7.3.3 极端情景分析', bold=True)
-    add_paragraph(document, '')
 
     # 风险等级评估
     if profit_prob_extreme >= 40:
@@ -516,8 +509,7 @@ def generate_chapter(context):
     add_paragraph(document, f'  - 盈利概率为{profit_prob_extreme:.1f}%')
     add_paragraph(document, f'  - 95% VaR为{var_95_extreme:+.2f}%，表示95%置信度下最大损失为{abs(var_95_extreme):.2f}%')
     add_paragraph(document, f'  - 最差情况可能损失{abs(worst_loss_extreme):.2f}%')
-    add_paragraph(document, '')
-
+    
     # ==================== 7.4 压力测试综合结论 ====================
     add_paragraph(document, '')
     add_title(document, '7.4 压力测试综合结论', level=2)
@@ -526,7 +518,6 @@ def generate_chapter(context):
     add_paragraph(document, '')
 
     add_paragraph(document, '7.4.1 压力测试全景汇总', bold=True)
-    add_paragraph(document, '')
 
     # 创建综合汇总表
     summary_headers = ['压力测试类型', '测试情景', '最差结果', '风险评估', '风险等级']
@@ -556,7 +547,6 @@ def generate_chapter(context):
     add_paragraph(document, '')
 
     add_paragraph(document, '7.4.1 压力测试全景汇总', bold=True)
-    add_paragraph(document, '')
 
     # 创建综合汇总表
     summary_headers = ['压力测试类型', '测试情景', '最差结果', '风险评估', '风险等级']
@@ -575,7 +565,6 @@ def generate_chapter(context):
 
     add_paragraph(document, '')
     add_paragraph(document, '7.4.2 最坏风险情景分析', bold=True)
-    add_paragraph(document, '')
 
     # 识别所有压力测试中的最坏情况
     worst_results = {
@@ -602,7 +591,6 @@ def generate_chapter(context):
 
     add_paragraph(document, '')
     add_paragraph(document, '7.4.3 压力测试评分体系说明', bold=True)
-    add_paragraph(document, '')
 
     add_paragraph(document, '为便于理解压力测试的风险评定逻辑，以下说明评分标准和等级划分。')
     add_paragraph(document, '')
@@ -634,7 +622,6 @@ def generate_chapter(context):
 
     add_paragraph(document, '')
     add_paragraph(document, '7.4.4 综合风险等级评定', bold=True)
-    add_paragraph(document, '')
 
     # 综合风险等级计算
     risk_scores = []
@@ -689,7 +676,6 @@ def generate_chapter(context):
 
     add_paragraph(document, '')
     add_paragraph(document, '7.4.5 压力测试核心结论', bold=True)
-    add_paragraph(document, '')
 
     add_paragraph(document, '通过三个维度的压力测试，得出以下核心结论：')
     add_paragraph(document, '')
@@ -720,7 +706,6 @@ def generate_chapter(context):
 
     add_paragraph(document, '')
     add_paragraph(document, '7.4.6 风险控制建议', bold=True)
-    add_paragraph(document, '')
 
     if avg_risk_score < 2:
         add_paragraph(document, '基于压力测试结果，项目整体风险可控，建议：')

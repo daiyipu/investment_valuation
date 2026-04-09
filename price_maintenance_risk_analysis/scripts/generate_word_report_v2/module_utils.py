@@ -50,6 +50,13 @@ def add_title(document, text, level=1):
             run._element.rPr.rFonts.set(qn('w:eastAsia'), '方正公文小标宋_GBK')
             run.font.size = Pt(22)  # 二号（22pt）
             run.font.bold = True
+
+        # 标题段落间距设置
+        para_format = para.paragraph_format
+        para_format.space_before = Pt(12)   # 标题前间距
+        para_format.space_after = Pt(6)     # 标题后间距（减少间距）
+        para_format.line_spacing = 1.5
+
         return para
     else:
         heading = document.add_heading(text, level=level)
@@ -67,11 +74,22 @@ def add_title(document, text, level=1):
                 run.font.name = '黑体'
                 run._element.rPr.rFonts.set(qn('w:eastAsia'), '黑体')
                 run.font.size = Pt(14)
+
+        # 标题段落间距设置
+        heading_format = heading.paragraph_format
+        heading_format.space_before = Pt(6)    # 标题前间距（减少）
+        heading_format.space_after = Pt(6)     # 标题后间距（减少）
+        heading_format.line_spacing = 1.5
+
         return heading
 
 
 def add_paragraph(document, text, bold=False, font_size=14):
     """添加段落 - V2版本（正文：仿宋-GB2312，四号）"""
+    # 如果文本为空或只包含空格，不添加段落（消除额外空行）
+    if not text or text.strip() == '':
+        return None
+
     para = document.add_paragraph(text)
     for run in para.runs:
         run.font.name = '仿宋_GB2312'
@@ -79,6 +97,13 @@ def add_paragraph(document, text, bold=False, font_size=14):
         run.font.size = Pt(font_size)
         if bold:
             run.font.bold = True
+
+    # 设置段落间距，消除额外空行
+    para_format = para.paragraph_format
+    para_format.space_before = Pt(0)    # 段前间距0磅
+    para_format.space_after = Pt(0)     # 段后间距0磅
+    para_format.line_spacing = 1.5      # 行间距1.5倍
+
     return para
 
 
@@ -136,6 +161,109 @@ def add_table_data(document, headers, data, font_size=12):
 def add_section_break(document):
     """添加分页符"""
     document.add_page_break()
+
+
+def add_new_section_with_headers(document, stock_name, odd_page_header=""):
+    """
+    添加新节并设置页眉
+
+    参数:
+        document: Word文档对象
+        stock_name: 股票名称（用于生成报告标题）
+        odd_page_header: 奇数页页眉文本（如果为空，使用默认格式）
+    """
+    # 添加新节
+    new_section = document.add_section()
+
+    # 启用奇偶页不同页眉
+    new_section.different_first_page_header_footer = False
+    new_section.even_and_odd_headers = True
+
+    # 设置奇数页页眉
+    odd_header = new_section.header
+    odd_para = odd_header.paragraphs[0] if odd_header.paragraphs else odd_header.add_paragraph()
+    odd_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    # 如果没有指定奇数页页眉，使用默认格式
+    if not odd_page_header:
+        odd_page_header = f"{stock_name}定增项目风险分析报告"
+
+    odd_para.text = odd_page_header
+
+    # 设置奇数页页眉格式
+    for run in odd_para.runs:
+        run.font.name = '仿宋_GB2312'
+        run._element.rPr.rFonts.set(qn('w:eastAsia'), '仿宋_GB2312')
+        run.font.size = Pt(10.5)  # 五号字
+
+    # 设置偶数页页眉（初始为空，后续章节会更新）
+    even_header = new_section.even_page_header
+    even_para = even_header.paragraphs[0] if even_header.paragraphs else even_header.add_paragraph()
+    even_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    even_para.text = ""
+
+    # 设置偶数页页眉格式
+    for run in even_para.runs:
+        run.font.name = '仿宋_GB2312'
+        run._element.rPr.rFonts.set(qn('w:eastAsia'), '仿宋_GB2312')
+        run.font.size = Pt(10.5)  # 五号字
+
+    return new_section
+
+
+def update_even_page_header(document, chapter_title):
+    """
+    更新偶数页页眉为当前章节标题
+
+    参数:
+        document: Word文档对象
+        chapter_title: 章节标题
+    """
+    # 获取最后一个section（应该是当前章节的section）
+    if document.sections:
+        current_section = document.sections[-1]
+
+        # 更新偶数页页眉
+        even_header = current_section.even_page_header
+        even_para = even_header.paragraphs[0] if even_header.paragraphs else even_header.add_paragraph()
+        even_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        even_para.text = chapter_title
+
+        # 设置偶数页页眉格式
+        for run in even_para.runs:
+            run.font.name = '仿宋_GB2312'
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), '仿宋_GB2312')
+            run.font.size = Pt(10.5)  # 五号字
+
+
+def add_page_numbers(document):
+    """为文档添加页码（底部居中）"""
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    # 为所有节添加页码
+    for section in document.sections:
+        # 创建页脚段落
+        footer = section.footer
+        footer_para = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
+
+        # 设置段落格式为居中
+        footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        # 添加页码字段
+        footer_text = parse_xml(r'<w:p xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:rsidR="00EA4B40" w:rsidRDefault="00EA4B40"><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="仿宋_GB2312" w:eastAsia="仿宋_GB2312"/><w:sz w:val="21"/><w:szCs w:val="21"/></w:rPr><w:t>- </w:t></w:r><w:r><w:rPr><w:rFonts w:ascii="仿宋_GB2312" w:eastAsia="仿宋_GB2312"/><w:sz w:val="21"/><w:szCs w:val="21"/></w:rPr><w:instrText xml:space="preserve">PAGE</w:instrText></w:r><w:r><w:rPr><w:rFonts w:ascii="仿宋_GB2312" w:eastAsia="仿宋_GB2312"/><w:sz w:val="21"/><w:szCs w:val="21"/></w:rPr><w:t> -</w:t></w:r></w:p>')
+
+        # 清空默认的页脚段落
+        footer_para.clear()
+
+        # 添加页码XML到页脚
+        footer_para._element.append(footer_text)
+
+        # 设置页脚文字格式
+        for run in footer_para.runs:
+            run.font.name = '仿宋_GB2312'
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), '仿宋_GB2312')
+            run.font.size = Pt(10.5)  # 五号字（10.5pt）
 
 
 # ==================== 图表生成函数 ====================

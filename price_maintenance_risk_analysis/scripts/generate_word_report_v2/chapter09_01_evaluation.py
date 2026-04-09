@@ -47,8 +47,7 @@ def generate_chapter(context):
     # 注意：9.1的level=2标题已在chapter09_advice.py中生成，这里只生成内容
 
     add_paragraph(document, '本节对前面章节的分析结果进行综合汇总，涵盖相对估值、DCF估值、蒙特卡洛模拟、情景分析、压力测试和VaR风险度量等核心内容。')
-    add_paragraph(document, '')
-
+    
     # ==================== 9.1.1 个股与历史分位数对比 ====================
     add_title(document, '9.1.1 个股与历史分位数对比', level=3)
 
@@ -87,8 +86,7 @@ def generate_chapter(context):
     add_paragraph(document, f'• 相对MA20：{((current_price/ma20 - 1) * 100):+.2f}%')
     add_paragraph(document, f'• 相对MA120：{((current_price/ma120 - 1) * 100):+.2f}%')
     add_paragraph(document, f'• 技术位置：{price_eval}')
-    add_paragraph(document, '')
-
+    
     # ==================== 9.1.2 相对估值分析汇总 ====================
     add_title(document, '9.1.2 相对估值分析', level=3)
 
@@ -160,8 +158,7 @@ def generate_chapter(context):
         add_paragraph(document, '')
     else:
         add_paragraph(document, ' PE/PB数据暂时不可用，请参见第二章"相对估值分析"获取详细信息。')
-        add_paragraph(document, '')
-
+        
     # ==================== 9.1.3 DCF估值分析汇总 ====================
     add_title(document, '9.1.3 DCF估值分析', level=3)
 
@@ -256,8 +253,7 @@ def generate_chapter(context):
         add_paragraph(document, '• 净利润为负（无法进行DCF估值）')
         add_paragraph(document, '• 净债务过高（股权价值为负）')
         add_paragraph(document, '• 其他计算错误')
-        add_paragraph(document, '')
-
+        
     # ==================== 9.1.4 蒙特卡洛模拟结果汇总 ====================
     add_title(document, '9.1.4 蒙特卡洛模拟结果', level=3)
 
@@ -354,9 +350,93 @@ def generate_chapter(context):
             add_paragraph(document, ' 说明：预测参数模拟结果不可用，仅显示基于历史参数的模拟结果。')
             add_paragraph(document, '')
     else:
-        add_paragraph(document, ' 蒙特卡洛模拟结果不可用，请参见第五章"蒙特卡洛模拟"获取详细信息。')
-        add_paragraph(document, '')
+        # 使用第五章生成的蒙特卡洛模拟结果
+        mc_historical = context['results'].get('mc_historical_120d', {})
+        mc_predicted = context['results'].get('mc_predicted_120d', {})
 
+        if mc_historical or mc_predicted:
+            add_paragraph(document, ' 蒙特卡洛模拟核心结果：', bold=True)
+            add_paragraph(document, '基于第五章"蒙特卡洛模拟"的计算结果：')
+            add_paragraph(document, '')
+
+            if mc_historical and mc_predicted:
+                # 两种方法都有，显示对比表格
+                profit_prob_hist = mc_historical.get('profit_prob', 0.5) * 100
+                mean_return_hist = mc_historical.get('mean_return', 0.0) * 100
+                median_return_hist = mc_historical.get('median_return', 0.0) * 100
+                drift_hist = mc_historical.get('drift', 0.0)
+                vol_hist = mc_historical.get('volatility', 0.3)
+
+                profit_prob_pred = mc_predicted.get('profit_prob', 0.5) * 100
+                mean_return_pred = mc_predicted.get('mean_return', 0.0) * 100
+                median_return_pred = mc_predicted.get('median_return', 0.0) * 100
+                drift_pred = mc_predicted.get('drift', 0.0)
+                vol_pred = mc_predicted.get('volatility', 0.3)
+
+                mc_comparison_data = [
+                    ['指标', '历史参数模拟', '预测参数模拟', '差异'],
+                    ['年化漂移率', f'{drift_hist*100:+.2f}%', f'{drift_pred*100:+.2f}%', f'{(drift_pred-drift_hist)*100:+.2f}%'],
+                    ['年化波动率', f'{vol_hist*100:.2f}%', f'{vol_pred*100:.2f}%', f'{(vol_pred-vol_hist)*100:+.2f}%'],
+                    ['', '', '', ''],
+                    ['盈利概率', f'{profit_prob_hist:.1f}%', f'{profit_prob_pred:.1f}%', f'{profit_prob_pred-profit_prob_hist:+.1f}%'],
+                    ['平均收益率', f'{mean_return_hist:+.2f}%', f'{mean_return_pred:+.2f}%', f'{mean_return_pred-mean_return_hist:+.2f}%'],
+                    ['中位数收益率', f'{median_return_hist:+.2f}%', f'{median_return_pred:+.2f}%', f'{median_return_pred-median_return_hist:+.2f}%'],
+                ]
+                add_table_data(document, ['指标', '历史参数模拟', '预测参数模拟(ARIMA+GARCH)', '差异'], mc_comparison_data)
+
+                add_paragraph(document, '')
+                add_paragraph(document, ' 模拟结果解读：', bold=True)
+                add_paragraph(document, f'• 历史参数模拟：基于250日历史数据的漂移率({drift_hist*100:+.2f}%)和波动率({vol_hist*100:.2f}%)')
+                add_paragraph(document, f'• 预测参数模拟：基于ARIMA预测的漂移率({drift_pred*100:+.2f}%)和GARCH预测的波动率({vol_pred*100:.2f}%)')
+                add_paragraph(document, f'• 盈利概率差异：{profit_prob_pred-profit_prob_hist:+.1f}个百分点（{"预测更高" if profit_prob_pred > profit_prob_hist else "历史更高"}）')
+                add_paragraph(document, f'• 预期收益差异：{mean_return_pred-mean_return_hist:+.2f}个百分点（{"预测更乐观" if mean_return_pred > mean_return_hist else "历史更乐观"}）')
+            elif mc_historical:
+                # 只有历史参数
+                profit_prob_hist = mc_historical.get('profit_prob', 0.5) * 100
+                mean_return_hist = mc_historical.get('mean_return', 0.0) * 100
+                median_return_hist = mc_historical.get('median_return', 0.0) * 100
+                drift_hist = mc_historical.get('drift', 0.0)
+                vol_hist = mc_historical.get('volatility', 0.3)
+
+                mc_summary_data = [
+                    ['模拟参数', '值'],
+                    ['模拟窗口', '120日（半年）'],
+                    ['模拟次数', '10,000次'],
+                    ['年化波动率', f'{vol_hist*100:.2f}%'],
+                    ['年化漂移率', f'{drift_hist*100:+.2f}%'],
+                    ['', ''],
+                    ['模拟结果', ''],
+                    ['盈利概率', f'{profit_prob_hist:.1f}%'],
+                    ['平均收益率', f'{mean_return_hist:+.2f}%'],
+                    ['中位数收益率', f'{median_return_hist:+.2f}%'],
+                ]
+                add_table_data(document, mc_summary_data[0], mc_summary_data[1:])
+            elif mc_predicted:
+                # 只有预测参数
+                profit_prob_pred = mc_predicted.get('profit_prob', 0.5) * 100
+                mean_return_pred = mc_predicted.get('mean_return', 0.0) * 100
+                median_return_pred = mc_predicted.get('median_return', 0.0) * 100
+                drift_pred = mc_predicted.get('drift', 0.0)
+                vol_pred = mc_predicted.get('volatility', 0.3)
+
+                mc_summary_data = [
+                    ['模拟参数', '值'],
+                    ['模拟窗口', '120日（半年）'],
+                    ['模拟次数', '10,000次'],
+                    ['年化波动率', f'{vol_pred*100:.2f}%'],
+                    ['年化漂移率', f'{drift_pred*100:+.2f}%'],
+                    ['', ''],
+                    ['模拟结果', ''],
+                    ['盈利概率', f'{profit_prob_pred:.1f}%'],
+                    ['平均收益率', f'{mean_return_pred:+.2f}%'],
+                    ['中位数收益率', f'{median_return_pred:+.2f}%'],
+                ]
+                add_table_data(document, mc_summary_data[0], mc_summary_data[1:])
+                add_paragraph(document, '')
+                add_paragraph(document, ' 说明：基于预测参数（ARIMA+GARCH）的蒙特卡洛模拟结果。')
+        else:
+            add_paragraph(document, ' 蒙特卡洛模拟结果不可用，请参见第五章"蒙特卡洛模拟"获取详细信息。')
+        
     # ==================== 9.1.5 历史数据场景说明 ====================
     add_title(document, '9.1.5 历史数据场景说明', level=3)
 
@@ -375,8 +455,7 @@ def generate_chapter(context):
     add_paragraph(document, '• 历史数据场景共计5大类')
     add_paragraph(document, '• 每类场景包含多个档位设置（如高、中、低档位）')
     add_paragraph(document, '• 具体情景数量和详细分析请参见第六章"情景分析"')
-    add_paragraph(document, '')
-
+    
     # ==================== 9.1.6 压力测试结果 ====================
     add_title(document, '9.1.6 压力测试结果', level=3)
 
@@ -497,8 +576,7 @@ def generate_chapter(context):
     add_paragraph(document, '• 在市场出现极端情况时，及时评估并调整投资策略')
     add_paragraph(document, '')
     add_paragraph(document, '注：详细的压力测试分析请参见第七章"情景分析与压力测试"。')
-    add_paragraph(document, '')
-
+    
     # ==================== 9.1.7 VaR风险度量汇总 ====================
     add_title(document, '9.1.7 VaR风险度量汇总', level=3)
 
@@ -536,7 +614,6 @@ def generate_chapter(context):
     add_paragraph(document, f'• VaR基于锁定期（120日）的简单收益率计算，未进行年化')
     add_paragraph(document, f'• 95% VaR：{var_95_simple*100:.2f}%，表示在95%置信水平下，锁定期末的最大可能损失')
     add_paragraph(document, f'• 99% VaR：{var_99_simple*100:.2f}%，表示在99%置信水平下，锁定期末的最大可能损失')
-    add_paragraph(document, f'• 风险等级：{var_risk_level}')
     add_paragraph(document, '')
 
     # 返回更新后的context

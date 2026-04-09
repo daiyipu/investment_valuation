@@ -62,14 +62,15 @@ class PEHistoryAnalyzer:
                 return font_path
         return None
 
-    def get_stock_pe_history(self, stock_code, days=1825):
+    def get_stock_pe_history(self, stock_code, days=1825, max_retries=3):
         """
-        获取个股历史PE数据
+        获取个股历史PE数据（带重试机制）
 
         参数:
             stock_code: 股票代码，如 '300735.SZ'
             days: 历史自然日天数，默认1825天（5年）
                   实际交易日数据会少于自然日（约60-65%）
+            max_retries: 最大重试次数，默认3次
 
         返回:
             DataFrame: 包含trade_date, pe_ttm, pb, ps_ttm等列
@@ -77,131 +78,169 @@ class PEHistoryAnalyzer:
         end_date = datetime.now().strftime('%Y%m%d')
         start_date = (datetime.now() - timedelta(days=days)).strftime('%Y%m%d')
 
-        try:
-            df = self.pro.daily_basic(
-                ts_code=stock_code,
-                start_date=start_date,
-                end_date=end_date
-            )
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    print(f"  第{attempt + 1}次尝试获取个股PE数据...")
 
-            if df is None or df.empty:
-                print(f"⚠️ 未获取到{stock_code}的历史PE数据")
-                print(f"   可能原因：该股票上市时间不足5年，或API接口返回空数据")
-                print(f"   建议：减少历史天数参数（如days=730获取2年数据）")
-                return None
+                df = self.pro.daily_basic(
+                    ts_code=stock_code,
+                    start_date=start_date,
+                    end_date=end_date
+                )
 
-            # 过滤掉PE为空或异常的数据
-            df = df[df['pe_ttm'] > 0].copy()
-            df = df.sort_values('trade_date').reset_index(drop=True)
+                if df is None or df.empty:
+                    if attempt < max_retries - 1:
+                        print(f"  第{attempt + 1}次尝试未获取到数据，{2}秒后重试...")
+                        import time
+                        time.sleep(2)
+                        continue
+                    else:
+                        print(f"⚠️ 未获取到{stock_code}的历史PE数据")
+                        print(f"   可能原因：该股票上市时间不足5年，或API接口返回空数据")
+                        print(f"   建议：减少历史天数参数（如days=730获取2年数据）")
+                        return None
 
-            return df
-        except Exception as e:
-            print(f"❌ 获取{stock_code}历史PE数据失败: {e}")
-            return None
+                # 过滤掉PE为空或异常的数据
+                df = df[df['pe_ttm'] > 0].copy()
+                df = df.sort_values('trade_date').reset_index(drop=True)
 
-    def get_industry_pe_history(self, stock_code, days=1825):
+                if len(df) > 0:
+                    return df
+                else:
+                    if attempt < max_retries - 1:
+                        print(f"  第{attempt + 1}次尝试获取的数据过滤后为空，{2}秒后重试...")
+                        import time
+                        time.sleep(2)
+                        continue
+                    else:
+                        print(f"⚠️ {stock_code}的历史PE数据过滤后为空")
+                        return None
+
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    print(f"  第{attempt + 1}次尝试获取个股PE数据失败: {e}，{2}秒后重试...")
+                    import time
+                    time.sleep(2)
+                    continue
+                else:
+                    print(f"❌ 获取{stock_code}历史PE数据失败: {e}")
+                    return None
+
+    def get_industry_pe_history(self, stock_code, days=1825, max_retries=3):
         """
-        获取申万行业历史PE数据
+        获取申万行业历史PE数据（带重试机制）
 
         参数:
             stock_code: 股票代码，如 '300735.SZ'
             days: 历史自然日天数，默认1825天（5年）
                   实际交易日数据会少于自然日（约60-65%）
+            max_retries: 最大重试次数，默认3次
 
         返回:
-            tuple: (行业名称, 行业代码, DataFrame)
+            tuple: (行业名称, 行业代码, DataFrame或None)
         """
         end_date = datetime.now().strftime('%Y%m%d')
         start_date = (datetime.now() - timedelta(days=days)).strftime('%Y%m%d')
 
-        try:
-            # 1. 获取股票所在的申万行业
-            df_member = self.pro.index_member(ts_code=stock_code)
-
-            if df_member.empty:
-                print(f"⚠️ 未获取到{stock_code}的行业成分信息")
-                return None, None, None
-
-            # 过滤申万行业（优先三级，其次二级，最后一级）
-            df_sw = df_member[df_member['index_code'].str.contains('.SI')]
-
-            # 找当前有效的行业（out_date为空的）
-            df_current = df_sw[df_sw['out_date'].isna()]
-
-            if df_current.empty:
-                # 如果没有当前有效的，使用最近加入的
-                df_current = df_sw.sort_values('in_date', ascending=False).head(1)
-
-            # 按优先级查找：三级 > 二级 > 一级
-            index_code = None
-            index_level = None
-
-            # 申万三级：85开头
-            l3_codes = df_current[df_current['index_code'].str.match(r'^85\d{4}\.SI$')]
-            if not l3_codes.empty:
-                index_code = l3_codes.iloc[0]['index_code']
-                index_level = 'L3'
-            # 申万二级：80开头
-            else:
-                l2_codes = df_current[df_current['index_code'].str.match(r'^80\d{4}\.SI$')]
-                if not l2_codes.empty:
-                    index_code = l2_codes.iloc[0]['index_code']
-                    index_level = 'L2'
-                # 申万一级：80开头（前两位）
-                else:
-                    # 尝试获取行业分类信息
-                    df_classify = self.pro.index_classify(level='L1', src='SW2021')
-                    # 这里简化处理，使用第一个申万指数
-                    if not df_current.empty:
-                        index_code = df_current.iloc[0]['index_code']
-                        index_level = 'L1'
-
-            if index_code is None:
-                print(f"⚠️ 未找到{stock_code}的申万行业代码")
-                return None, None, None
-
-            # 获取行业名称
-            df_classify = self.pro.index_classify(level=index_level, src='SW2021')
-            industry_info = df_classify[df_classify['index_code'] == index_code]
-            industry_name = industry_info.iloc[0]['industry_name'] if not industry_info.empty else index_code
-
-            # 2. 获取行业指数历史PE数据
-            # 使用sw_daily接口获取申万行业日线行情（包含PE、PB等估值指标）
+        for attempt in range(max_retries):
             try:
-                df_index = self.pro.sw_daily(
-                    ts_code=index_code,
-                    start_date=start_date,
-                    end_date=end_date
-                )
+                if attempt > 0:
+                    print(f"  第{attempt + 1}次尝试获取行业PE数据...")
 
-                if df_index is None or df_index.empty:
-                    print(f"⚠️ {industry_name}({index_code})的历史PE数据不可用")
-                    print(f"   原因：sw_daily接口返回空数据")
+                # 1. 获取股票所在的申万行业
+                df_member = self.pro.index_member(ts_code=stock_code)
+
+                if df_member.empty:
+                    if attempt < max_retries - 1:
+                        print(f"  第{attempt + 1}次尝试未获取到行业成分信息，{2}秒后重试...")
+                        import time
+                        time.sleep(2)
+                        continue
+                    else:
+                        print(f" 未获取到{stock_code}的行业成分信息")
+                        return None, None, None
+
+                # 过滤申万行业（优先三级，其次二级，最后一级）
+                df_sw = df_member[df_member['index_code'].str.contains('.SI')]
+
+                # 找当前有效的行业（out_date为空的）
+                df_current = df_sw[df_sw['out_date'].isna()]
+
+                if df_current.empty:
+                    # 如果没有当前有效的，使用最近加入的
+                    df_current = df_sw.sort_values('in_date', ascending=False).head(1)
+
+                # 按优先级查找：三级 > 二级 > 一级
+                index_code = None
+                index_level = None
+
+                # 申万三级：85开头
+                l3_codes = df_current[df_current['index_code'].str.match(r'^85\d{4}\.SI$')]
+                if not l3_codes.empty:
+                    index_code = l3_codes.iloc[0]['index_code']
+                    index_level = 'L3'
+                # 申万二级：80开头
+                else:
+                    l2_codes = df_current[df_current['index_code'].str.match(r'^80\d{4}\.SI$')]
+                    if not l2_codes.empty:
+                        index_code = l2_codes.iloc[0]['index_code']
+                        index_level = 'L2'
+                    # 申万一级：80开头（前两位）
+                    else:
+                        # 尝试获取行业分类信息
+                        df_classify = self.pro.index_classify(level='L1', src='SW2021')
+                        # 这里简化处理，使用第一个申万指数
+                        if not df_current.empty:
+                            index_code = df_current.iloc[0]['index_code']
+                            index_level = 'L1'
+
+                if index_code is None:
+                    print(f" 未找到{stock_code}的申万行业代码")
+                    return None, None, None
+
+                # 获取行业名称
+                df_classify = self.pro.index_classify(level=index_level, src='SW2021')
+                industry_info = df_classify[df_classify['index_code'] == index_code]
+                industry_name = industry_info.iloc[0]['industry_name'] if not industry_info.empty else index_code
+
+                # 2. 获取行业指数历史PE数据
+                # 使用sw_daily接口获取申万行业日线行情（包含PE、PB等估值指标）
+                try:
+                    df_index = self.pro.sw_daily(
+                        ts_code=index_code,
+                        start_date=start_date,
+                        end_date=end_date
+                    )
+
+                    if df_index is None or df_index.empty:
+                        print(f" {industry_name}({index_code})的历史PE数据不可用")
+                        print(f"   原因：sw_daily接口返回空数据")
+                        print(f"   解决方案：将使用个股PE历史数据生成趋势图")
+                        return industry_name, index_code, None
+
+                    # sw_daily返回的是pe列（不是pe_ttm），需要重命名以保持一致性
+                    if 'pe' in df_index.columns:
+                        df_index = df_index.rename(columns={'pe': 'pe_ttm'})
+                    else:
+                        print(f" {industry_name}({index_code})数据中不包含PE列")
+                        return industry_name, index_code, None
+
+                except Exception as api_error:
+                    print(f" 调用tushare sw_daily接口失败")
+                    print(f"   原因：{api_error}")
                     print(f"   解决方案：将使用个股PE历史数据生成趋势图")
                     return industry_name, index_code, None
 
-                # sw_daily返回的是pe列（不是pe_ttm），需要重命名以保持一致性
-                if 'pe' in df_index.columns:
-                    df_index = df_index.rename(columns={'pe': 'pe_ttm'})
-                else:
-                    print(f"⚠️ {industry_name}({index_code})数据中不包含PE列")
-                    return industry_name, index_code, None
+                # 过滤掉PE为空或异常的数据
+                df_index = df_index[df_index['pe_ttm'] > 0].copy()
+                df_index = df_index.sort_values('trade_date').reset_index(drop=True)
 
-            except Exception as api_error:
-                print(f"⚠️ 调用tushare sw_daily接口失败")
-                print(f"   原因：{api_error}")
-                print(f"   解决方案：将使用个股PE历史数据生成趋势图")
-                return industry_name, index_code, None
+                return industry_name, index_code, df_index
 
-            # 过滤掉PE为空或异常的数据
-            df_index = df_index[df_index['pe_ttm'] > 0].copy()
-            df_index = df_index.sort_values('trade_date').reset_index(drop=True)
-
-            return industry_name, index_code, df_index
-
-        except Exception as e:
-            print(f"❌ 获取{stock_code}行业历史PE数据失败: {e}")
-            return None, None, None
+            except Exception as e:
+                print(f" 获取{stock_code}行业历史PE数据失败: {e}")
+                return None, None, None
 
     def calculate_pe_percentiles(self, df):
         """

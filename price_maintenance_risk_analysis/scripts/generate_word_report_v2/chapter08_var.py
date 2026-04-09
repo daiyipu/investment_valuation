@@ -162,8 +162,7 @@ def generate_chapter(context):
     add_paragraph(document, '• 120日窗口：反映中期波动特征，平衡稳定性和时效性（推荐）')
     add_paragraph(document, '• 250日窗口：反映长期波动特征，数据最稳定，适合长期风险评估')
     add_paragraph(document, '• VaR值表示定增项目在到期时的收益率损失风险，正值表示亏损幅度')
-    add_paragraph(document, '')
-
+    
     # ==================== 8.2 多窗口期VaR对比 ====================
     add_title(document, '8.2 多窗口期VaR对比', level=2)
 
@@ -200,7 +199,6 @@ def generate_chapter(context):
 
     add_paragraph(document, '')
     add_paragraph(document, '多窗口期VaR对比分析：', bold=True)
-    add_paragraph(document, '')
 
     # 分析窗口期差异
     var_95_values = [var_results[w]['var_95'] for w in ['60日', '120日', '250日']]

@@ -5,9 +5,8 @@
 
 功能：
 按照正确顺序依次执行所有数据更新脚本：
-1. fetch_gh_data.py - 获取基础股票数据
-2. update_indices_data.py - 更新指数数据
-3. update_market_data.py - 生成市场数据文件
+1. update_indices_data.py - 更新指数数据
+2. update_market_data.py - 生成市场数据文件
 
 用法：
     python update_all_data.py
@@ -30,9 +29,8 @@ print(f"开始时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 print()
 
 # 定义数据更新步骤（按正确顺序）
-scripts_dir = os.path.join(PROJECT_DIR, 'price_maintenance_risk_analysis', 'scripts')
+scripts_dir = SCRIPT_DIR  # SCRIPT_DIR已经是scripts目录
 update_steps = [
-    ('fetch_gh_data.py', '获取基础股票数据', 300),
     ('update_indices_data.py', '更新指数数据', 300),
     ('update_market_data.py', '生成市场数据文件', 300)
 ]
@@ -118,4 +116,7 @@ else:
     print("手动更新方法：")
     for script_name, description, _ in update_steps:
         print(f"  python price_maintenance_risk_analysis/scripts/{script_name}  # {description}")
+    print()
+    print("或者单独运行市场数据更新（最常用）：")
+    print(f"  python price_maintenance_risk_analysis/scripts/update_market_data.py  # 生成市场数据文件")
     sys.exit(1)

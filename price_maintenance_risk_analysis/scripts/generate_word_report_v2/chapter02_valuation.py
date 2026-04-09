@@ -408,9 +408,6 @@ def generate_chapter(context):
             add_paragraph(document, f' 个股PE({current_metrics_val["pe"]:.2f}倍)高于申万行业指数PE({sw_index_pe:.2f}倍)，相对行业指数高估')
     else:
         add_paragraph(document, f' 申万行业指数"{target_industry_l3}"的估值数据暂时无法获取')
-        add_paragraph(document, '可能原因：指数代码不正确或数据源暂时不可用')
-
-    add_paragraph(document, '')
 
     add_title(document, '2.2 估值偏离度分析', level=2)
     add_paragraph(document, '本节分析标的公司与同行公司和申万行业指数的估值偏离情况，评估估值相对位置。')
@@ -493,8 +490,7 @@ def generate_chapter(context):
         add_paragraph(document, f'• 与申万指数对比可判断个股相对行业整体的估值位置')
         add_paragraph(document, f'• 正偏离表示估值高于行业平均，负偏离表示估值低于行业平均')
 
-    add_paragraph(document, '')
-
+    
     # ==================== 2.3 PE历史分位数趋势分析 ====================
     add_title(document, '2.3 PE历史分位数趋势分析', level=2)
 
@@ -513,23 +509,44 @@ def generate_chapter(context):
         pe_analyzer = PEHistoryAnalyzer()
 
         # 获取个股历史PE数据（最近5年）
+        print(" 正在获取个股历史PE数据...")
         stock_pe_data = pe_analyzer.get_stock_pe_history(stock_code, days=1825)
 
+        if stock_pe_data is not None:
+            print(f" 个股PE数据获取成功: {len(stock_pe_data)}条记录")
+        else:
+            print(f" 个股PE数据获取失败")
+
         # 获取行业历史PE数据
+        print(" 正在获取行业历史PE数据...")
         industry_name, industry_code, industry_pe_data = pe_analyzer.get_industry_pe_history(stock_code, days=1825)
 
-        if stock_pe_data is not None and industry_pe_data is not None:
-            print(f" 成功获取历史PE数据")
-            print(f"   个股数据: {len(stock_pe_data)}条")
-            print(f"   行业数据: {len(industry_pe_data)}条")
-            print(f"   行业: {industry_name} ({industry_code})")
+        if industry_pe_data is not None:
+            print(f" 行业PE数据获取成功: {len(industry_pe_data)}条记录, 行业: {industry_name}({industry_code})")
+        else:
+            print(f" 行业PE数据获取失败, 行业: {industry_name}({industry_code})")
 
-            # 保存PE数据到context，供第六章情景分析使用
+        # 保存可用的PE数据到context（即使部分数据失败也保存可用的数据）
+        pe_data_saved = False
+
+        if stock_pe_data is not None:
             context['stock_pe_data'] = stock_pe_data
+            print(f" 已保存个股PE数据到context，供第六章情景分析使用")
+            pe_data_saved = True
+
+        if industry_pe_data is not None:
             context['industry_pe_data'] = industry_pe_data
             context['industry_name'] = industry_name
             context['industry_code'] = industry_code
-            print(f" 已保存PE数据到context，供第六章情景分析使用")
+            print(f" 已保存行业PE数据到context，供第六章情景分析使用")
+            pe_data_saved = True
+
+        if stock_pe_data is not None and industry_pe_data is not None:
+            # 完整的PE分析（需要个股和行业数据都可用）
+            print(f" 成功获取完整历史PE数据，进行详细分析")
+            print(f"   个股数据: {len(stock_pe_data)}条")
+            print(f"   行业数据: {len(industry_pe_data)}条")
+            print(f"   行业: {industry_name} ({industry_code})")
 
             # 计算个股历史分位数统计
             stock_pe_current = stock_pe_data.iloc[-1]['pe_ttm']
@@ -716,7 +733,6 @@ def generate_chapter(context):
 
                 add_paragraph(document, '')
                 add_paragraph(document, '图表解读：', bold=True)
-                add_paragraph(document, '')
                 add_paragraph(document, f'左上-PE走势对比：')
                 add_paragraph(document, f'  • 蓝线：{stock_code}的PE-TTM走势')
                 add_paragraph(document, f'  • 红线：{industry_name}的PE-TTM走势')
@@ -744,7 +760,6 @@ def generate_chapter(context):
             # 添加分析结论
             add_paragraph(document, '')
             add_paragraph(document, 'PE历史分位数趋势分析结论：', bold=True)
-            add_paragraph(document, '')
 
             # 估值水平判断
             if stock_pe_percentile >= 80:
