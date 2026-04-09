@@ -551,7 +551,7 @@ def generate_chapter(context):
     add_paragraph(document, '• 第二档：30%-40%（中高波动）')
     add_paragraph(document, '• 第三档：20%-30%（中低波动）')
     add_paragraph(document, '• 第四档：10%-20%（低波动，风险较低）')
-    add_paragraph\(document, '')
+    add_paragraph(document, '')
     add_paragraph(document, '注：上述溢价率建议基于宏观环境评估，具体报价还需结合项目基本面和市场情况综合判断。')
     # 9.3.1 市场环境评估
     add_title(document, '9.3.1 市场环境评估', level=3)

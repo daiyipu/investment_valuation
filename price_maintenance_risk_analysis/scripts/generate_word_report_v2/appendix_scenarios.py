@@ -160,7 +160,7 @@ def _generate_multi_param_tables(document, multi_param_scenarios):
 
         appendix_headers = ['排名', '漂移率', '波动率', '溢价率', '发行价(元)', '预期年化收益', '中位数收益', '盈利概率', '5% VaR', '95% VaR']
         add_table_data(document, appendix_headers, appendix_data)
-        add_paragraph\(document, '')
+        add_paragraph(document, '')
     add_paragraph(document, '附表说明：')
     add_paragraph(document, '• 排序方式：')
     add_paragraph(document, '  - 按波动率分块（低波动、中低波动、中高波动、高波动）')
@@ -293,7 +293,7 @@ def _generate_historical_tables(document, historical_scenarios):
 
         add_paragraph(document, f'注：{scenario_type}共{len(scenarios_sorted)}个情景，按盈利概率从高到低排序。')
 
-        add_paragraph\(document, '')
+        add_paragraph(document, '')
     add_paragraph(document, '附表说明（6.2-6.5）：')
     add_paragraph(document, '• 本表展示6.2至6.5节的专项情景分析结果')
     add_paragraph(document, '• 每种情景类型按盈利概率从高到低排序')
