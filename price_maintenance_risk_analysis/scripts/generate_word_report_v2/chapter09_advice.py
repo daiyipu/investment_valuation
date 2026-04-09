@@ -22,7 +22,7 @@ import chapter09_01_evaluation
 
 def calculate_macro_environment_assessment(market_data, document, industry_cycle_override=None):
     """
-    计算宏观环境评估得分
+    计算市场环境评估得分
 
     评估维度：
     1. 货币政策（15%权重）：紧缩(40分)/稳健(60分)/适度宽松(80分)/宽松(100分)
@@ -499,18 +499,18 @@ def generate_chapter(context):
     add_title(document, '9.3 报价方案建议', level=2)
     add_paragraph(document, '本节提供不同目标收益率下的报价建议，帮助投资者根据风险偏好选择合适的报价方案。')
 
-    # ==================== 宏观环境评估 ====================
-    add_paragraph(document, '【宏观环境评估】', bold=True)
+    # ==================== 市场环境评估 ====================
+    add_paragraph(document, '【市场环境评估】', bold=True)
     add_paragraph(document, '在进行报价方案建议之前，首先评估当前宏观环境，为情景选择提供参考依据。')
     add_paragraph(document, '')
 
     # 计算宏观环境评分
     macro_assessment = calculate_macro_environment_assessment(market_data, document)
 
-    # 保存宏观环境评估结果到context，供后续情景选择使用
+    # 保存市场环境评估结果到context，供后续情景选择使用
     context['macro_environment_assessment'] = macro_assessment
 
-    # 显示宏观环境评估结论
+    # 显示市场环境评估结论
     total_score = macro_assessment['total_score']
     assessment_level = macro_assessment['assessment_level']
 
@@ -552,7 +552,7 @@ def generate_chapter(context):
     add_paragraph(document, '• 第三档：20%-30%（中低波动）')
     add_paragraph(document, '• 第四档：10%-20%（低波动，风险较低）')
     add_paragraph(document, '')
-    add_paragraph(document, '注：上述溢价率建议基于宏观环境评估，具体报价还需结合项目基本面和市场情况综合判断。')
+    add_paragraph(document, '注：上述溢价率建议基于市场环境评估，具体报价还需结合项目基本面和市场情况综合判断。')
     # 9.3.1 市场环境评估
     add_title(document, '9.3.1 市场环境评估', level=3)
     add_paragraph(document, '在制定报价方案前，先评估当前的宏观环境，包括货币政策与财政政策、行业发展周期、二级市场活跃度三个维度。')
@@ -601,7 +601,7 @@ def generate_chapter(context):
 
     current_percentile = current_turnover_percentile
 
-    # 宏观环境评估表格
+    # 市场环境评估表格
     add_paragraph(document, ' 宏观环境三维度评估：', bold=True)
 
     # 货币政策和财政政策（固定值）
