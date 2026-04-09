@@ -1063,8 +1063,8 @@ def generate_chapter(context):
         print(f" 已保存预测参数模拟结果到context：盈利概率{profit_prob:.1f}%，预期收益{mean_return:.2f}%")
 
         # 计算历史参数的模拟结果（120日）
-        historical_drift_120d = mc_drift_250d
-        historical_vol_120d = mc_volatility_250d
+        historical_drift_120d = mc_drift_120d
+        historical_vol_120d = mc_volatility_120d
 
         sim_historical_120d = analyzer.monte_carlo_simulation(
             n_simulations=n_simulations,
@@ -1178,9 +1178,9 @@ def generate_chapter(context):
         add_paragraph(document, '为了验证预测参数的有效性，下表对比基于预测参数和历史参数的模拟结果：')
         add_paragraph(document, '')
 
-        # 使用历史250日参数模拟（对比基准）
-        historical_drift = mc_drift_250d
-        historical_vol = mc_volatility_250d
+        # 使用历史120日参数模拟（对比基准）
+        historical_drift = mc_drift_120d
+        historical_vol = mc_volatility_120d
 
         sim_historical = analyzer.monte_carlo_simulation(
             n_simulations=n_simulations,
@@ -1207,7 +1207,7 @@ def generate_chapter(context):
              f'{predicted_vol*100:.2f}%',
              f'{profit_prob:.1f}%',
              f'{mean_return*100:.2f}%'],
-            ['历史参数（250日窗口）',
+            ['历史参数（120日窗口）',
              f'{historical_drift*100:.2f}%',
              f'{historical_vol*100:.2f}%',
              f'{profit_prob_hist:.1f}%',
@@ -1245,7 +1245,7 @@ def generate_chapter(context):
         add_paragraph(document, '')
         add_paragraph(document, '说明：')
         add_paragraph(document, '• 预测参数基于ARIMA和GARCH模型，考虑了时间序列的动态特征')
-        add_paragraph(document, '• 历史参数基于过去250个交易日的统计，反映长期平均水平')
+        add_paragraph(document, '• 历史参数基于过去120个交易日的统计，反映半年期平均水平')
         add_paragraph(document, '• 两种方法各有优劣，建议结合使用，互为验证')
 
         print(f" 5.5节完成：盈利概率{profit_prob:.1f}%，预期收益{mean_return*100:.2f}%")
