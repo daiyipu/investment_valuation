@@ -504,66 +504,6 @@ def generate_chapter(context):
     add_paragraph(document, f'• 收益率排名: 第 {return_rank} 名 / 共 {len(all_scenarios)} 个情景')
     add_paragraph(document, f'• 盈利概率排名: 第 {prob_rank} 名 / 共 {len(all_scenarios)} 个情景')
 
-    # =====% 分析结论 ======
-    add_paragraph(document, '')
-    add_paragraph(document, '6.1.5 分析结论', bold=True, font_size=14)
-
-    # 统计分析
-    avg_return_all = np.mean([s['mean_return'] for s in all_scenarios])
-    avg_prob_all = np.mean([s['profit_prob'] for s in all_scenarios])
-
-    profit_scenarios = [s for s in all_scenarios if s['profit_prob'] >= 50]
-    loss_scenarios = [s for s in all_scenarios if s['profit_prob'] < 50]
-
-    add_paragraph(document, f'• 在全部{len(all_scenarios)}个情景组合中：')
-    add_paragraph(document, f"  - 盈利概率≥50%的情景: {len(profit_scenarios)} 个 ({len(profit_scenarios)/len(all_scenarios)*100:.1f}%)")
-    add_paragraph(document, f"  - 盈利概率<50%的情景: {len(loss_scenarios)} 个 ({len(loss_scenarios)/len(all_scenarios)*100:.1f}%)")
-
-    add_paragraph(document, '')
-    add_paragraph(document, f'• 平均预期年化收益: {avg_return_all*100:+.2f}%')
-    add_paragraph(document, f'• 平均盈利概率: {avg_prob_all:.1f}%')
-
-    add_paragraph(document, '')
-    add_paragraph(document, '关键发现：')
-
-    # 找出漂移率的影响
-    pos_drift_scenarios = [s for s in all_scenarios if s['drift'] >= 0]
-    neg_drift_scenarios = [s for s in all_scenarios if s['drift'] < 0]
-
-    if pos_drift_scenarios and neg_drift_scenarios:
-        avg_return_pos = np.mean([s['mean_return'] for s in pos_drift_scenarios])
-        avg_return_neg = np.mean([s['mean_return'] for s in neg_drift_scenarios])
-        avg_prob_pos = np.mean([s['profit_prob'] for s in pos_drift_scenarios])
-        avg_prob_neg = np.mean([s['profit_prob'] for s in neg_drift_scenarios])
-
-        add_paragraph(document, f'• 漂移率对收益影响显著：')
-        add_paragraph(document, f"  - 正漂移率情景平均收益: {avg_return_pos*100:+.2f}%, 盈利概率: {avg_prob_pos:.1f}%")
-        add_paragraph(document, f"  - 负漂移率情景平均收益: {avg_return_neg*100:+.2f}%, 盈利概率: {avg_prob_neg:.1f}%")
-
-    # 找出折价率的影响
-    deep_discount_scenarios = [s for s in all_scenarios if s['discount'] <= -0.15]
-    premium_scenarios = [s for s in all_scenarios if s['discount'] > 0]
-
-    if deep_discount_scenarios and premium_scenarios:
-        avg_return_discount = np.mean([s['mean_return'] for s in deep_discount_scenarios])
-        avg_return_premium = np.mean([s['mean_return'] for s in premium_scenarios])
-        avg_prob_discount = np.mean([s['profit_prob'] for s in deep_discount_scenarios])
-        avg_prob_premium = np.mean([s['profit_prob'] for s in premium_scenarios])
-
-        add_paragraph(document, '')
-        add_paragraph(document, f'• 溢价率是盈利概率的关键：')
-        add_paragraph(document, f"  - 深度折价(≤-15%)情景平均收益: {avg_return_discount*100:+.2f}%, 盈利概率: {avg_prob_discount:.1f}%")
-        add_paragraph(document, f"  - 溢价情景平均收益: {avg_return_premium*100:+.2f}%, 盈利概率: {avg_prob_premium:.1f}%")
-
-    add_paragraph(document, '')
-    add_paragraph(document, '投资建议：')
-    if current_drift < 0:
-        add_paragraph(document, f' 当前漂移率为{current_drift*100:+.2f}%（负值），建议要求较高折价（更负的溢价率）以补偿下行风险')
-    if current_discount > -0.10:
-        add_paragraph(document, f' 当前溢价率仅为{current_discount*100:+.2f}%，建议提高至-15%以下（更深的折价）')
-    else:
-        add_paragraph(document, f' 当前溢价率{current_discount*100:+.2f}%较为合理，提供了一定的安全边际')
-
     # 保存情景数据供附件使用（分两种类型）
     multi_param_scenarios = all_scenarios.copy()  # 6.1节的585种多参数构造情景
     # 注意：不初始化historical_scenarios_for_appendix，避免6.2-6.5节情景混入585种情景表中
