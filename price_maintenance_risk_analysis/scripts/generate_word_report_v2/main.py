@@ -392,55 +392,49 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
     print("\n 生成第一章：项目概况...")
     context = chapter01_overview.generate_chapter(context)
 
-    # 第一章完成后，添加新节并设置页眉（从正文开始有页眉）
+    # 第一章完成后，设置页眉（从正文开始有页眉）
     company_name = project_params.get('company_name', stock_name)
-    utils.add_new_section_with_headers(document, company_name, '一、项目概况')
+
+    # 只在第一章后设置一次页眉，不创建多个section
+    # 使用统一的页眉显示公司名称+报告标题
+    utils.setup_document_header(document, company_name)
 
     # 第二章：相对估值分析
     print("\n 生成第二章：相对估值分析...")
     context = chapter02_valuation.generate_chapter(context)
-    utils.add_new_section_with_headers(document, company_name, '二、相对估值分析')
 
     # 第三章：DCF估值分析
     print("\n 生成第三章：DCF估值分析...")
     context = chapter03_dcf.generate_chapter(context)
-    utils.add_new_section_with_headers(document, company_name, '三、DCF估值分析')
 
     # 第四章：敏感性分析
     print("\n 生成第四章：敏感性分析...")
     context = chapter04_sensitivity.generate_chapter(context)
-    utils.add_new_section_with_headers(document, company_name, '四、敏感性分析')
 
     # 第五章：蒙特卡洛模拟
     print("\n 生成第五章：蒙特卡洛模拟...")
     context = chapter05_montecarlo.generate_chapter(context)
-    utils.add_new_section_with_headers(document, company_name, '五、蒙特卡洛模拟')
 
     # 第六章：情景分析
     print("\n 生成第六章：情景分析...")
     context = chapter06_scenario.generate_chapter(context)
-    utils.add_new_section_with_headers(document, company_name, '六、情景分析')
 
     # 第七章：压力测试
     print("\n 生成第七章：压力测试...")
     context = chapter07_stress.generate_chapter(context)
-    utils.add_new_section_with_headers(document, company_name, '七、压力测试')
 
     # 第八章：VaR风险度量
     print("\n 生成第八章：VaR风险度量...")
     context = chapter08_var.generate_chapter(context)
-    utils.add_new_section_with_headers(document, company_name, '八、VaR风险度量')
 
     # 第九章：风控建议与风险提示
     print("\n 生成第九章：风控建议与风险提示...")
     # 生成第九章全部内容（包括9.1综合评估汇总和9.2-9.6其他章节）
     context = chapter09_advice.generate_chapter(context)
-    utils.add_new_section_with_headers(document, company_name, '九、风控建议与风险提示')
 
     # 附件：情景数据表
     print("\n 生成附件：情景数据表...")
     context = appendix_scenarios.generate_chapter(context)
-    utils.add_new_section_with_headers(document, company_name, '附件：情景数据表')
 
     # 添加页码
     print("\n 添加页码...")

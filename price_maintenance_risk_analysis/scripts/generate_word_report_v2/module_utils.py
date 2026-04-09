@@ -163,6 +163,34 @@ def add_section_break(document):
     document.add_page_break()
 
 
+def setup_document_header(document, stock_name):
+    """
+    为文档设置统一的页眉
+
+    参数:
+        document: Word文档对象
+        stock_name: 股票名称（用于生成报告标题）
+    """
+    # 获取文档的第一个section（从正文开始）
+    if len(document.sections) > 1:
+        # 如果有多个section（封面+正文），使用正文部分的section
+        target_section = document.sections[1]
+    else:
+        target_section = document.sections[0]
+
+    # 设置统一页眉
+    header = target_section.header
+    header_para = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
+    header_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    header_para.text = f"{stock_name}定增项目风险分析报告"
+
+    # 设置页眉格式
+    for run in header_para.runs:
+        run.font.name = '仿宋_GB2312'
+        run._element.rPr.rFonts.set(qn('w:eastAsia'), '仿宋_GB2312')
+        run.font.size = Pt(10.5)  # 五号字
+
+
 def add_new_section_with_headers(document, stock_name, even_page_header=""):
     """
     添加新节并设置页眉
@@ -172,49 +200,41 @@ def add_new_section_with_headers(document, stock_name, even_page_header=""):
         stock_name: 股票名称（用于生成报告标题）
         even_page_header: 偶数页页眉文本（章节标题）
     """
-    # 添加新节
-    new_section = document.add_section()
-
-    # 启用奇偶页不同页眉
-    new_section.different_first_page_header_footer = False
-    new_section.even_and_odd_headers = True
-
-    # 设置奇数页页眉（显示公司名称+报告标题）
-    odd_header = new_section.header
-    odd_para = odd_header.paragraphs[0] if odd_header.paragraphs else odd_header.add_paragraph()
-    odd_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    odd_para.text = f"{stock_name}定增项目风险分析报告"
-
-    # 设置奇数页页眉格式
-    for run in odd_para.runs:
-        run.font.name = '仿宋_GB2312'
-        run._element.rPr.rFonts.set(qn('w:eastAsia'), '仿宋_GB2312')
-        run.font.size = Pt(10.5)  # 五号字
-
-    # 设置偶数页页眉（显示章节标题）
-    even_header = new_section.even_page_header
-    even_para = even_header.paragraphs[0] if even_header.paragraphs else even_header.add_paragraph()
-    even_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    even_para.text = even_page_header
-
-    # 设置偶数页页眉格式
-    for run in even_para.runs:
-        run.font.name = '仿宋_GB2312'
-        run._element.rPr.rFonts.set(qn('w:eastAsia'), '仿宋_GB2312')
-        run.font.size = Pt(10.5)  # 五号字
-
-    return new_section
+    # 简化版本：不再创建多个section
+    # 页眉已在setup_document_header中统一设置
+    pass
 
 
 def add_page_numbers(document):
-    """为文档添加页码（底部居中）"""
-    from docx.oxml import parse_xml
-    from docx.oxml.ns import nsdecls
 
-    # 为所有节添加页码
-    for section in document.sections:
-        # 创建页脚段落
-        footer = section.footer
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         footer_para = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
 
         # 设置段落格式为居中
