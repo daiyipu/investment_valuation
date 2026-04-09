@@ -85,7 +85,7 @@ def generate_chapter(context):
 
     # ==================== 报告封面 ====================
     add_title(document, '定增项目风险分析报告', level=0)
-    add_paragraph\(document, '')
+    add_paragraph(document, '')
 
     # 报告基本信息
     info_table = document.add_table(rows=6, cols=2)
