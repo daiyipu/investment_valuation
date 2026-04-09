@@ -163,14 +163,14 @@ def add_section_break(document):
     document.add_page_break()
 
 
-def add_new_section_with_headers(document, stock_name, odd_page_header=""):
+def add_new_section_with_headers(document, stock_name, even_page_header=""):
     """
     添加新节并设置页眉
 
     参数:
         document: Word文档对象
         stock_name: 股票名称（用于生成报告标题）
-        odd_page_header: 奇数页页眉文本（如果为空，使用默认格式）
+        even_page_header: 偶数页页眉文本（章节标题）
     """
     # 添加新节
     new_section = document.add_section()
@@ -179,16 +179,11 @@ def add_new_section_with_headers(document, stock_name, odd_page_header=""):
     new_section.different_first_page_header_footer = False
     new_section.even_and_odd_headers = True
 
-    # 设置奇数页页眉
+    # 设置奇数页页眉（显示公司名称+报告标题）
     odd_header = new_section.header
     odd_para = odd_header.paragraphs[0] if odd_header.paragraphs else odd_header.add_paragraph()
     odd_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-    # 如果没有指定奇数页页眉，使用默认格式
-    if not odd_page_header:
-        odd_page_header = f"{stock_name}定增项目风险分析报告"
-
-    odd_para.text = odd_page_header
+    odd_para.text = f"{stock_name}定增项目风险分析报告"
 
     # 设置奇数页页眉格式
     for run in odd_para.runs:
@@ -196,11 +191,11 @@ def add_new_section_with_headers(document, stock_name, odd_page_header=""):
         run._element.rPr.rFonts.set(qn('w:eastAsia'), '仿宋_GB2312')
         run.font.size = Pt(10.5)  # 五号字
 
-    # 设置偶数页页眉（初始为空，后续章节会更新）
+    # 设置偶数页页眉（显示章节标题）
     even_header = new_section.even_page_header
     even_para = even_header.paragraphs[0] if even_header.paragraphs else even_header.add_paragraph()
     even_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    even_para.text = ""
+    even_para.text = even_page_header
 
     # 设置偶数页页眉格式
     for run in even_para.runs:
@@ -209,31 +204,6 @@ def add_new_section_with_headers(document, stock_name, odd_page_header=""):
         run.font.size = Pt(10.5)  # 五号字
 
     return new_section
-
-
-def update_even_page_header(document, chapter_title):
-    """
-    更新偶数页页眉为当前章节标题
-
-    参数:
-        document: Word文档对象
-        chapter_title: 章节标题
-    """
-    # 获取最后一个section（应该是当前章节的section）
-    if document.sections:
-        current_section = document.sections[-1]
-
-        # 更新偶数页页眉
-        even_header = current_section.even_page_header
-        even_para = even_header.paragraphs[0] if even_header.paragraphs else even_header.add_paragraph()
-        even_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        even_para.text = chapter_title
-
-        # 设置偶数页页眉格式
-        for run in even_para.runs:
-            run.font.name = '仿宋_GB2312'
-            run._element.rPr.rFonts.set(qn('w:eastAsia'), '仿宋_GB2312')
-            run.font.size = Pt(10.5)  # 五号字
 
 
 def add_page_numbers(document):

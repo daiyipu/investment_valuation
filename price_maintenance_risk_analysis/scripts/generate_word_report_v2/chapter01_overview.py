@@ -65,10 +65,21 @@ def generate_chapter(context):
     # 实际溢价率（相对发行日价格）：用于投资分析
     actual_premium = (issue_price - current_price) / current_price * 100
 
-    if issue_price < ma20:
-        issue_type = "折价发行"
+    # 发行类型固定为询价发行
+    issue_type = "询价发行"
+
+    # 获取数据日期（用于显示当前价格的实际日期）
+    data_date = market_data.get('analysis_date', '')
+    if data_date:
+        try:
+            from datetime import datetime
+            data_date_obj = datetime.strptime(data_date, '%Y%m%d')
+            data_date_formatted = data_date_obj.strftime('%Y年%m月%d日')
+            current_price_desc = f'{market_data["current_price"]:.2f} 元/股（数据日期{data_date_formatted}）'
+        except:
+            current_price_desc = f'{market_data["current_price"]:.2f} 元/股（最近交易日数据）'
     else:
-        issue_type = "溢价发行"
+        current_price_desc = f'{market_data["current_price"]:.2f} 元/股（最近交易日数据）'
 
     current_date = datetime.now().strftime('%Y年%m月%d日')
 
@@ -113,43 +124,20 @@ def generate_chapter(context):
                         run.font.name = '仿宋_GB2312'
                         run._element.rPr.rFonts.set(qn('w:eastAsia'), '仿宋_GB2312')
 
-    add_paragraph\(document, '')
-
-    # 分页符：封面和目录分开
-    add_section_break(document)
+    add_paragraph(document, '')
 
     # ==================== 目录 ====================
-    # 目录标题居中
-    toc_title = document.add_paragraph('目 录')
-    toc_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    for run in toc_title.runs:
-        run.font.name = '方正公文小标宋_GBK'
-        run._element.rPr.rFonts.set(qn('w:eastAsia'), '方正公文小标宋_GBK')
-        run.font.size = Pt(16)  # 三号（16pt）
-        run.font.bold = True
+    add_title(document, '目 录', level=1)
+    add_paragraph(document, '一、项目概况')
+    add_paragraph(document, '二、相对估值分析')
+    add_paragraph(document, '三、DCF估值分析')
+    add_paragraph(document, '四、敏感性分析')
+    add_paragraph(document, '五、蒙特卡洛模拟')
+    add_paragraph(document, '六、情景分析')
+    add_paragraph(document, '七、压力测试')
+    add_paragraph(document, '八、VaR风险度量')
+    add_paragraph(document, '九、风控建议与风险提示')
 
-    # 目录内容居中
-    toc_content = [
-        '一、项目概况',
-        '二、相对估值分析',
-        '三、DCF估值分析',
-        '四、敏感性分析',
-        '五、蒙特卡洛模拟',
-        '六、情景分析',
-        '七、压力测试',
-        '八、VaR风险度量',
-        '九、风控建议与风险提示'
-    ]
-
-    for item in toc_content:
-        toc_para = document.add_paragraph(item)
-        toc_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        for run in toc_para.runs:
-            run.font.name = '仿宋_GB2312'
-            run._element.rPr.rFonts.set(qn('w:eastAsia'), '仿宋_GB2312')
-            run.font.size = Pt(14)  # 四号（14pt）
-
-    # 分页符：目录和正文分开
     add_section_break(document)
 
     # ==================== 一、项目概况 ====================
@@ -165,13 +153,13 @@ def generate_chapter(context):
     if is_fixed_issue_date:
         # 发行日确定的情况
         issue_date_price_note = f'{current_price:.2f} 元/股（发行日{project_params.get("issue_date", "")}）'
-        planned_price_note = f'{current_price:.2f} 元/股（与发行日价格一致）'
+        planned_price_note = f'{current_price:.2f} 元/股'
     else:
         # 发行日不确定的情况
         issue_date_price_note = ''  # "发行日价格"字段显示空值
-        planned_price_note = f'{current_price:.2f} 元/股（当前价格）'
+        planned_price_note = f'{current_price:.2f} 元/股'
 
-    project_headers = ['指标', '数值']
+    project_headers = ['指标', '具体内容']
     project_data = [
         ['股票代码', stock_code],
         ['公司名称', project_params.get('company_name', '光弘科技')],
@@ -181,7 +169,7 @@ def generate_chapter(context):
         ['发行数量', f'{project_params["issue_shares"]:,} 股'],
         ['锁定期', f'{lockup_period} 个月'],
         ['投资金额（模拟）', f'{project_params["financing_amount"] / 100000000:.2f} 亿元'],
-        ['当前价格', f'{market_data["current_price"]:.2f} 元/股（生成日当天最新交易日价格）'],
+        ['当前价格', current_price_desc],
         ['发行日价格（拟）', planned_price_note],
         ['发行日价格', issue_date_price_note],
         ['MA20价格', f'{ma20:.2f} 元/股（基于发行日的成交量加权均价）'],

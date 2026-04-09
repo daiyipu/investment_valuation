@@ -215,19 +215,25 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
             print(f"请检查网络连接和数据可用性")
             sys.exit(1)
 
-        # 更新market_data中的MA20和current_price（使用基于发行日的价格）
+        # 保存原始的current_price（最新交易日价格），不要覆盖
+        original_current_price = market_data['current_price']
+
+        # 更新market_data中的MA20，但保留current_price为最新交易日价格
         market_data['ma_20'] = ma20_price
-        market_data['current_price'] = bidding_date_price  # 更新为基于发行日的价格
+        # market_data['current_price'] 保持为最新交易日价格，不覆盖
 
         project_params['ma20_from_issue'] = ma20_price
-        project_params['current_price'] = bidding_date_price  # 更新为基于发行日的价格，用于全文实际溢价率计算
+        project_params['current_price'] = bidding_date_price  # 用于全文实际溢价率计算
+        project_params['bidding_date_price'] = bidding_date_price
+        project_params['latest_trading_date_price'] = original_current_price  # 保存最新交易日价格
+
         print(f"  MA20价格（基于发行日{issue_date}的成交量加权均价）：{ma20_price:.2f}元")
         print(f"  发行日价格（用于实际溢价率计算）：{bidding_date_price:.2f}元")
+        print(f"  最新交易日价格（保留在market_data中）：{original_current_price:.2f}元")
 
         project_params['issue_date'] = issue_date
         project_params['invitation_date'] = invitation_date_str
         project_params['invitation_date_fixed'] = True  # 标记为固定日期
-        project_params['bidding_date_price'] = bidding_date_price
         print(f" 使用指定报价日：{issue_date}")
         print(f" 询价邀请日：{project_params['invitation_date']}（报价日-3天，固定）")
         print(f" 报价日当天价格：{bidding_date_price:.2f}元")
@@ -250,20 +256,26 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
             print(f"请检查网络连接和数据可用性")
             sys.exit(1)
 
-        # 更新market_data中的MA20和current_price（使用基于发行日的价格）
+        # 保存原始的current_price（最新交易日价格），不要覆盖
+        original_current_price = market_data['current_price']
+
+        # 更新market_data中的MA20，但保留current_price为最新交易日价格
         market_data['ma_20'] = ma20_price
-        market_data['current_price'] = bidding_date_price  # 更新为基于发行日的价格
+        # market_data['current_price'] 保持为最新交易日价格，不覆盖
 
         project_params['issue_date'] = issue_date
         project_params['invitation_date'] = invitation_date_str
         project_params['invitation_date_fixed'] = False  # 标记为动态日期
         project_params['bidding_date_price'] = bidding_date_price
-        project_params['current_price'] = bidding_date_price  # 更新为基于发行日的价格，用于全文实际溢价率计算
+        project_params['current_price'] = bidding_date_price  # 用于全文实际溢价率计算
         project_params['ma20_from_issue'] = ma20_price
+        project_params['latest_trading_date_price'] = original_current_price  # 保存最新交易日价格
+
         print(f" 使用当前日期作为报价日：{issue_date}")
         print(f" 询价邀请日：{invitation_date_str}（报价日-3天，动态）")
         print(f" 报价日当天价格：{bidding_date_price:.2f}元")
-        print(f" MA20价格（基于发行日{issue_date}的成交量加权均价）：{ma20_price:.2f}元")
+        print(f"  MA20价格（基于发行日{issue_date}的成交量加权均价）：{ma20_price:.2f}元")
+        print(f"  最新交易日价格（保留在market_data中）：{original_current_price:.2f}元")
 
     # 检查数据新鲜度
     print("\n 检查数据新鲜度...")
@@ -382,54 +394,53 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
 
     # 第一章完成后，添加新节并设置页眉（从正文开始有页眉）
     company_name = project_params.get('company_name', stock_name)
-    utils.add_new_section_with_headers(document, company_name)
-    utils.update_even_page_header(document, '一、项目概况')
+    utils.add_new_section_with_headers(document, company_name, '一、项目概况')
 
     # 第二章：相对估值分析
     print("\n 生成第二章：相对估值分析...")
     context = chapter02_valuation.generate_chapter(context)
-    utils.update_even_page_header(document, '二、相对估值分析')
+    utils.add_new_section_with_headers(document, company_name, '二、相对估值分析')
 
     # 第三章：DCF估值分析
     print("\n 生成第三章：DCF估值分析...")
     context = chapter03_dcf.generate_chapter(context)
-    utils.update_even_page_header(document, '三、DCF估值分析')
+    utils.add_new_section_with_headers(document, company_name, '三、DCF估值分析')
 
     # 第四章：敏感性分析
     print("\n 生成第四章：敏感性分析...")
     context = chapter04_sensitivity.generate_chapter(context)
-    utils.update_even_page_header(document, '四、敏感性分析')
+    utils.add_new_section_with_headers(document, company_name, '四、敏感性分析')
 
     # 第五章：蒙特卡洛模拟
     print("\n 生成第五章：蒙特卡洛模拟...")
     context = chapter05_montecarlo.generate_chapter(context)
-    utils.update_even_page_header(document, '五、蒙特卡洛模拟')
+    utils.add_new_section_with_headers(document, company_name, '五、蒙特卡洛模拟')
 
     # 第六章：情景分析
     print("\n 生成第六章：情景分析...")
     context = chapter06_scenario.generate_chapter(context)
-    utils.update_even_page_header(document, '六、情景分析')
+    utils.add_new_section_with_headers(document, company_name, '六、情景分析')
 
     # 第七章：压力测试
     print("\n 生成第七章：压力测试...")
     context = chapter07_stress.generate_chapter(context)
-    utils.update_even_page_header(document, '七、压力测试')
+    utils.add_new_section_with_headers(document, company_name, '七、压力测试')
 
     # 第八章：VaR风险度量
     print("\n 生成第八章：VaR风险度量...")
     context = chapter08_var.generate_chapter(context)
-    utils.update_even_page_header(document, '八、VaR风险度量')
+    utils.add_new_section_with_headers(document, company_name, '八、VaR风险度量')
 
     # 第九章：风控建议与风险提示
     print("\n 生成第九章：风控建议与风险提示...")
     # 生成第九章全部内容（包括9.1综合评估汇总和9.2-9.6其他章节）
     context = chapter09_advice.generate_chapter(context)
-    utils.update_even_page_header(document, '九、风控建议与风险提示')
+    utils.add_new_section_with_headers(document, company_name, '九、风控建议与风险提示')
 
     # 附件：情景数据表
     print("\n 生成附件：情景数据表...")
     context = appendix_scenarios.generate_chapter(context)
-    utils.update_even_page_header(document, '附件：情景数据表')
+    utils.add_new_section_with_headers(document, company_name, '附件：情景数据表')
 
     # 添加页码
     print("\n 添加页码...")
