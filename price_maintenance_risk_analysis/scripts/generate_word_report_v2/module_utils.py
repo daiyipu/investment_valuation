@@ -163,14 +163,17 @@ def add_section_break(document):
     document.add_page_break()
 
 
-def setup_document_header(document, stock_name):
+def setup_document_header(document, stock_name, stock_code=None):
     """
-    为文档设置统一的页眉
+    为文档设置增强的统一页眉
 
     参数:
         document: Word文档对象
         stock_name: 股票名称（用于生成报告标题）
+        stock_code: 股票代码（可选，用于增强标题格式）
     """
+    from datetime import datetime
+
     # 获取文档的第一个section（从正文开始）
     if len(document.sections) > 1:
         # 如果有多个section（封面+正文），使用正文部分的section
@@ -178,11 +181,20 @@ def setup_document_header(document, stock_name):
     else:
         target_section = document.sections[0]
 
+    # 生成增强格式的标题
+    current_date = datetime.now()
+    formatted_date = current_date.strftime('%Y年%m月%d日')
+
+    if stock_code:
+        header_title = f"{stock_name}({stock_code})定增风险分析报告 | {formatted_date}"
+    else:
+        header_title = f"{stock_name}定增风险分析报告 | {formatted_date}"
+
     # 设置统一页眉
     header = target_section.header
     header_para = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
     header_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    header_para.text = f"{stock_name}定增项目风险分析报告"
+    header_para.text = header_title
 
     # 设置页眉格式
     for run in header_para.runs:
@@ -205,36 +217,151 @@ def add_new_section_with_headers(document, stock_name, even_page_header=""):
     pass
 
 
+def setup_odd_even_headers(document, stock_name, stock_code=None):
+    """
+    设置奇偶页不同的页眉（方案5实现）
+    奇数页：显示报告标题（包含股票代码和日期）
+    偶数页：显示章节标题（由各章节更新）
+
+    参数:
+        document: Word文档对象
+        stock_name: 股票名称
+        stock_code: 股票代码（可选）
+
+    返回:
+        bool: 是否成功设置奇偶页眉
+    """
+    from datetime import datetime
+    try:
+        # 获取文档的第一个section（从正文开始）
+        if len(document.sections) > 1:
+            target_section = document.sections[1]
+        else:
+            target_section = document.sections[0]
+
+        # 启用奇偶页不同页眉
+        target_section.different_first_page_header_footer = False
+        try:
+            # 尝试设置奇偶页不同页眉属性
+            target_section._element.xpath('./w:pgSetup')[0].set(
+                '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}evenAndOddHeaders', '1')
+        except (IndexError, AttributeError):
+            # 如果xpath失败，尝试直接创建属性
+            try:
+                pg_setup = target_section._element.xpath('./w:pgSetup')
+                if pg_setup:
+                    pg_setup[0].set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}evenAndOddHeaders', '1')
+                else:
+                    # 创建pgSetup元素
+                    pg_setup_xml = '<w:pgSetup xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:evenAndOddHeaders="1"/>'
+                    target_section._element.insert(0, parse_xml(pg_setup_xml))
+            except:
+                return False
+
+        # 生成奇数页标题（报告标题）
+        current_date = datetime.now()
+        formatted_date = current_date.strftime('%Y年%m月%d日')
+
+        if stock_code:
+            odd_header_title = f"{stock_name}({stock_code})定增风险分析报告 | {formatted_date}"
+        else:
+            odd_header_title = f"{stock_name}定增风险分析报告 | {formatted_date}"
+
+        # 设置奇数页页眉
+        odd_header = target_section.headers[1]  # 奇数页页眉
+        odd_para = odd_header.paragraphs[0] if odd_header.paragraphs else odd_header.add_paragraph()
+        odd_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        odd_para.text = odd_header_title
+
+        # 设置奇数页页眉格式
+        for run in odd_para.runs:
+            run.font.name = '仿宋_GB2312'
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), '仿宋_GB2312')
+            run.font.size = Pt(10.5)
+
+        # 设置偶数页页眉（初始为空，由各章节更新）
+        even_header = target_section.headers[0]  # 偶数页页眉
+        even_para = even_header.paragraphs[0] if even_header.paragraphs else even_header.add_paragraph()
+        even_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        even_para.text = ""  # 初始为空
+
+        # 设置偶数页页眉格式
+        for run in even_para.runs:
+            run.font.name = '仿宋_GB2312'
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), '仿宋_GB2312')
+            run.font.size = Pt(10.5)
+
+        return True
+
+    except Exception as e:
+        print(f"设置奇偶页眉失败：{e}")
+        return False
+
+
+def update_even_page_header(document, chapter_title):
+    """
+    更新偶数页页眉为当前章节标题
+
+    参数:
+        document: Word文档对象
+        chapter_title: 章节标题文本
+
+    返回:
+        bool: 是否成功更新
+    """
+    try:
+        # 获取文档的第一个section（从正文开始）
+        if len(document.sections) > 1:
+            target_section = document.sections[1]
+        else:
+            target_section = document.sections[0]
+
+        # 检查是否启用了奇偶页不同页眉
+        try:
+            even_and_odd = target_section._element.xpath('./w:pgSetup/@w:evenAndOddHeaders')
+            if not even_and_odd or even_and_odd[0] != '1':
+                return False  # 未启用奇偶页眉
+        except:
+            return False
+
+        # 更新偶数页页眉
+        even_header = target_section.headers[0]  # 偶数页页眉
+        if even_header.paragraphs:
+            even_para = even_header.paragraphs[0]
+        else:
+            even_para = even_header.add_paragraph()
+
+        even_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        even_para.text = chapter_title
+
+        # 设置偶数页页眉格式
+        for run in even_para.runs:
+            run.font.name = '仿宋_GB2312'
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), '仿宋_GB2312')
+            run.font.size = Pt(10.5)
+
+        return True
+
+    except Exception as e:
+        print(f"更新偶数页页眉失败：{e}")
+        return False
+
+
 def add_page_numbers(document):
+    """
+    为文档的所有节添加页码
 
+    参数:
+        document: Word文档对象
+    """
+    from docx.oxml import parse_xml
 
+    # 遍历文档的所有节
+    for section in document.sections:
+        # 获取该节的主页脚
+        footer = section.footer
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        # 获取或创建页脚段落
         footer_para = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
 
         # 设置段落格式为居中
@@ -254,6 +381,20 @@ def add_page_numbers(document):
             run.font.name = '仿宋_GB2312'
             run._element.rPr.rFonts.set(qn('w:eastAsia'), '仿宋_GB2312')
             run.font.size = Pt(10.5)  # 五号字（10.5pt）
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # ==================== 图表生成函数 ====================

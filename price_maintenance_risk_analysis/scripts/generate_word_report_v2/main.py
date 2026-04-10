@@ -51,7 +51,8 @@ import chapter09_advice
 import appendix_scenarios
 
 # 配置路径
-DATA_DIR = os.path.join(PROJECT_DIR, 'data')
+# 数据文件在 price_maintenance_risk_analysis/data/ 目录下
+DATA_DIR = os.path.join(PROJECT_DIR, 'price_maintenance_risk_analysis', 'data')
 REPORTS_DIR = os.path.join(PROJECT_DIR, 'reports')
 IMAGES_DIR = os.path.join(REPORTS_DIR, 'images')
 OUTPUTS_DIR = os.path.join(REPORTS_DIR, 'outputs')
@@ -303,45 +304,62 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
                     try:
                         import sys
                         import subprocess
-                        update_script = os.path.join(PROJECT_DIR, 'scripts', 'update_indices_data.py')
+                        import json
 
-                        if os.path.exists(update_script):
-                            # 运行数据更新脚本
-                            result = subprocess.run([sys.executable, update_script],
+                        # 更新市场指数数据
+                        update_indices_script = os.path.join(PROJECT_DIR, 'scripts', 'update_indices_data.py')
+
+                        if os.path.exists(update_indices_script):
+                            print("1️⃣ 更新市场指数数据...")
+                            result = subprocess.run([sys.executable, update_indices_script],
                                                   capture_output=True,
                                                   text=True,
                                                   timeout=300)  # 5分钟超时
 
                             if result.returncode == 0:
-                                print("数据更新成功！")
+                                print("市场指数数据更新成功！")
                                 print(result.stdout)
-
-                                # 重新加载数据
-                                print("\n重新加载更新后的数据...")
-                                project_params, risk_params, market_data = load_placement_config(stock_code)
-                                industry_data = _load_industry_data(stock_code)
-
-                                # 检查更新后的数据新鲜度
-                                is_fresh_updated, data_msg_updated = check_data_freshness(market_data)
-                                print(f" {data_msg_updated}")
-
-                                if is_fresh_updated:
-                                    print("数据已更新到最新，现在生成报告...")
-                                else:
-                                    print("数据更新后仍未达到最新，但已有改善")
-                                    continue_input = input("\n是否继续生成报告？(yes/no): ").strip().lower()
-                                    if continue_input not in ['yes', 'y', '是']:
-                                        print("报告生成已取消。")
-                                        sys.exit(0)
                             else:
-                                print("数据更新失败！")
+                                print("市场指数数据更新失败！")
                                 print(result.stderr)
-                                print("\n请手动运行以下命令更新数据：")
-                                print(f"  python {update_script}")
-                                sys.exit(1)
+
+                        # 更新个股市场数据
+                        print("2️⃣ 更新个股市场数据...")
+                        sys.path.insert(0, os.path.join(PROJECT_DIR, 'scripts'))
+                        from update_market_data import generate_market_data
+
+                        # 使用当前股票代码和名称更新市场数据
+                        updated_market_data = generate_market_data(stock_code, stock_name, issue_date)
+
+                        if updated_market_data:
+                            # 保存到文件
+                            market_data_file = os.path.join(DATA_DIR, f"{stock_code.replace('.', '_')}_market_data.json")
+                            with open(market_data_file, 'w', encoding='utf-8') as f:
+                                json.dump(updated_market_data, f, ensure_ascii=False, indent=2)
+                            print(f"✅ 个股市场数据更新成功！已保存到: {market_data_file}")
+                            print("数据更新成功！")
+
+                            # 重新加载数据
+                            print("\n重新加载更新后的数据...")
+                            project_params, risk_params, market_data = load_placement_config(stock_code)
+                            industry_data = _load_industry_data(stock_code)
+
+                            # 检查更新后的数据新鲜度
+                            is_fresh_updated, data_msg_updated = check_data_freshness(market_data)
+                            print(f" {data_msg_updated}")
+
+                            if is_fresh_updated:
+                                print("数据已更新到最新，现在生成报告...")
+                            else:
+                                print("数据更新后仍未达到最新，但已有改善")
+                                continue_input = input("\n是否继续生成报告？(yes/no): ").strip().lower()
+                                if continue_input not in ['yes', 'y', '是']:
+                                    print("报告生成已取消。")
+                                    sys.exit(0)
                         else:
-                            print(f"找不到更新脚本：{update_script}")
-                            print("请手动检查脚本路径或手动更新数据。")
+                            print("个股市场数据更新失败！")
+                            print("\n请手动运行以下命令更新数据：")
+                            print(f"  python scripts/update_market_data.py --stock {stock_code} --name {stock_name}")
                             sys.exit(1)
 
                     except subprocess.TimeoutExpired:
@@ -396,16 +414,25 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
     company_name = project_params.get('company_name', stock_name)
 
     # 只在第一章后设置一次页眉，不创建多个section
-    # 使用统一的页眉显示公司名称+报告标题
-    utils.setup_document_header(document, company_name)
+    # 使用增强的统一页眉显示公司名称+股票代码+报告标题+日期
+    utils.setup_document_header(document, company_name, stock_code)
+
+    # 可选：使用方案5（奇偶页不同页眉）
+    # 奇数页显示报告标题，偶数页显示章节标题
+    # 如果需要使用方案5，请取消下面一行的注释，并注释掉上面的统一页眉设置
+    # utils.setup_odd_even_headers(document, company_name, stock_code)
 
     # 第二章：相对估值分析
     print("\n 生成第二章：相对估值分析...")
     context = chapter02_valuation.generate_chapter(context)
+    # 如果使用方案5奇偶页眉，可在此处更新偶数页页眉：
+    # utils.update_even_page_header(document, "第二章 相对估值分析")
 
     # 第三章：DCF估值分析
     print("\n 生成第三章：DCF估值分析...")
     context = chapter03_dcf.generate_chapter(context)
+    # 如果使用方案5奇偶页眉，可在此处更新偶数页页眉：
+    # utils.update_even_page_header(document, "第三章 DCF估值分析")
 
     # 第四章：敏感性分析
     print("\n 生成第四章：敏感性分析...")
@@ -431,6 +458,8 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
     print("\n 生成第九章：风控建议与风险提示...")
     # 生成第九章全部内容（包括9.1综合评估汇总和9.2-9.6其他章节）
     context = chapter09_advice.generate_chapter(context)
+    # 如果使用方案5奇偶页眉，可在此处更新偶数页页眉：
+    # utils.update_even_page_header(document, "第九章 风控建议与风险提示")
 
     # 附件：情景数据表
     print("\n 生成附件：情景数据表...")
