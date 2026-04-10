@@ -51,8 +51,8 @@ import chapter09_advice
 import appendix_scenarios
 
 # 配置路径
-# 数据文件在 price_maintenance_risk_analysis/data/ 目录下
-DATA_DIR = os.path.join(PROJECT_DIR, 'price_maintenance_risk_analysis', 'data')
+# 数据文件在当前项目的data/目录下（PROJECT_DIR已经指向price_maintenance_risk_analysis）
+DATA_DIR = os.path.join(PROJECT_DIR, 'data')
 REPORTS_DIR = os.path.join(PROJECT_DIR, 'reports')
 IMAGES_DIR = os.path.join(REPORTS_DIR, 'images')
 OUTPUTS_DIR = os.path.join(REPORTS_DIR, 'outputs')
