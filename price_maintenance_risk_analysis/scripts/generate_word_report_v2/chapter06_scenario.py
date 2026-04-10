@@ -652,7 +652,6 @@ def generate_chapter(context):
             worst_scenario = min(index_scenario_results, key=lambda x: x['profit_prob'])
             add_paragraph(document, f'• 最优情景：{best_scenario["scenario"]["name"]}，盈利概率{best_scenario["profit_prob"]:.1f}%，中位数收益{best_scenario["median_return"]*100:+.1f}%')
             add_paragraph(document, f'• 最差情景：{worst_scenario["scenario"]["name"]}，盈利概率{worst_scenario["profit_prob"]:.1f}%，中位数收益{worst_scenario["median_return"]*100:+.1f}%')
-            add_paragraph(document, f'• 投资建议：市场指数环境对定增收益有显著影响，建议关注市场整体趋势，在低波动高增长环境下积极参与')
 
         
     # ==================== 6.2.2 行业指数情景分析 ====================
@@ -796,7 +795,6 @@ def generate_chapter(context):
             worst_scenario = min(industry_scenario_results, key=lambda x: x['profit_prob'])
             add_paragraph(document, f'• 最优情景：{best_scenario["scenario"]["name"]}，盈利概率{best_scenario["profit_prob"]:.1f}%，中位数收益{best_scenario["median_return"]*100:+.1f}%')
             add_paragraph(document, f'• 最差情景：{worst_scenario["scenario"]["name"]}，盈利概率{worst_scenario["profit_prob"]:.1f}%，中位数收益{worst_scenario["median_return"]*100:+.1f}%')
-            add_paragraph(document, f'• 投资建议：行业景气度对定增收益有重要影响，建议关注行业周期，在行业上升期积极布局')
 
         
         # ==================== 6.3 基于行业PE分位数的情景分析 ====================
@@ -956,7 +954,6 @@ def generate_chapter(context):
                     worst_scenario = min(industry_pe_scenario_results, key=lambda x: x['profit_prob'])
                     add_paragraph(document, f'• 最优情景：{best_scenario["scenario"]["name"]}，盈利概率{best_scenario["profit_prob"]:.1f}%，中位数收益{best_scenario["median_return"]*100:+.1f}%')
                     add_paragraph(document, f'• 最差情景：{worst_scenario["scenario"]["name"]}，盈利概率{worst_scenario["profit_prob"]:.1f}%，中位数收益{worst_scenario["median_return"]*100:+.1f}%')
-                    add_paragraph(document, f'• 投资建议：关注行业估值水平，在个股PE显著低于行业PE分位数时（低估状态）积极布局，估值回归带来超额收益')
 
                 add_paragraph(document, '')
             except Exception as e:
@@ -1122,7 +1119,6 @@ def generate_chapter(context):
                     worst_scenario = min(stock_pe_scenario_results, key=lambda x: x['profit_prob'])
                     add_paragraph(document, f'• 最优情景：{best_scenario["scenario"]["name"]}，盈利概率{best_scenario["profit_prob"]:.1f}%，中位数收益{best_scenario["median_return"]*100:+.1f}%')
                     add_paragraph(document, f'• 最差情景：{worst_scenario["scenario"]["name"]}，盈利概率{worst_scenario["profit_prob"]:.1f}%，中位数收益{worst_scenario["median_return"]*100:+.1f}%')
-                    add_paragraph(document, f'• 投资建议：关注个股历史估值水平，当前PE处于历史低位时投资价值更高，估值回归带来收益潜力')
 
                 add_paragraph(document, '')
             except Exception as e:
@@ -1274,7 +1270,6 @@ def generate_chapter(context):
                     worst_scenario = min(dcf_scenario_results, key=lambda x: x['profit_prob'])
                     add_paragraph(document, f'• 最优情景：{best_scenario["scenario"]["name"]}，盈利概率{best_scenario["profit_prob"]:.1f}%，中位数收益{best_scenario["median_return"]*100:+.1f}%')
                     add_paragraph(document, f'• 最差情景：{worst_scenario["scenario"]["name"]}，盈利概率{worst_scenario["profit_prob"]:.1f}%，中位数收益{worst_scenario["median_return"]*100:+.1f}%')
-                    add_paragraph(document, f'• 投资建议：DCF内在价值{intrinsic_value:.2f}元{"高于" if intrinsic_value > current_price_dcf else "低于"}当前价格{current_price_dcf:.2f}元，比值{dcf_ratio:.2f}，估值{"偏低" if dcf_drift > 0 else "偏高"}，需结合安全边际谨慎决策')
 
                 add_paragraph(document, '')
             except Exception as e:
@@ -1391,19 +1386,6 @@ def generate_chapter(context):
         add_paragraph(document, f'• 平均收益率：{avg_median_return*100:+.1f}%，{"表现良好" if avg_median_return >= 0.10 else "表现一般" if avg_median_return >= 0 else "表现不佳"}')
         add_paragraph(document, f'• 最优情景：{best_scenario_name}，盈利概率{best_scenario.get("profit_prob", 0):.1f}%，收益率{best_scenario.get("median_return", 0)*100:+.1f}%')
         add_paragraph(document, f'• 最差情景：{worst_scenario_name}，盈利概率{worst_scenario.get("profit_prob", 0):.1f}%，收益率{worst_scenario.get("median_return", 0)*100:+.1f}%')
-        add_paragraph(document, '')
-
-        add_paragraph(document, ' 投资建议：')
-        if avg_profit_prob >= 70 and avg_median_return >= 10:
-            add_paragraph(document, '• 整体情景分析显示投资价值较高，多数情景下盈利概率和收益率表现良好')
-            add_paragraph(document, '• 建议关注市场环境和行业趋势，选择有利时机参与')
-        elif avg_profit_prob >= 50:
-            add_paragraph(document, '• 整体情景分析显示投资价值中等，需结合具体市场环境谨慎评估')
-            add_paragraph(document, '• 建议要求更高的安全边际（折价率）或等待更好的市场时机')
-        else:
-            add_paragraph(document, '• 整体情景分析显示投资风险较高，多数情景下盈利概率不足')
-            add_paragraph(document, '• 建议谨慎参与或要求显著折价以弥补风险')
-        add_paragraph(document, '• 详细情景数据请参见附件，可根据实际市场情况选择参考情景')
 
     # 生成多维度情景图表（补充分析）
     # 注：波动率×折价率热力图已在6.3章节展示，此处不再重复
