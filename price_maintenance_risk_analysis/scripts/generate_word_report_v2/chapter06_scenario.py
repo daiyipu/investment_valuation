@@ -1332,8 +1332,21 @@ def generate_chapter(context):
         best_scenario = max(comprehensive_results, key=lambda x: x.get('profit_prob', 0))
         worst_scenario = min(comprehensive_results, key=lambda x: x.get('profit_prob', 0))
 
-        best_scenario_obj = best_scenario.get('scenario', best_scenario)
-        worst_scenario_obj = worst_scenario.get('scenario', worst_scenario)
+        # 获取情景名称，优先从scenario对象获取，其次从顶层获取，最后生成描述
+        def get_scenario_name(scenario):
+            if 'scenario' in scenario and isinstance(scenario['scenario'], dict):
+                return scenario['scenario'].get('name', '未知情景')
+            elif 'name' in scenario:
+                return scenario['name']
+            else:
+                # 根据情景参数生成描述性名称
+                drift = scenario.get('drift', 0)
+                vol = scenario.get('volatility', 0)
+                discount = scenario.get('discount', 0)
+                return f'漂移率{drift*100:.0f}%_波动率{vol*100:.0f}%_折价{discount*100:.0f}%'
+
+        best_scenario_name = get_scenario_name(best_scenario)
+        worst_scenario_name = get_scenario_name(worst_scenario)
 
         # 生成汇总统计表格
         summary_data = [
@@ -1352,19 +1365,18 @@ def generate_chapter(context):
             ['', '', ''],
             ['盈利概率统计', '', ''],
             [f'• 平均盈利概率', f'{avg_profit_prob:.1f}%', '所有情景的平均值'],
-            [f'• 最高盈利概率', f'{max_profit_prob:.1f}%', f'最优情景：{best_scenario_obj.get("name", "N/A")}'],
-            [f'• 最低盈利概率', f'{min_profit_prob:.1f}%', f'最差情景：{worst_scenario_obj.get("name", "N/A")}'],
+            [f'• 最高盈利概率', f'{max_profit_prob:.1f}%', f'最优情景：{best_scenario_name}'],
+            [f'• 最低盈利概率', f'{min_profit_prob:.1f}%', f'最差情景：{worst_scenario_name}'],
             ['', '', ''],
             ['收益率中位数统计', '', ''],
             [f'• 平均收益率', f'{avg_median_return*100:+.1f}%', '年化收益率'],
-            [f'• 最高收益率', f'{max_median_return*100:+.1f}%', f'情景：{best_scenario_obj.get("name", "N/A")}'],
-            [f'• 最低收益率', f'{min_median_return*100:+.1f}%', f'情景：{worst_scenario_obj.get("name", "N/A")}'],
+            [f'• 最高收益率', f'{max_median_return*100:+.1f}%', f'情景：{best_scenario_name}'],
+            [f'• 最低收益率', f'{min_median_return*100:+.1f}%', f'情景：{worst_scenario_name}'],
         ])
 
         add_table_data(document, ['统计项目', '数值', '说明'], summary_data)
 
-        # 添加说明
-        add_paragraph(document, '')
+        # 添加说明（表格与正文之间不需要空行）
         add_paragraph(document, ' 情景说明：')
         add_paragraph(document, f'• 6.1多参数情景：{scenario_type_counts.get("多参数情景", 0)}个，涵盖漂移率、波动率、溢价率的全部组合')
         add_paragraph(document, f'• 6.2.1市场指数情景：{scenario_type_counts.get("市场指数情景", 0)}个（3×3×5矩阵）')
@@ -1377,8 +1389,8 @@ def generate_chapter(context):
         add_paragraph(document, ' 评级说明：')
         add_paragraph(document, f'• 平均盈利概率：{avg_profit_prob:.1f}%，{"较高" if avg_profit_prob >= 70 else "中等" if avg_profit_prob >= 50 else "较低"}')
         add_paragraph(document, f'• 平均收益率：{avg_median_return*100:+.1f}%，{"表现良好" if avg_median_return >= 0.10 else "表现一般" if avg_median_return >= 0 else "表现不佳"}')
-        add_paragraph(document, f'• 最优情景：{best_scenario_obj.get("name", "N/A")}，盈利概率{best_scenario.get("profit_prob", 0):.1f}%，收益率{best_scenario.get("median_return", 0)*100:+.1f}%')
-        add_paragraph(document, f'• 最差情景：{worst_scenario_obj.get("name", "N/A")}，盈利概率{worst_scenario.get("profit_prob", 0):.1f}%，收益率{worst_scenario.get("median_return", 0)*100:+.1f}%')
+        add_paragraph(document, f'• 最优情景：{best_scenario_name}，盈利概率{best_scenario.get("profit_prob", 0):.1f}%，收益率{best_scenario.get("median_return", 0)*100:+.1f}%')
+        add_paragraph(document, f'• 最差情景：{worst_scenario_name}，盈利概率{worst_scenario.get("profit_prob", 0):.1f}%，收益率{worst_scenario.get("median_return", 0)*100:+.1f}%')
         add_paragraph(document, '')
 
         add_paragraph(document, ' 投资建议：')
