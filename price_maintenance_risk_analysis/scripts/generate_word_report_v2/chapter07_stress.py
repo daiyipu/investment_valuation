@@ -375,40 +375,6 @@ def generate_chapter(context):
     add_paragraph(document, '图表 7.1: 经济面极端情况压力测试')
     add_image(document, stress_chart_path)
 
-    # 三、经济面压力测试结论
-    add_paragraph(document, '')
-    add_paragraph(document, '7.2.3 经济面压力测试结论', bold=True)
-
-    # 统计分析
-    profit_scenarios = sum(1 for r in scenario_returns_list if r > 0)
-    total_scenarios = len(scenario_returns_list)
-    worst_loss = min(scenario_pnl_list) / 10000
-    worst_loss_percent = min(scenario_returns_list)
-    best_scenario_idx = scenario_returns_list.index(max(scenario_returns_list))
-    worst_scenario_idx = scenario_returns_list.index(min(scenario_returns_list))
-
-    add_paragraph(document, f'压力测试统计：')
-    add_paragraph(document, f'• 总情景数: {total_scenarios} 种')
-    add_paragraph(document, f'• 盈利情景: {profit_scenarios} 种')
-    add_paragraph(document, f'• 亏损情景: {total_scenarios - profit_scenarios} 种')
-    add_paragraph(document, f'• 盈利概率: {profit_scenarios/total_scenarios*100:.1f}%')
-    add_paragraph(document, f'风险分析：')
-    add_paragraph(document, f'• 最大潜在亏损: {abs(worst_loss):.2f} 万元')
-    add_paragraph(document, f'• 最大亏损率: {worst_loss_percent:.2f}%')
-    add_paragraph(document, f'• 最坏情景: {scenario_names[worst_scenario_idx]}')
-    add_paragraph(document, f'• 最好情景: {scenario_names[best_scenario_idx]}')
-    # 风险等级评估
-    if profit_scenarios >= total_scenarios * 0.7:
-        risk_level = "低风险 - 大部分情景下盈利"
-        risk_emoji = "🟢"
-    elif profit_scenarios >= total_scenarios * 0.4:
-        risk_level = "中等风险 - 约一半情景下盈利"
-        risk_emoji = "🟡"
-    else:
-        risk_level = "高风险 - 大部分情景下亏损"
-        risk_emoji = ""
-
-    add_paragraph(document, f'{risk_emoji} 经济面压力测试评级: {risk_level}')
 
     # ==================== 7.3 多重敏感性指标极端情况压力测试 ====================
     add_title(document, '7.3 多重敏感性指标极端情况压力测试', level=2)
@@ -430,7 +396,7 @@ def generate_chapter(context):
     lockup_months = project_params['lockup_period']
 
     # 情景1：平价发行 + 高波动 + 负向漂移（三重打击）
-    premium_rate_extreme = 0.0  # 0%溢价（平价）
+    premium_rate_extreme = 0.0  # 0%溢价（平价发行）
     vol_multiplier_extreme = 1.5  # 波动率放大1.5倍
     drift_extreme = current_drift_120d * 1.5  # 当前漂移率放大1.5倍（使情况更糟）
 
@@ -460,13 +426,38 @@ def generate_chapter(context):
     var_99_extreme = np.percentile(annualized_returns_extreme, 1) * 100
     worst_loss_extreme = np.min(annualized_returns_extreme) * 100
 
+    # 计算正常情景（使用正常发行价和正常参数）
+    issue_price_normal = project_params["issue_price"]
+    vol_normal = current_vol_120d
+    drift_rate_normal = current_drift_120d
+
+    lockup_drift_normal = drift_rate_normal * (lockup_months / 12)
+    lockup_vol_normal = vol_normal * np.sqrt(lockup_months / 12)
+
+    # 使用蒙特卡洛模拟计算正常情景
+    np.random.seed(42)
+    returns_normal = np.random.normal(lockup_drift_normal, lockup_vol_normal, n_sim_extreme)
+    final_prices_normal = current_price_multi * np.exp(returns_normal)
+
+    # 计算正常情景收益率
+    returns_pnl_normal = (final_prices_normal - issue_price_normal) / issue_price_normal
+    annualized_returns_normal = (1 + returns_pnl_normal) ** (12 / lockup_months) - 1
+
+    # 统计正常情景结果
+    mean_return_normal = annualized_returns_normal.mean() * 100
+    median_return_normal = np.median(annualized_returns_normal) * 100
+    profit_prob_normal = (returns_pnl_normal > 0).mean() * 100
+    var_95_normal = np.percentile(annualized_returns_normal, 5) * 100
+    var_99_normal = np.percentile(annualized_returns_normal, 1) * 100
+    worst_loss_normal = np.min(annualized_returns_normal) * 100
+
     # 构建对比表格
     add_paragraph(document, '极端情景参数设置：')
     extreme_scenario_headers = ['参数', '正常值', '极端值', '变化幅度']
     extreme_scenario_data = [
-        ['发行价', f'{project_params["issue_price"]:.2f}元', f'{issue_price_extreme:.2f}元', f'{premium_rate_extreme*100:.0f}%溢价（平价）' if premium_rate_extreme == 0 else f'+{premium_rate_extreme*100:.0f}%溢价'],
-        ['波动率', f'{current_vol_120d*100:.2f}%', f'{vol_extreme*100:.2f}%', f'×{vol_multiplier_extreme:.1f}'],
-        ['漂移率', f'{current_drift_120d*100:+.2f}%', f'{drift_rate_extreme*100:+.2f}%', f'×{vol_multiplier_extreme:.1f}'],
+        ['发行价', f'{issue_price_normal:.2f}元', f'{issue_price_extreme:.2f}元', f'{premium_rate_extreme*100:.0f}%溢价（平价）'],
+        ['波动率', f'{vol_normal*100:.2f}%', f'{vol_extreme*100:.2f}%', f'×{vol_multiplier_extreme:.1f}'],
+        ['漂移率', f'{drift_rate_normal*100:+.2f}%', f'{drift_rate_extreme*100:+.2f}%', f'×{vol_multiplier_extreme:.1f}'],
         ['窗口期', '120日', '120日', '保持不变'],
         ['锁定期', f'{lockup_months}个月', f'{lockup_months}个月', '保持不变']
     ]
@@ -477,12 +468,12 @@ def generate_chapter(context):
 
     extreme_results_headers = ['指标', '正常情景', '极端情景（三重打击）', '差异']
     extreme_results_data = [
-        ['预期年化收益', f'{current_drift_120d*100:+.2f}%', f'{mean_return_extreme:+.2f}%', f'{mean_return_extreme - current_drift_120d*100:+.2f}%'],
-        ['中位数收益', f'{current_drift_120d*100:+.2f}%', f'{median_return_extreme:+.2f}%', f'{median_return_extreme - current_drift_120d*100:+.2f}%'],
-        ['盈利概率', '待计算', f'{profit_prob_extreme:.1f}%', f'{profit_prob_extreme - 50:+.1f}%'],
-        ['95% VaR', '待计算', f'{var_95_extreme:+.2f}%', f'极端损失'],
-        ['99% VaR', '待计算', f'{var_99_extreme:+.2f}%', f'极端损失'],
-        ['最差情况', '待计算', f'{worst_loss_extreme:+.2f}%', f'极端损失']
+        ['预期年化收益', f'{mean_return_normal:+.2f}%', f'{mean_return_extreme:+.2f}%', f'{mean_return_extreme - mean_return_normal:+.2f}%'],
+        ['中位数收益', f'{median_return_normal:+.2f}%', f'{median_return_extreme:+.2f}%', f'{median_return_extreme - median_return_normal:+.2f}%'],
+        ['盈利概率', f'{profit_prob_normal:.1f}%', f'{profit_prob_extreme:.1f}%', f'{profit_prob_extreme - profit_prob_normal:+.1f}%'],
+        ['95% VaR', f'{var_95_normal:+.2f}%', f'{var_95_extreme:+.2f}%', f'{var_95_extreme - var_95_normal:+.2f}%'],
+        ['99% VaR', f'{var_99_normal:+.2f}%', f'{var_99_extreme:+.2f}%', f'{var_99_extreme - var_99_normal:+.2f}%'],
+        ['最差情况', f'{worst_loss_normal:+.2f}%', f'{worst_loss_extreme:+.2f}%', f'{worst_loss_extreme - worst_loss_normal:+.2f}%']
     ]
     add_table_data(document, extreme_results_headers, extreme_results_data)
 
