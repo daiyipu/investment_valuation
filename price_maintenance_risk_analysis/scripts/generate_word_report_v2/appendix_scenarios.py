@@ -22,13 +22,15 @@ def generate_chapter(context):
     # 分别获取两种情景数据
     multi_param_scenarios = context['results'].get('multi_param_scenarios_585', [])
     historical_scenarios = context['results'].get('historical_scenarios_195', [])
+    project_params = context['project_params']
+    market_data = context['market_data']
 
     # 生成附件内容
-    _generate_appendix_scenarios(document, multi_param_scenarios, historical_scenarios)
+    _generate_appendix_scenarios(document, multi_param_scenarios, historical_scenarios, project_params, market_data)
     return context
 
 
-def _generate_appendix_scenarios(document, multi_param_scenarios, historical_scenarios):
+def _generate_appendix_scenarios(document, multi_param_scenarios, historical_scenarios, project_params, market_data):
     """
     生成附件：情景分析完整数据表
 
@@ -36,6 +38,8 @@ def _generate_appendix_scenarios(document, multi_param_scenarios, historical_sce
     - document: Word文档对象
     - multi_param_scenarios: 6.1节的585种多参数构造情景
     - historical_scenarios: 6.2-6.5节的195种历史数据情景
+    - project_params: 项目参数
+    - market_data: 市场数据
     """
     from module_utils import add_title, add_paragraph, add_table_data, add_section_break
 
@@ -62,6 +66,15 @@ def _generate_appendix_scenarios(document, multi_param_scenarios, historical_sce
     add_paragraph(document, '')
 
     _generate_historical_tables(document, historical_scenarios)
+
+    # ==================== 附件3：溢价率对比表 ====================
+    add_section_break(document)
+    add_title(document, '附件3：溢价率对比表', level=1)
+
+    add_paragraph(document, '本附件提供不同溢价率下的发行价对比，以及与发行日价格和当前价格的差异情况。')
+    add_paragraph(document, '')
+
+    _generate_premium_rate_table(document, project_params, market_data)
 
 def _generate_multi_param_tables(document, multi_param_scenarios):
     """生成585种多参数构造情景的表格"""
@@ -302,3 +315,104 @@ def _generate_historical_tables(document, historical_scenarios):
     add_paragraph(document, '• 行业PE情景：基于行业PE分位数的估值回归情景')
     add_paragraph(document, '• 个股PE情景：基于个股PE分位数的估值回归情景')
     add_paragraph(document, '• DCF估值情景：基于DCF内在价值的估值情景')
+
+
+def _generate_premium_rate_table(document, project_params, market_data):
+    """
+    生成溢价率对比表
+
+    参数说明：
+    - document: Word文档对象
+    - project_params: 项目参数
+    - market_data: 市场数据
+    """
+    from module_utils import add_title, add_paragraph, add_table_data
+
+    # 获取基础价格数据
+    ma20_price = market_data.get('ma_20', 0)
+    current_price = market_data.get('current_price', 0)
+    issue_date_price = project_params.get('current_price', 0)  # 发行日价格
+    actual_issue_price = project_params.get('issue_price', 0)  # 实际发行价
+
+    # 获取发行日期
+    issue_date = project_params.get('issue_date', 'N/A')
+
+    # 生成从-20%到+10%的溢价率表格，每1%一个档
+    add_title(document, '附表：溢价率与发行价对比表', level=2)
+
+    add_paragraph(document, f'基础价格信息：')
+    add_paragraph(document, f'• MA20价格：{ma20_price:.2f} 元/股')
+    add_paragraph(document, f'• 当前价格：{current_price:.2f} 元/股（最新交易日）')
+    add_paragraph(document, f'• 发行日价格：{issue_date_price:.2f} 元/股（发行日{issue_date}）')
+    add_paragraph(document, f'• 实际发行价：{actual_issue_price:.2f} 元/股（溢价率{(actual_issue_price/ma20_price - 1)*100:+.1f}%）')
+    add_paragraph(document, '')
+
+    # 生成溢价率对比表格数据
+    premium_rate_data = []
+
+    # 从-20%到+10%，每1%一个档
+    for premium_rate in range(-20, 11, 1):
+        premium_rate_decimal = premium_rate / 100.0
+        calculated_issue_price = ma20_price * (1 + premium_rate_decimal)
+
+        # 计算与发行日价格的差异
+        diff_with_issue_date = calculated_issue_price - issue_date_price
+        diff_with_issue_date_pct = (calculated_issue_price / issue_date_price - 1) * 100
+
+        # 计算与当前价格的差异
+        diff_with_current = calculated_issue_price - current_price
+        diff_with_current_pct = (calculated_issue_price / current_price - 1) * 100
+
+        # 判断溢价率类型
+        if premium_rate < 0:
+            rate_type = f"{abs(premium_rate)}%折价"
+        elif premium_rate == 0:
+            rate_type = "平价"
+        else:
+            rate_type = f"{premium_rate}%溢价"
+
+        # 高亮实际发行价行
+        if abs(calculated_issue_price - actual_issue_price) < 0.01:
+            row_marker = "★"
+        else:
+            row_marker = ""
+
+        premium_rate_data.append([
+            f"{premium_rate:+d}%",
+            rate_type,
+            f"{calculated_issue_price:.2f}",
+            f"{diff_with_issue_date:+.2f}",
+            f"{diff_with_issue_date_pct:+.1f}%",
+            f"{diff_with_current:+.2f}",
+            f"{diff_with_current_pct:+.1f}%",
+            row_marker
+        ])
+
+    # 添加表格
+    premium_headers = ['溢价率', '类型', '发行价(元)', '与发行日价格差异(元)', '与发行日价格差异(%)', '与当前价格差异(元)', '与当前价格差异(%)', '当前方案']
+    add_table_data(document, premium_headers, premium_rate_data)
+
+    add_paragraph(document, '')
+    add_paragraph(document, '附表说明：')
+    add_paragraph(document, '• 溢价率：发行价相对MA20的溢价程度（负值=折价，正值=溢价）')
+    add_paragraph(document, '• 类型：溢价率的文字描述（折价/平价/溢价）')
+    add_paragraph(document, '• 发行价：根据MA20和溢价率计算出的发行价格 = MA20 × (1 + 溢价率)')
+    add_paragraph(document, '• 与发行日价格差异：计算出的发行价与实际发行日价格之间的绝对差异和相对差异')
+    add_paragraph(document, '• 与当前价格差异：计算出的发行价与当前最新交易日价格之间的绝对差异和相对差异')
+    add_paragraph(document, f'• 当前方案（★）：标记实际使用的发行方案，溢价率{(actual_issue_price/ma20_price - 1)*100:+.1f}%，发行价{actual_issue_price:.2f}元')
+    add_paragraph(document, '')
+
+    add_paragraph(document, '关键观察：')
+    add_paragraph(document, f'• 折价发行（溢价率<0%）：发行价低于MA20，有利于投资者获得安全边际')
+    add_paragraph(document, f'• 平价发行（溢价率=0%）：发行价等于MA20价格{ma20_price:.2f}元')
+    add_paragraph(document, f'• 溢价发行（溢价率>0%）：发行价高于MA20，投资者承担更高的估值风险')
+    add_paragraph(document, f'• 当前方案{actual_issue_price:.2f}元相对发行日价格{issue_date_price:.2f}元{"溢价" if actual_issue_price > issue_date_price else "折价"}{abs((actual_issue_price/issue_date_price - 1)*100):.1f}%')
+    add_paragraph(document, f'• 当前方案{actual_issue_price:.2f}元相对当前价格{current_price:.2f}元{"溢价" if actual_issue_price > current_price else "折价"}{abs((actual_issue_price/current_price - 1)*100):.1f}%')
+    add_paragraph(document, '')
+
+    add_paragraph(document, '使用建议：')
+    add_paragraph(document, '• 参考本表评估不同溢价率方案的风险收益特征')
+    add_paragraph(document, '• 对比不同溢价率下的发行价与市场价格差异，选择合适的发行方案')
+    add_paragraph(document, '• 关注发行价相对当前价格的折溢价程度，评估投资价值')
+    add_paragraph(document, '• 结合市场环境和项目质量，在安全边际和发行成功之间取得平衡')
+    add_paragraph(document, '')
