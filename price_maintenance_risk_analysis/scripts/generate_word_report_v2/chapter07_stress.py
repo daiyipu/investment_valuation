@@ -386,7 +386,7 @@ def generate_chapter(context):
 
     # 定义多重极端情景
     # 同时考虑：
-    # 1. 平价发行（0%溢价，不溢价）
+    # 1. 平价发行（发行价等于MA20价格，无折价）
     # 2. 高波动率（当前波动率 × 1.5）
     # 3. 负向漂移率（当前漂移率 × 1.5，使情况更糟）
 
@@ -400,15 +400,15 @@ def generate_chapter(context):
     premium_rate_normal = -0.10  # 正常情况：10%折价（九折）
 
     # 情景1：平价发行 + 高波动 + 负向漂移（三重打击）
-    premium_rate_extreme = 0.0  # 0%溢价（平价发行）
+    premium_rate_extreme = 0.0  # 0%溢价（平价发行，即发行价=MA20价格）
     vol_multiplier_extreme = 1.5  # 波动率放大1.5倍
     drift_extreme = current_drift_120d * 1.5  # 当前漂移率放大1.5倍（使情况更糟）
 
     # 正常情景：使用MA20的九折作为发行价
     issue_price_normal = ma20_price * (1 + premium_rate_normal)
 
-    # 极端情景：平价发行（使用当前价格作为发行价）
-    issue_price_extreme = current_price_multi * (1 + premium_rate_extreme)
+    # 极端情景：平价发行（发行价等于MA20价格）
+    issue_price_extreme = ma20_price * (1 + premium_rate_extreme)
 
     vol_extreme = current_vol_120d * vol_multiplier_extreme
     drift_rate_extreme = drift_extreme
@@ -463,7 +463,7 @@ def generate_chapter(context):
     add_paragraph(document, '极端情景参数设置：')
     extreme_scenario_headers = ['参数', '正常值', '极端值', '变化幅度']
     extreme_scenario_data = [
-        ['发行价', f'{issue_price_normal:.2f}元', f'{issue_price_extreme:.2f}元', f'{premium_rate_extreme*100:.0f}%溢价（平价）'],
+        ['发行价', f'{issue_price_normal:.2f}元（MA20九折）', f'{issue_price_extreme:.2f}元（MA20平价）', '折价→平价'],
         ['波动率', f'{vol_normal*100:.2f}%', f'{vol_extreme*100:.2f}%', f'×{vol_multiplier_extreme:.1f}'],
         ['漂移率', f'{drift_rate_normal*100:+.2f}%', f'{drift_rate_extreme*100:+.2f}%', f'×{vol_multiplier_extreme:.1f}'],
         ['窗口期', '120日', '120日', '保持不变'],
@@ -503,7 +503,7 @@ def generate_chapter(context):
     add_paragraph(document, '')
 
     add_paragraph(document, '关键发现：')
-    add_paragraph(document, f'• 在平价发行（溢价率0%）、高波动（×1.5）、负向漂移（{drift_extreme*100:+.2f}%）的三重打击下：')
+    add_paragraph(document, f'• 在平价发行（发行价等于MA20价格{ma20_price:.2f}元）、高波动（×1.5）、负向漂移（{drift_extreme*100:+.2f}%）的三重打击下：')
     add_paragraph(document, f'  - 预期年化收益率为{mean_return_extreme:+.2f}%')
     add_paragraph(document, f'  - 盈利概率为{profit_prob_extreme:.1f}%')
     add_paragraph(document, f'  - 95% VaR为{var_95_extreme:+.2f}%，表示95%置信度下最大损失为{abs(var_95_extreme):.2f}%')
