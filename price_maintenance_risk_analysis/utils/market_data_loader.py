@@ -69,7 +69,7 @@ def load_market_data(stock_code: str, data_dir: str = None, data_type: str = 'st
     if not os.path.exists(filepath):
         print(f"⚠️ 市场数据文件不存在: {filepath}")
         if data_type == 'stock':
-            print(f"   提示: 请先运行 07_market_data_analysis.ipynb 生成数据")
+            print(f"   提示: 系统会自动生成市场数据，或手动运行: python scripts/update_market_data.py")
         else:
             print(f"   提示: 请先运行 update_market_data.py 生成行业数据")
         return None
@@ -188,7 +188,7 @@ def load_market_indices_data(data_dir: str = '..') -> Optional[Dict]:
 
     if not os.path.exists(filepath):
         print(f"⚠️ 指数数据文件不存在: {filepath}")
-        print(f"   提示: 请先运行 07_market_data_analysis.ipynb 第二部分生成数据")
+        print(f"   提示: 请运行 python scripts/update_indices_data.py 生成市场指数数据")
         return None
 
     try:

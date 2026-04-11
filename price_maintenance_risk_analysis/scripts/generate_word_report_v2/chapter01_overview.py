@@ -432,9 +432,9 @@ def generate_chapter(context):
 
         except Exception as e:
             print(f" 加载指数数据失败: {e}")
-            add_paragraph(document, ' 指数数据暂未加载，请先运行07_market_data_analysis.ipynb生成数据')
+            add_paragraph(document, ' 指数数据暂未加载，请运行python scripts/update_indices_data.py生成数据')
     else:
-        add_paragraph(document, ' 指数数据文件不存在，请先运行07_market_data_analysis.ipynb生成数据')
+        add_paragraph(document, ' 指数数据文件不存在，请运行python scripts/update_indices_data.py生成数据')
 
     # 1.4 行业数据分析
     add_paragraph(document, '')

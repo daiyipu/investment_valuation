@@ -15,6 +15,7 @@
 
 import sys
 import os
+import json
 from datetime import datetime, timedelta
 from docx import Document
 
@@ -193,6 +194,39 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
     # 创建Word文档
     document = Document()
     utils.setup_chinese_font(document)
+
+    # 检查市场数据文件是否存在，如果不存在则自动生成
+    market_data_file = os.path.join(DATA_DIR, f"{stock_code.replace('.', '_')}_market_data.json")
+    if not os.path.exists(market_data_file):
+        print(f"⚠️ 市场数据文件不存在: {market_data_file}")
+        print(f"📥 自动生成市场数据...")
+
+        try:
+            # 导入update_market_data模块
+            sys.path.insert(0, os.path.join(PROJECT_DIR, 'scripts'))
+            from update_market_data import generate_market_data
+
+            # 生成市场数据
+            updated_market_data = generate_market_data(stock_code, stock_name, issue_date)
+
+            if updated_market_data:
+                # 保存到文件
+                with open(market_data_file, 'w', encoding='utf-8') as f:
+                    json.dump(updated_market_data, f, ensure_ascii=False, indent=2)
+                print(f"✅ 市场数据生成成功！已保存到: {market_data_file}")
+                print(f"   数据日期: {updated_market_data.get('analysis_date', 'N/A')}")
+                print(f"   当前价格: {updated_market_data.get('current_price', 'N/A')}")
+                print(f"   MA20: {updated_market_data.get('ma_20', 'N/A')}")
+            else:
+                print(f"❌ 市场数据生成失败！")
+                print(f"   请检查网络连接和Tushare API配置")
+                sys.exit(1)
+
+        except Exception as e:
+            print(f"❌ 自动生成市场数据失败: {e}")
+            print(f"   请手动运行以下命令生成数据：")
+            print(f"   python scripts/update_market_data.py --stock {stock_code} --name {stock_name}")
+            sys.exit(1)
 
     # 加载配置数据
     print("\n 加载配置数据...")
