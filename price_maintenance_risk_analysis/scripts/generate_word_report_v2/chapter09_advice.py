@@ -1148,19 +1148,19 @@ def generate_chapter(context):
         add_paragraph(document, '投资建议：', bold=True)
         if total_qualified_categories >= 2:
             # 至少两个大场景符合条件，支持报价
-            # 取所有符合条件场景中相对最高的溢价率作为指导溢价率
+            # 收集所有符合条件场景的溢价率，形成区间
             all_qualified = []
             for scenarios in qualified_by_category.values():
                 all_qualified.extend(scenarios)
 
-            # 按溢价率降序排序，取最高的
-            all_qualified.sort(key=lambda x: x['premium_rate'], reverse=True)
-            guidance_premium = all_qualified[0]['premium_rate']
-            guidance_scenario = all_qualified[0]
+            # 计算溢价率区间
+            all_premiums = [s['premium_rate'] for s in all_qualified]
+            min_premium = min(all_premiums)  # 最低（最大折价）
+            max_premium = max(all_premiums)  # 最高（最小折价）
 
             add_paragraph(document, f'• 至少{total_qualified_categories}个大场景符合条件，支持参与报价')
-            add_paragraph(document, f'• 指导溢价率：{guidance_premium:+.2f}%（来自{guidance_scenario["name"]}）')
-            add_paragraph(document, f'• 建议报价范围：溢价率≤{guidance_premium:.1f}%（折价至少{abs(guidance_premium):.1f}%）')
+            add_paragraph(document, f'• 指导溢价率：{min_premium:+.2f}% 至 {max_premium:+.2f}%（综合{len(all_qualified)}个符合条件的场景）')
+            add_paragraph(document, f'• 建议报价范围：溢价率在[{min_premium:+.2f}%, {max_premium:+.2f}%]区间内（折价{abs(min_premium):.1f}%至{abs(max_premium):.1f}%）')
         else:
             # 少于两个大场景符合条件，建议不参与
             add_paragraph(document, f'• 仅{total_qualified_categories}个大场景符合条件（少于2个），建议本项目不参与')
