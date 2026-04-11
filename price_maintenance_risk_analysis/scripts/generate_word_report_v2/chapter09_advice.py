@@ -1294,7 +1294,88 @@ def generate_chapter(context):
     add_paragraph(document, '综合以上三种情景筛选结果，给出最终的溢价率区间建议。')
     add_paragraph(document, '')
 
-    add_paragraph(document, '综合分析结果：', bold=True)
+    # 9.3.2.4.1 溢价率情景对照表
+    add_paragraph(document, '9.3.2.4.1 溢价率情景对照表', bold=True)
+
+    add_paragraph(document, '为明确推导过程，以下是各筛选方法中每一档溢价率对应的情景统计：')
+    add_paragraph(document, '')
+
+    # 创建综合的溢价率情景对照表
+    if 'scenario_options' in locals() and scenario_options:
+        # 按溢价率分组统计
+        premium_groups = {}
+        for scenario in scenario_options:
+            premium_rate = scenario['premium_rate']
+            premium_key = f"{premium_rate:+.1f}%"
+
+            if premium_key not in premium_groups:
+                premium_groups[premium_key] = {
+                    'premium_rate': premium_rate,
+                    'scenarios': [],
+                    'categories': set(),
+                    'count': 0
+                }
+
+            premium_groups[premium_key]['scenarios'].append(scenario['name'])
+            premium_groups[premium_key]['categories'].add(scenario['name'].split('-')[0])  # 提取大类
+            premium_groups[premium_key]['count'] += 1
+
+        # 获取所有溢价率并排序
+        sorted_premiums = sorted(premium_groups.keys(), key=lambda x: float(x.replace('%', '')), reverse=True)
+
+        # 构建表格数据
+        premium_table_data = []
+        for premium_key in sorted_premiums:
+            group = premium_groups[premium_key]
+            scenarios_list = list(group['categories'])
+            scenarios_list.sort()
+
+            # 获取该档次第一个情景的详细信息
+            first_scenario = None
+            for scenario in scenario_options:
+                if f"{scenario['premium_rate']:+.1f}%" == premium_key:
+                    first_scenario = scenario
+                    break
+
+            # 情景特征说明
+            scenario_features = []
+            if first_scenario:
+                if first_scenario['median_return'] > 8:
+                    scenario_features.append(f"收益率{first_scenario['median_return']:.1f}%")
+                if first_scenario['profit_prob'] > 50:
+                    scenario_features.append(f"盈利概率{first_scenario['profit_prob']:.1f}%")
+                if abs(first_scenario.get('var_95', 0)) < 60:
+                    scenario_features.append(f"风险可控")
+
+            premium_table_data.append([
+                premium_key,
+                f"{group['count']}个",
+                ', '.join(scenarios_list),
+                '; '.join(scenario_features) if scenario_features else "基础符合条件"
+            ])
+
+        premium_headers = ['溢价率档次', '符合情景数量', '情景类型', '情景特征']
+        add_table_data(document, premium_headers, premium_table_data)
+
+        add_paragraph(document, '')
+        add_paragraph(document, '表格说明：')
+        add_paragraph(document, '• 溢价率档次：按名义溢价率（相对MA20）从高到低排序，数值越大折价越大')
+        add_paragraph(document, '• 符合情景数量：该档次中满足筛选条件的情景总数，反映历史数据支持程度')
+        add_paragraph(document, '• 情景类型：涉及的5个大类（市场指数、行业指数、行业PE、个股PE、DCF估值）')
+        add_paragraph(document, '• 情景特征：该档次情景的关键指标特征（收益率、盈利概率、风险水平）')
+        add_paragraph(document, '')
+
+        # 添加推导说明
+        add_paragraph(document, '区间推导逻辑：', bold=True)
+        add_paragraph(document, '• 最终报价区间基于上述表格中的溢价率档次分布综合确定')
+        add_paragraph(document, '• 优先选择符合条件数量较多的溢价率区间，确保历史数据支持充分')
+        add_paragraph(document, '• 结合反向推算和参数构造情景的约束条件，确定区间的上下限')
+        add_paragraph(document, '• 综合考虑三种筛选方法（历史数据、参数构造、反向推算）的交集结果')
+        add_paragraph(document, '')
+
+    # 9.3.2.4.2 综合分析结果
+    add_paragraph(document, '9.3.2.4.2 综合分析结果', bold=True)
+    add_paragraph(document, '')
 
     # 这里需要汇总前面三个子节的阈值结果
     # 由于前面结果是在不同作用域中计算的，这里需要重新计算或存储
