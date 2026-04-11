@@ -357,7 +357,7 @@ def generate_chapter(context):
     generate_stress_test_chart(scenario_names, scenario_returns_list, stress_chart_path)
 
     # 二、压力测试结果
-    add_paragraph(document, '7.2.2 压力测试结果', bold=True)
+    add_title(document, '7.2.2 压力测试结果', level=3)
 
     # 生成详细的结果表格
     stress_table = []
@@ -382,7 +382,7 @@ def generate_chapter(context):
     add_paragraph(document, '本节分析当多个敏感性指标同时发生极端情况时的最差情景。')
     add_paragraph(document, '通过组合最不利的参数（平价发行 + 高波动率 + 负向漂移率），评估项目的风险承受边界。')
 
-    add_paragraph(document, '7.3.1 极端情景组合定义', bold=True)
+    add_title(document, '7.3.1 极端情景组合定义', level=3)
 
     # 定义多重极端情景
     # 同时考虑：
@@ -472,7 +472,7 @@ def generate_chapter(context):
     add_table_data(document, extreme_scenario_headers, extreme_scenario_data)
 
     add_paragraph(document, '')
-    add_paragraph(document, '7.3.2 极端情景模拟结果', bold=True)
+    add_title(document, '7.3.2 极端情景模拟结果', level=3)
 
     extreme_results_headers = ['指标', '正常情景', '极端情景（三重打击）', '差异']
     extreme_results_data = [
@@ -486,7 +486,7 @@ def generate_chapter(context):
     add_table_data(document, extreme_results_headers, extreme_results_data)
 
     add_paragraph(document, '')
-    add_paragraph(document, '7.3.3 极端情景分析', bold=True)
+    add_title(document, '7.3.3 极端情景分析', level=3)
 
     # 风险等级评估
     if profit_prob_extreme >= 40:
@@ -516,7 +516,7 @@ def generate_chapter(context):
     add_paragraph(document, '本节综合前面7.1、7.2、7.3的压力测试结果，总结定增项目在各类极端情况下的风险表现。')
     add_paragraph(document, '')
 
-    add_paragraph(document, '7.4.1 压力测试全景汇总', bold=True)
+    add_title(document, '7.4.1 压力测试全景汇总', level=3)
 
     # 计算7.2经济面极端情况的统计数据
     # 最差情景是排序后的第一个（价格最低）
