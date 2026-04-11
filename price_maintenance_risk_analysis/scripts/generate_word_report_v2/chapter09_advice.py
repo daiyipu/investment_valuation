@@ -1301,24 +1301,29 @@ def generate_chapter(context):
     add_paragraph(document, '')
 
     # 创建综合的溢价率情景对照表
-    if 'scenario_options' in locals() and scenario_options:
+    # 使用已筛选的符合条件的历史数据场景，而不是所有场景
+    if 'qualified_by_category' in locals() and qualified_by_category:
         # 按溢价率分组统计
         premium_groups = {}
-        for scenario in scenario_options:
-            premium_rate = scenario['premium_rate']
-            premium_key = f"{premium_rate:+.1f}%"
+        for category, scenarios in qualified_by_category.items():
+            for scenario in scenarios:
+                premium_rate = scenario['premium_rate']
+                premium_key = f"{premium_rate:+.1f}%"
 
-            if premium_key not in premium_groups:
-                premium_groups[premium_key] = {
-                    'premium_rate': premium_rate,
-                    'scenarios': [],
-                    'categories': set(),
-                    'count': 0
-                }
+                if premium_key not in premium_groups:
+                    premium_groups[premium_key] = {
+                        'premium_rate': premium_rate,
+                        'scenarios': [],
+                        'categories': set(),
+                        'count': 0,
+                        'median_return': scenario['median_return'],
+                        'profit_prob': scenario['profit_prob'],
+                        'var_95': scenario.get('var_95', 0)
+                    }
 
-            premium_groups[premium_key]['scenarios'].append(scenario['name'])
-            premium_groups[premium_key]['categories'].add(scenario['name'].split('-')[0])  # 提取大类
-            premium_groups[premium_key]['count'] += 1
+                premium_groups[premium_key]['scenarios'].append(scenario['name'])
+                premium_groups[premium_key]['categories'].add(category)  # 直接使用category
+                premium_groups[premium_key]['count'] += 1
 
         # 获取所有溢价率并排序
         sorted_premiums = sorted(premium_groups.keys(), key=lambda x: float(x.replace('%', '')), reverse=True)
@@ -1330,11 +1335,14 @@ def generate_chapter(context):
             scenarios_list = list(group['categories'])
             scenarios_list.sort()
 
-            # 获取该档次第一个情景的详细信息
+            # 获取该档次第一个情景的详细信息（从已筛选的情景中）
             first_scenario = None
-            for scenario in scenario_options:
-                if f"{scenario['premium_rate']:+.1f}%" == premium_key:
-                    first_scenario = scenario
+            for category, scenarios in qualified_by_category.items():
+                for scenario in scenarios:
+                    if f"{scenario['premium_rate']:+.1f}%" == premium_key:
+                        first_scenario = scenario
+                        break
+                if first_scenario:
                     break
 
             # 情景特征说明
