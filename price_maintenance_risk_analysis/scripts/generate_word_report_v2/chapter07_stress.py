@@ -395,12 +395,21 @@ def generate_chapter(context):
     current_price_multi = market_data['current_price']
     lockup_months = project_params['lockup_period']
 
+    # 获取MA20价格，用于正确计算发行价
+    ma20_price = market_data.get('ma_20', current_price_multi)
+    premium_rate_normal = -0.10  # 正常情况：10%折价（九折）
+
     # 情景1：平价发行 + 高波动 + 负向漂移（三重打击）
     premium_rate_extreme = 0.0  # 0%溢价（平价发行）
     vol_multiplier_extreme = 1.5  # 波动率放大1.5倍
     drift_extreme = current_drift_120d * 1.5  # 当前漂移率放大1.5倍（使情况更糟）
 
+    # 正常情景：使用MA20的九折作为发行价
+    issue_price_normal = ma20_price * (1 + premium_rate_normal)
+
+    # 极端情景：平价发行（使用当前价格作为发行价）
     issue_price_extreme = current_price_multi * (1 + premium_rate_extreme)
+
     vol_extreme = current_vol_120d * vol_multiplier_extreme
     drift_rate_extreme = drift_extreme
 
@@ -427,7 +436,6 @@ def generate_chapter(context):
     worst_loss_extreme = np.min(annualized_returns_extreme) * 100
 
     # 计算正常情景（使用正常发行价和正常参数）
-    issue_price_normal = project_params["issue_price"]
     vol_normal = current_vol_120d
     drift_rate_normal = current_drift_120d
 

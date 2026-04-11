@@ -181,17 +181,20 @@ def generate_chapter(context):
     # 1.2 个股数据分析
     add_title(document, '1.2 个股数据分析', level=2)
 
+    # 获取最新的交易日价格（如果有保存的话）
+    latest_trading_price = project_params.get('latest_trading_date_price', market_data.get('current_price'))
+
     # 根据发行日是否确定，显示不同的价格标签
     if is_fixed_issue_date:
-        price_label_market = '发行日价格'
-        price_note_market = f'（发行日{project_params.get("issue_date", "")}）'
+        price_label_market = '最新交易日价格'
+        price_note_market = f'（数据日期{market_data.get("analysis_date", "")}）'
     else:
-        price_label_market = '发行日价格（拟）'
-        price_note_market = ''
+        price_label_market = '最新交易日价格'
+        price_note_market = f'（数据日期{market_data.get("analysis_date", "")}）'
 
     market_headers = ['指标', '数值']
     market_table_data = [
-        [price_label_market, f'{market_data["current_price"]:.2f} 元/股{price_note_market}'],
+        [price_label_market, f'{latest_trading_price:.2f} 元/股{price_note_market}'],
         ['平均价格', f'{market_data.get("avg_price_all", 0):.2f} 元/股（{market_data.get("total_days", 0)}个交易日）'],
         ['价格标准差', f'{market_data.get("price_std", 0):.2f}'],
         ['月度波动率(20日)', f'{market_data.get("volatility_20d", 0)*100:.2f}%'],
