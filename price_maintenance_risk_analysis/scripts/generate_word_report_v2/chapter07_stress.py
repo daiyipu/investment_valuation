@@ -518,13 +518,24 @@ def generate_chapter(context):
 
     add_paragraph(document, '7.4.1 压力测试全景汇总', bold=True)
 
+    # 计算7.2经济面极端情况的统计数据
+    # 最差情景是排序后的第一个（价格最低）
+    worst_scenario_idx = 0  # 已按价格从低到高排序
+    worst_scenario_name = scenario_names[worst_scenario_idx]
+    worst_loss_percent = scenario_returns_list[worst_scenario_idx]
+    worst_loss = scenario_pnl_list[worst_scenario_idx]
+
+    # 计算盈利情景数量
+    profit_scenarios = sum(1 for ret in scenario_returns_list if ret > 0)
+    total_scenarios = len(scenario_names)
+
     # 创建综合汇总表
     summary_headers = ['压力测试类型', '测试情景', '最差结果', '风险评估', '风险等级']
     summary_data = [
         ['7.1 PE回归压力测试', f'PE回归至行业Q1({pe_q1:.2f}倍)', f'{return_pe_stress:+.2f}%',
          '估值回归风险' if return_pe_stress < 0 else '估值安全边际充足',
          '高风险' if return_pe_stress <= -10 else '中等风险' if return_pe_stress <= 0 else '低风险'],
-        ['7.2 经济面极端情况', f'{scenario_names[worst_scenario_idx]}（股价下跌{int(stress_scenarios[scenario_names[worst_scenario_idx]]["price_drop"]*100)}%）',
+        ['7.2 经济面极端情况', f'{worst_scenario_name}（股价下跌{int(stress_scenarios[worst_scenario_name]["price_drop"]*100)}%）',
          f'{worst_loss_percent:+.2f}%', f'最大亏损{abs(worst_loss):.2f}万元',
          '高风险' if profit_scenarios <= total_scenarios * 0.4 else '中等风险' if profit_scenarios <= total_scenarios * 0.7 else '低风险'],
         ['7.3 多重敏感性指标极端', '平价发行+高波动+负向漂移', f'{mean_return_extreme:+.2f}%',
@@ -534,202 +545,6 @@ def generate_chapter(context):
     add_table_data(document, summary_headers, summary_data)
 
     add_paragraph(document, '')
-    add_section_break(document)
-
-    return context
-
-    # ==================== 7.4 压力测试综合结论 ====================
-    add_paragraph(document, '')
-    add_title(document, '7.4 压力测试综合结论', level=2)
-
-    add_paragraph(document, '本节综合前面7.1、7.2、7.3的压力测试结果，总结定增项目在各类极端情况下的风险表现。')
-    add_paragraph(document, '')
-
-    add_paragraph(document, '7.4.1 压力测试全景汇总', bold=True)
-
-    # 创建综合汇总表
-    summary_headers = ['压力测试类型', '测试情景', '最差结果', '风险评估', '风险等级']
-    summary_data = [
-        ['7.1 PE回归压力测试', f'PE回归至行业Q1({pe_q1:.2f}倍)', f'{return_pe_stress:+.2f}%',
-         '估值回归风险' if return_pe_stress < 0 else '估值安全边际充足',
-         '🟢低风险' if return_pe_stress > 0 else '🟡中等风险' if return_pe_stress > -10 else '高风险'],
-        ['7.2 经济面极端情况', f'{scenario_names[worst_scenario_idx]}（股价下跌{int(stress_scenarios[scenario_names[worst_scenario_idx]]["price_drop"]*100)}%）',
-         f'{worst_loss_percent:+.2f}%', f'最大亏损{abs(worst_loss):.2f}万元',
-         '🟢低风险' if profit_scenarios >= total_scenarios * 0.7 else '🟡中等风险' if profit_scenarios >= total_scenarios * 0.4 else '高风险'],
-        ['7.3 多重敏感性指标极端', '平价发行+高波动+负向漂移', f'{mean_return_extreme:+.2f}%',
-         f'盈利概率{profit_prob_extreme:.1f}%',
-         '🟡中等风险' if profit_prob_extreme >= 40 else '🟠较高风险' if profit_prob_extreme >= 20 else '极高风险']
-    ]
-    add_table_data(document, summary_headers, summary_data)
-
-    add_paragraph(document, '')
-    add_paragraph(document, '7.4.2 最坏风险情景分析', bold=True)
-
-    # 识别所有压力测试中的最坏情况
-    worst_results = {
-        'PE回归': return_pe_stress,
-        '经济面危机': worst_loss_percent,
-        '多重极端': mean_return_extreme
-    }
-
-    worst_scenario_all = min(worst_results, key=worst_results.get)
-    worst_loss_all = worst_results[worst_scenario_all]
-
-    add_paragraph(document, f' 全局最坏风险情景：{worst_scenario_all}')
-    add_paragraph(document, f'   在所有压力测试中，最严重的损失情景为"{worst_scenario_all}"，预期年化收益率为{worst_loss_all:+.2f}%')
-    add_paragraph(document, '')
-
-    if worst_loss_all > -10:
-        add_paragraph(document, ' 风险评估：即使在最坏情况下，损失幅度相对可控（<10%），项目具备较强的抗风险能力')
-    elif worst_loss_all > -30:
-        add_paragraph(document, ' 风险评估：在最坏情况下损失幅度为10-30%，风险可控但需做好仓位管理')
-    elif worst_loss_all > -50:
-        add_paragraph(document, '🟠 风险评估：在最坏情况下损失幅度为30-50%，风险较高，建议严格控制仓位')
-    else:
-        add_paragraph(document, '风险评估：在最坏情况下可能损失超过50%，风险极高，需极度谨慎或避免参与')
-
-    add_paragraph(document, '')
-    add_paragraph(document, '7.4.3 压力测试评分体系说明', bold=True)
-
-    add_paragraph(document, '为便于理解压力测试的风险评定逻辑，以下说明评分标准和等级划分。')
-    add_paragraph(document, '')
-
-    add_paragraph(document, '1. 评分维度与标准', bold=True)
-    stress_scoring_explanation = [
-        ['测试维度', '满分', '评分标准', '当前得分'],
-        ['PE回归测试', '3分', '收益>0%=1分, -10%~0%=2分, <-10%=3分', f'{1 if return_pe_stress > 0 else 2 if return_pe_stress > -10 else 3}分'],
-        ['经济面危机测试', '3分', '盈利≥70%=1分, 40%~70%=2分, <40%=3分', f'{1 if profit_scenarios >= total_scenarios * 0.7 else 2 if profit_scenarios >= total_scenarios * 0.4 else 3}分'],
-        ['多重极端叠加测试', '4分', '盈利≥40%=2分, 20%~40%=3分, <20%=4分', f'{2 if profit_prob_extreme >= 40 else 3 if profit_prob_extreme >= 20 else 4}分']
-    ]
-    add_table_data(document, ['测试维度', '满分', '评分标准', '当前得分'], stress_scoring_explanation)
-
-    add_paragraph(document, '')
-    add_paragraph(document, '2. 综合评分计算', bold=True)
-    add_paragraph(document, '   计算公式：综合评分 = (PE回归得分 + 经济面危机得分 + 多重极端得分) / 3')
-    add_paragraph(document, '   注意：评分采用1-4分制，分数越高表示风险越大')
-    add_paragraph(document, '')
-
-    add_paragraph(document, '3. 风险等级划分', bold=True)
-    stress_risk_levels = [
-        ['平均分范围', '风险等级', '标识', '含义'],
-        ['< 1.5分', '低风险', '🟢', '各项压力测试表现良好'],
-        ['1.5 - 2.5分', '中等风险', '🟡', '部分压力测试存在风险'],
-        ['2.5 - 3.5分', '较高风险', '🟠', '多项压力测试风险较高'],
-        ['≥ 3.5分', '高风险', '', '整体风险极高']
-    ]
-    add_table_data(document, ['平均分范围', '风险等级', '标识', '含义'], stress_risk_levels)
-
-    add_paragraph(document, '')
-    add_paragraph(document, '7.4.4 综合风险等级评定', bold=True)
-
-    # 综合风险等级计算
-    risk_scores = []
-
-    # PE回归风险评分
-    if return_pe_stress > 0:
-        risk_scores.append(1)  # 低风险
-    elif return_pe_stress > -10:
-        risk_scores.append(2)  # 中等风险
-    else:
-        risk_scores.append(3)  # 高风险
-
-    # 经济面压力测试风险评分
-    if profit_scenarios >= total_scenarios * 0.7:
-        risk_scores.append(1)  # 低风险
-    elif profit_scenarios >= total_scenarios * 0.4:
-        risk_scores.append(2)  # 中等风险
-    else:
-        risk_scores.append(3)  # 高风险
-
-    # 多重极端情况风险评分
-    if profit_prob_extreme >= 40:
-        risk_scores.append(2)  # 中等风险
-    elif profit_prob_extreme >= 20:
-        risk_scores.append(3)  # 较高风险
-    else:
-        risk_scores.append(4)  # 极高风险
-
-    avg_risk_score = sum(risk_scores) / len(risk_scores)
-
-    if avg_risk_score < 1.5:
-        overall_risk = "低风险"
-        overall_emoji = "🟢"
-        risk_recommendation = "项目整体抗风险能力强，可正常参与投资"
-    elif avg_risk_score < 2.5:
-        overall_risk = "中等风险"
-        overall_emoji = "🟡"
-        risk_recommendation = "项目整体风险适中，建议适度控制仓位并设置止损"
-    elif avg_risk_score < 3.5:
-        overall_risk = "较高风险"
-        overall_emoji = "🟠"
-        risk_recommendation = "项目整体风险较高，建议严格控制仓位并做好风险对冲"
-    else:
-        overall_risk = "高风险"
-        overall_emoji = ""
-        risk_recommendation = "项目整体风险极高，建议谨慎参与或避免投资"
-
-    add_paragraph(document, f'{overall_emoji} 综合风险等级: {overall_risk}')
-    add_paragraph(document, f'风险评分: {avg_risk_score:.2f}/4.0 （数值越高风险越大）')
-    add_paragraph(document, '')
-    add_paragraph(document, f'投资建议: {risk_recommendation}')
-
-    add_paragraph(document, '')
-    add_paragraph(document, '7.4.5 压力测试核心结论', bold=True)
-
-    add_paragraph(document, '通过三个维度的压力测试，得出以下核心结论：')
-    add_paragraph(document, '')
-
-    # 根据各项测试结果动态生成结论
-    conclusions = []
-
-    # PE回归结论
-    if return_pe_stress > 0:
-        conclusions.append(f' 估值回归：即使PE回归至行业Q1分位，定增收益仍为正({return_pe_stress:+.2f}%)，估值安全边际充足')
-    else:
-        conclusions.append(f' 估值回归：PE回归至行业Q1分位将导致亏损({return_pe_stress:+.2f}%)，需警惕估值回调风险')
-
-    # 经济面结论
-    if profit_scenarios >= total_scenarios * 0.6:
-        conclusions.append(f' 经济面危机：在{total_scenarios}种经济面极端情景中，有{profit_scenarios}种情景盈利，抗风险能力较强')
-    else:
-        conclusions.append(f' 经济面危机：在{total_scenarios}种经济面极端情景中，仅{profit_scenarios}种情景盈利，抗风险能力较弱')
-
-    # 多重极端结论
-    if profit_prob_extreme >= 30:
-        conclusions.append(f' 多重极端叠加：即使三重打击，盈利概率仍达{profit_prob_extreme:.1f}%，具备一定抗风险能力')
-    else:
-        conclusions.append(f'多重极端叠加：三重打击下盈利概率仅{profit_prob_extreme:.1f}%，多重风险叠加后果严重')
-
-    for i, conclusion in enumerate(conclusions, 1):
-        add_paragraph(document, f'{i}. {conclusion}')
-
-    add_paragraph(document, '')
-    add_paragraph(document, '7.4.6 风险控制建议', bold=True)
-
-    if avg_risk_score < 2:
-        add_paragraph(document, '基于压力测试结果，项目整体风险可控，建议：')
-        add_paragraph(document, '• 正常配置仓位（可占总资产10-20%）')
-        add_paragraph(document, '• 设置预警线（如-10%），关注市场变化')
-        add_paragraph(document, '• 定期review项目基本面，及时调整策略')
-    elif avg_risk_score < 3:
-        add_paragraph(document, '基于压力测试结果，项目存在一定风险，建议：')
-        add_paragraph(document, '• 适度控制仓位（建议占总资产5-10%）')
-        add_paragraph(document, '• 设置止损线（如-15%），严格执行')
-        add_paragraph(document, '• 考虑分批建仓，降低单点风险')
-        add_paragraph(document, '• 做好对冲准备，如购买看跌期权')
-    else:
-        add_paragraph(document, '基于压力测试结果，项目风险较高，建议：')
-        add_paragraph(document, '• 严格控制仓位（建议不超过总资产5%）')
-        add_paragraph(document, '• 设置严格止损线（如-10%），果断执行')
-        add_paragraph(document, '• 分批小额建仓，或考虑放弃投资')
-        add_paragraph(document, '• 如必须参与，务必做好风险对冲')
-
-    add_paragraph(document, '')
-    add_paragraph(document, '特别提示：')
-    add_paragraph(document, '压力测试结果仅供参考，实际市场情况可能超出历史极端情景。')
-    add_paragraph(document, '投资者应结合自身风险承受能力，审慎决策，并做好充分的风险管理准备。')
-    add_paragraph(document, '')
-
     add_section_break(document)
 
     return context
