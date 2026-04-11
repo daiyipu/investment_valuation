@@ -203,15 +203,23 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
 
         try:
             # 导入update_market_data模块
-            sys.path.insert(0, os.path.join(PROJECT_DIR, 'scripts'))
-            from update_market_data import generate_market_data
+            scripts_dir = os.path.join(PROJECT_DIR, 'scripts')
+            if scripts_dir not in sys.path:
+                sys.path.insert(0, scripts_dir)
+
+            # 使用模块导入方式，避免命名冲突
+            import importlib
+            update_module = importlib.import_module('update_market_data')
 
             # 生成市场数据
-            updated_market_data = generate_market_data(stock_code, stock_name, issue_date)
+            print(f"   调用update_market_data.generate_market_data...")
+            updated_market_data = update_module.generate_market_data(stock_code, stock_name, issue_date)
 
             if updated_market_data:
-                # 保存到文件
+                # 保存到文件 - 使用模块的json避免冲突
+                print(f"   保存数据到文件...")
                 with open(market_data_file, 'w', encoding='utf-8') as f:
+                    # 直接使用json模块，确保没有冲突
                     json.dump(updated_market_data, f, ensure_ascii=False, indent=2)
                 print(f"✅ 市场数据生成成功！已保存到: {market_data_file}")
                 print(f"   数据日期: {updated_market_data.get('analysis_date', 'N/A')}")
@@ -223,7 +231,10 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
                 sys.exit(1)
 
         except Exception as e:
+            import traceback
             print(f"❌ 自动生成市场数据失败: {e}")
+            print(f"   详细错误信息:")
+            traceback.print_exc()
             print(f"   请手动运行以下命令生成数据：")
             print(f"   python scripts/update_market_data.py --stock {stock_code} --name {stock_name}")
             sys.exit(1)
@@ -338,7 +349,6 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
                     try:
                         import sys
                         import subprocess
-                        import json
 
                         # 更新市场指数数据
                         update_indices_script = os.path.join(PROJECT_DIR, 'scripts', 'update_indices_data.py')
