@@ -4,8 +4,7 @@
 本附件提供所有情景组合数据，供备查参考。
 包含：
 - 6.1 多参数情景：585种（13×5×9）
-- 6.2.1 市场指数情景：45种（3×3×5）
-- 6.2.2 行业指数情景：45种（3×3×5）
+- 6.2 市场指数情景：45种（3×3×5）
 - 6.3 行业PE情景：45种（3×3×5）
 - 6.4 个股PE情景：45种（3×3×5）
 - 6.5 DCF估值情景：15种（1×3×5）
@@ -59,7 +58,7 @@ def _generate_appendix_scenarios(document, multi_param_scenarios, historical_sce
     add_section_break(document)
     add_title(document, '附件2：195种历史数据情景完整数据表', level=1)
 
-    add_paragraph(document, '本附件提供6.2-6.5节的195种历史数据情景，包括市场指数情景、行业指数情景、行业PE情景、个股PE情景和DCF估值情景。')
+    add_paragraph(document, '本附件提供6.2-6.5节的历史数据情景，包括市场指数情景、行业PE情景、个股PE情景和DCF估值情景。')
     add_paragraph(document, f'情景总数：{len(historical_scenarios)}种')
     add_paragraph(document, '')
     add_paragraph(document, '说明：历史数据情景基于实际历史数据构建，参数范围可能与多参数构造情景不同。')
@@ -202,13 +201,12 @@ def _generate_historical_tables(document, historical_scenarios):
 
     # ==================== 6.2-6.5节情景数据表 ====================
     add_title(document, '附表：6.2-6.5节情景数据表', level=2)
-    add_paragraph(document, '本附表展示6.2至6.5节的专项情景分析结果，包括市场指数、行业指数、行业PE、个股PE和DCF估值的情景数据。')
+    add_paragraph(document, '本附表展示6.2至6.5节的专项情景分析结果，包括市场指数、行业PE、个股PE和DCF估值的情景数据。')
     add_paragraph(document, '')
 
     # 按情景类型分组展示
     scenario_groups = {
-        '市场指数': '6.2.1',
-        '行业指数': '6.2.2',
+        '市场指数': '6.2',
         '行业PE': '6.3',
         '个股PE': '6.4',
         'DCF估值': '6.5'
@@ -311,7 +309,6 @@ def _generate_historical_tables(document, historical_scenarios):
     add_paragraph(document, '• 本表展示6.2至6.5节的专项情景分析结果')
     add_paragraph(document, '• 每种情景类型按盈利概率从高到低排序')
     add_paragraph(document, '• 市场指数情景：基于沪深300、中证500、创业板指、科创50的历史数据')
-    add_paragraph(document, '• 行业指数情景：基于标的股票所属行业指数的历史数据')
     add_paragraph(document, '• 行业PE情景：基于行业PE分位数的估值回归情景')
     add_paragraph(document, '• 个股PE情景：基于个股PE分位数的估值回归情景')
     add_paragraph(document, '• DCF估值情景：基于DCF内在价值的估值情景')

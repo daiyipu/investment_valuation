@@ -324,7 +324,7 @@ def generate_chapter(context):
 
             add_paragraph(document, '')
             add_paragraph(document, ' 模拟结果解读：', bold=True)
-            add_paragraph(document, f'• 历史参数模拟：基于250日历史数据的漂移率({mc_drift*100:+.2f}%)和波动率({mc_volatility*100:.2f}%)')
+            add_paragraph(document, f'• 历史参数模拟：基于120日历史数据的漂移率({mc_drift*100:+.2f}%)和波动率({mc_volatility*100:.2f}%)')
             add_paragraph(document, f'• 预测参数模拟：基于ARIMA预测的漂移率({drift_predicted*100:+.2f}%)和GARCH预测的波动率({vol_predicted*100:.2f}%)')
             add_paragraph(document, f'• 盈利概率差异：{profit_prob_predicted-profit_prob_historical:+.1f}个百分点（{"预测更高" if profit_prob_predicted > profit_prob_historical else "历史更高"}）')
             add_paragraph(document, f'• 预期收益差异：{mean_return_predicted-mean_return_historical:+.2f}个百分点（{"预测更乐观" if mean_return_predicted > mean_return_historical else "历史更乐观"}）')
@@ -386,7 +386,7 @@ def generate_chapter(context):
 
                 add_paragraph(document, '')
                 add_paragraph(document, ' 模拟结果解读：', bold=True)
-                add_paragraph(document, f'• 历史参数模拟：基于250日历史数据的漂移率({drift_hist*100:+.2f}%)和波动率({vol_hist*100:.2f}%)')
+                add_paragraph(document, f'• 历史参数模拟：基于120日历史数据的漂移率({drift_hist*100:+.2f}%)和波动率({vol_hist*100:.2f}%)')
                 add_paragraph(document, f'• 预测参数模拟：基于ARIMA预测的漂移率({drift_pred*100:+.2f}%)和GARCH预测的波动率({vol_pred*100:.2f}%)')
                 add_paragraph(document, f'• 盈利概率差异：{profit_prob_pred-profit_prob_hist:+.1f}个百分点（{"预测更高" if profit_prob_pred > profit_prob_hist else "历史更高"}）')
                 add_paragraph(document, f'• 预期收益差异：{mean_return_pred-mean_return_hist:+.2f}个百分点（{"预测更乐观" if mean_return_pred > mean_return_hist else "历史更乐观"}）')
@@ -445,7 +445,6 @@ def generate_chapter(context):
 
     add_paragraph(document, '历史数据场景分类：', bold=True)
     add_paragraph(document, '• 市场指数情景：基于市场历史数据的情景分析')
-    add_paragraph(document, '• 行业指数情景：基于行业历史数据的情景分析')
     add_paragraph(document, '• 行业估值情景：基于行业PE历史分位数的情景分析')
     add_paragraph(document, '• 个股估值情景：基于个股PE历史分位数的情景分析')
     add_paragraph(document, '• DCF估值情景：基于绝对估值法的情景分析')

@@ -192,11 +192,11 @@ def generate_multi_dimension_scenario_charts_split(current_price, base_price, vo
                 final_prices = current_price * np.exp(sim_returns)
                 # 使用对数收益率计算总收益
                 total_log_returns = np.log(final_prices / issue_price)
-                # 年化：总对数收益率 / 年数
-                annualized_log_returns = total_log_returns / lockup_years
+                # 锁定期收益率（不年化，直接使用锁定期的收益率）
+                lockup_log_returns = total_log_returns
 
                 profit_prob = (total_log_returns > 0).mean() * 100
-                mean_return = annualized_log_returns.mean() * 100
+                mean_return = lockup_log_returns.mean() * 100
 
                 all_results.append({
                     'drift': d,
@@ -369,15 +369,15 @@ def generate_chapter(context):
 
                 # 计算收益：使用对数收益率（连续复利）
                 total_log_returns = np.log(final_prices / issue_price)
-                # 年化对数收益率
-                annualized_log_returns = total_log_returns / lockup_years
+                # 锁定期对数收益率（不年化，直接使用锁定期的收益率）
+                lockup_log_returns = total_log_returns  # 锁定期收益率
 
-                # 统计指标
-                mean_return = annualized_log_returns.mean()
-                median_return = np.median(annualized_log_returns)
-                profit_prob = (total_log_returns > 0).mean() * 100
-                var_5 = np.percentile(annualized_log_returns, 5)
-                var_95 = np.percentile(annualized_log_returns, 95)
+                # 统计指标（基于锁定期收益率）
+                mean_return = lockup_log_returns.mean()
+                median_return = np.median(lockup_log_returns)
+                profit_prob = (lockup_log_returns > 0).mean() * 100
+                var_5 = np.percentile(lockup_log_returns, 5)
+                var_95 = np.percentile(lockup_log_returns, 95)
 
                 all_scenarios.append({
                     'drift': drift,
@@ -400,8 +400,8 @@ def generate_chapter(context):
     add_paragraph(document, '')
     add_paragraph(document, '6.1.2 情景分析结果', bold=True, font_size=14)
 
-    # 按预期年化收益排序（Top 20）
-    add_paragraph(document, '表1: 按预期年化收益率排序的Top 20情景')
+    # 按预期锁定期收益排序（Top 20）
+    add_paragraph(document, '表1: 按预期锁定期收益率排序的Top 20情景')
     add_paragraph(document, '')
 
     top_by_return = sorted(all_scenarios, key=lambda x: x['mean_return'], reverse=True)[:20]
@@ -418,7 +418,7 @@ def generate_chapter(context):
             f"{s['profit_prob']:.1f}%"
         ])
 
-    return_headers = ['排名', '漂移率', '波动率', '溢价率', '发行价', '预期年化收益', '盈利概率']
+    return_headers = ['排名', '漂移率', '波动率', '溢价率', '发行价', '预期锁定期收益', '盈利概率']
     add_table_data(document, return_headers, top_return_data)
 
     # 按盈利概率排序（Top 20）
@@ -447,12 +447,12 @@ def generate_chapter(context):
     add_paragraph(document, '6.1.3 综合最优情景分析', bold=True, font_size=14)
 
     # 找出同时满足高收益和高概率的情景
-    high_return = [s for s in all_scenarios if s['mean_return'] > 0.20]  # 年化收益>20%
+    high_return = [s for s in all_scenarios if s['mean_return'] > 0.20]  # 锁定期收益>20%
     high_prob = [s for s in all_scenarios if s['profit_prob'] > 80]  # 盈利概率>80%
     best_scenarios = [s for s in high_return if s in high_prob]
 
     if best_scenarios:
-        add_paragraph(document, f'找到 {len(best_scenarios)} 个同时满足"年化收益>20%"和"盈利概率>80%"的最优情景：')
+        add_paragraph(document, f'找到 {len(best_scenarios)} 个同时满足"锁定期收益>20%"和"盈利概率>80%"的最优情景：')
         add_paragraph(document, '')
 
         best_data = []
@@ -465,9 +465,9 @@ def generate_chapter(context):
                 f"{s['mean_return']*100:+.2f}%",
                 f"{s['profit_prob']:.1f}%"
             ])
-        add_table_data(document, ['排名', '漂移率', '波动率', '溢价率', '预期年化收益', '盈利概率'], best_data)
+        add_table_data(document, ['排名', '漂移率', '波动率', '溢价率', '预期锁定期收益', '盈利概率'], best_data)
     else:
-        add_paragraph(document, '未找到同时满足"年化收益>20%"和"盈利概率>80%"的情景。')
+        add_paragraph(document, '未找到同时满足"锁定期收益>20%"和"盈利概率>80%"的情景。')
 
     # ====== 当前项目定位 ======
     add_paragraph(document, '')
@@ -498,7 +498,7 @@ def generate_chapter(context):
     add_paragraph(document, f'• 波动率: {current_vol*100:.2f}%')
     add_paragraph(document, f'• 溢价率: {current_discount*100:+.2f}% （相对MA20: {ma20_for_discount:.2f}元）')
     add_paragraph(document, f'• 发行价: {project_params["issue_price"]:.2f} 元/股')
-    add_paragraph(document, f'• 预期年化收益（算术平均）: {closest_scenario["mean_return"]*100:+.2f}%')
+    add_paragraph(document, f'• 预期锁定期收益（算术平均）: {closest_scenario["mean_return"]*100:+.2f}%')
     add_paragraph(document, f'• 收益率中位数: {closest_scenario["median_return"]*100:+.2f}%')
     add_paragraph(document, f'• 盈利概率: {closest_scenario["profit_prob"]:.1f}%')
     add_paragraph(document, f'• 收益率排名: 第 {return_rank} 名 / 共 {len(all_scenarios)} 个情景')
@@ -573,11 +573,19 @@ def generate_chapter(context):
         index_scenario_results = []
         for idx, scenario in enumerate(index_scenarios):
             try:
+                # 转换为锁定期参数（与6.1节保持一致）
+                annual_drift = scenario['drift']
+                annual_vol = scenario['volatility']
+
+                # 转换为锁定期参数
+                lockup_drift = annual_drift * lockup_years
+                lockup_vol = annual_vol * np.sqrt(lockup_years)
+
                 sim_result = analyzer.monte_carlo_simulation(
                     n_simulations=5000,
                     time_steps=120,
-                    volatility=scenario['volatility'],
-                    drift=scenario['drift'],
+                    volatility=annual_vol,  # 保持年化波动率，函数内部会处理
+                    drift=annual_drift,  # 保持年化漂移率，函数内部会处理
                     seed=42+idx  # 使用不同的seed确保每个情景的随机性不同
                 )
 
@@ -586,19 +594,19 @@ def generate_chapter(context):
                 scenario_issue_price = scenario['issue_price']
                 # 对数收益率（连续复利）
                 log_returns = np.log(final_prices / scenario_issue_price)
-                # 年化：120日 = 120个交易日
-                annualized_log_returns = log_returns * (252.0 / 120)
+                # 锁定期收益率（不年化，直接使用120日的收益率）
+                lockup_log_returns = log_returns  # 锁定期收益率
 
-                # 计算VaR（使用年化对数收益率）
-                var_5 = np.percentile(annualized_log_returns, 5)   # 5%分位数（最坏5%）
-                var_95 = np.percentile(annualized_log_returns, 95) # 95%分位数（最好5%）
+                # 计算VaR（使用锁定期对数收益率）
+                var_5 = np.percentile(lockup_log_returns, 5)   # 5%分位数（最坏5%）
+                var_95 = np.percentile(lockup_log_returns, 95) # 95%分位数（最好5%）
 
                 # 包装成兼容旧代码的格式
                 scenario_result = {
                     'scenario': scenario,  # 将原始情景对象嵌套在scenario键中
                     'profit_prob': (log_returns > 0).mean() * 100,
-                    'median_return': np.median(annualized_log_returns),
-                    'mean_return': np.mean(annualized_log_returns),
+                    'median_return': np.median(lockup_log_returns),
+                    'mean_return': np.mean(lockup_log_returns),
                     'var_5': var_5,
                     'var_95': var_95,
                     'actual_premium_rate': scenario['premium_rate']
@@ -654,148 +662,6 @@ def generate_chapter(context):
             add_paragraph(document, f'• 最差情景：{worst_scenario["scenario"]["name"]}，盈利概率{worst_scenario["profit_prob"]:.1f}%，中位数收益{worst_scenario["median_return"]*100:+.1f}%')
 
         
-    # ==================== 6.2.2 行业指数情景分析 ====================
-    add_paragraph(document, '')
-    add_title(document, '6.2.2 行业指数情景分析', level=2)
-
-    add_paragraph(document, '本节基于标的股票所属行业指数的历史数据，构建全面的情景矩阵进行分析。')
-    add_paragraph(document, '通过组合不同漂移率、波动率和溢价率水平，生成3×3×5=45个情景，评估行业环境对定增收益的影响。')
-    add_paragraph(document, '')
-
-    # 加载行业数据
-    industry_data_available = False
-    industry_vol_values = []
-    industry_return_values = []
-
-    try:
-        industry_data_file = os.path.join(DATA_DIR, f'{stock_code.replace(".", "_")}_industry_data.json')
-        if os.path.exists(industry_data_file):
-            with open(industry_data_file, 'r', encoding='utf-8') as f:
-                industry_data_loaded = json.load(f)
-
-            # 行业数据文件直接包含波动率和收益率字段
-            if 'volatility_120d' in industry_data_loaded:
-                industry_vol_values.append(industry_data_loaded.get('volatility_120d', 0.35))
-                industry_return_values.append(industry_data_loaded.get('annual_return_120d', 0.08))
-
-            if industry_vol_values and industry_return_values:
-                industry_data_available = True
-                print(f" 已加载行业数据: {industry_data_file}")
-                print(f"   行业波动率: {industry_vol_values[0]*100:.2f}%")
-                print(f"   行业收益率: {industry_return_values[0]*100:+.2f}%")
-    except Exception as e:
-        print(f" 无法加载行业数据: {e}")
-
-    # 如果行业数据可用，进行情景分析
-    if industry_data_available:
-        # 计算行业波动率和收益率的高、中、低分位
-        industry_vol_high = max(industry_vol_values) * 1.1  # 高波动率
-        industry_vol_mid = np.mean(industry_vol_values)      # 中波动率
-        industry_vol_low = min(industry_vol_values) * 0.9    # 低波动率
-
-        industry_drift_high = max(industry_return_values) * 1.1  # 高漂移率
-        industry_drift_mid = np.mean(industry_return_values)      # 中漂移率
-        industry_drift_low = min(industry_return_values) * 0.9    # 低漂移率
-
-        # 溢价率档次：-20%, -15%, -10%, -5%, 0%
-        premium_levels = [-0.20, -0.15, -0.10, -0.05, 0.0]
-
-        # 生成行业指数情景矩阵（3×3×5=45个情景）
-        industry_scenarios = generate_scenario_matrix(
-            drift_levels=[industry_drift_high, industry_drift_mid, industry_drift_low],
-            vol_levels=[industry_vol_high, industry_vol_mid, industry_vol_low],
-            premium_levels=premium_levels,
-            scenario_name_prefix='行业指数',
-            drift_source='基于行业指数的120日年化收益率',
-            project_params=project_params
-        )
-
-        print(f" 生成行业指数情景矩阵: {len(industry_scenarios)}个情景")
-
-        # 运行行业指数情景模拟
-        industry_scenario_results = []
-        for idx, scenario in enumerate(industry_scenarios):
-            try:
-                sim_result = analyzer.monte_carlo_simulation(
-                    n_simulations=5000,
-                    time_steps=120,
-                    volatility=scenario['volatility'],
-                    drift=scenario['drift'],
-                    seed=42+idx  # 使用不同的seed确保每个情景的随机性不同
-                )
-
-                final_prices = sim_result.iloc[:, -1].values
-                # 使用情景相关的发行价（考虑了溢价率）
-                scenario_issue_price = scenario['issue_price']
-                # 对数收益率（连续复利）
-                log_returns = np.log(final_prices / scenario_issue_price)
-                # 年化：120日 = 120个交易日
-                annualized_log_returns = log_returns * (252.0 / 120)
-
-                # 计算VaR（使用年化对数收益率）
-                var_5 = np.percentile(annualized_log_returns, 5)   # 5%分位数（最坏5%）
-                var_95 = np.percentile(annualized_log_returns, 95) # 95%分位数（最好5%）
-
-                # 包装成兼容旧代码的格式
-                scenario_result = {
-                    'scenario': scenario,  # 将原始情景对象嵌套在scenario键中
-                    'profit_prob': (log_returns > 0).mean() * 100,
-                    'median_return': np.median(annualized_log_returns),
-                    'mean_return': np.mean(annualized_log_returns),
-                    'var_5': var_5,
-                    'var_95': var_95,
-                    'actual_premium_rate': scenario['premium_rate']
-                }
-
-                industry_scenario_results.append(scenario_result)
-            except Exception as e:
-                print(f" 情景{scenario['name']}模拟失败: {e}")
-
-        # 添加到汇总列表
-        all_scenarios.extend(industry_scenario_results)
-
-        # 为附件展开情景对象（附件期望扁平结构）
-        for scenario_result in industry_scenario_results:
-            scenario_flat = scenario_result['scenario'].copy()
-            scenario_flat.update({
-                'profit_prob': scenario_result['profit_prob'],
-                'median_return': scenario_result['median_return'],
-                'mean_return': scenario_result['mean_return'],
-                'var_5': scenario_result['var_5'],
-                'var_95': scenario_result['var_95'],
-                'issue_price': scenario_result['scenario']['issue_price']
-            })
-            historical_scenarios_for_appendix.append(scenario_flat)
-
-        # 生成行业指数情景对比表格
-        if industry_scenario_results:
-            add_paragraph(document, '行业指数情景参数表（全部45个情景）：')
-            add_paragraph(document, '')
-
-            # 按盈利概率排序，展示全部情景
-            sorted_scenarios = sorted(industry_scenario_results, key=lambda x: x['profit_prob'], reverse=True)
-
-            industry_table_data = []
-            for scenario_result in sorted_scenarios:
-                scenario = scenario_result['scenario']  # 获取嵌套的情景对象
-                industry_table_data.append([
-                    scenario['name'],
-                    f"{scenario['drift_level']}({scenario['drift']*100:+.1f}%)",
-                    f"{scenario['vol_level']}({scenario['volatility']*100:.1f}%)",
-                    scenario['premium_level'],
-                    f"{scenario_result['profit_prob']:.1f}%",
-                    f"{scenario_result['median_return']*100:+.1f}%"
-                ])
-
-            add_table_data(document, ['情景', '漂移率', '波动率', '溢价率', '盈利概率', '中位数收益'], industry_table_data)
-
-            add_paragraph(document, '')
-            add_paragraph(document, '行业指数情景分析结论：')
-            best_scenario = max(industry_scenario_results, key=lambda x: x['profit_prob'])
-            worst_scenario = min(industry_scenario_results, key=lambda x: x['profit_prob'])
-            add_paragraph(document, f'• 最优情景：{best_scenario["scenario"]["name"]}，盈利概率{best_scenario["profit_prob"]:.1f}%，中位数收益{best_scenario["median_return"]*100:+.1f}%')
-            add_paragraph(document, f'• 最差情景：{worst_scenario["scenario"]["name"]}，盈利概率{worst_scenario["profit_prob"]:.1f}%，中位数收益{worst_scenario["median_return"]*100:+.1f}%')
-
         
         # ==================== 6.3 基于行业PE分位数的情景分析 ====================
         add_paragraph(document, '')
@@ -888,19 +754,19 @@ def generate_chapter(context):
                         scenario_issue_price = scenario['issue_price']
                         # 对数收益率（连续复利）
                         log_returns = np.log(final_prices / scenario_issue_price)
-                        # 年化：120日 = 120个交易日
-                        annualized_log_returns = log_returns * (252.0 / 120)
+                        # 锁定期收益率（不年化，直接使用120日的收益率）
+                        lockup_log_returns = log_returns
 
-                        # 计算VaR（使用年化对数收益率）
-                        var_5 = np.percentile(annualized_log_returns, 5)
-                        var_95 = np.percentile(annualized_log_returns, 95)
+                        # 计算VaR（使用锁定期对数收益率）
+                        var_5 = np.percentile(lockup_log_returns, 5)
+                        var_95 = np.percentile(lockup_log_returns, 95)
 
                         # 包装成兼容旧代码的格式
                         scenario_result = {
                             'scenario': scenario,
                             'profit_prob': (log_returns > 0).mean() * 100,
-                            'median_return': np.median(annualized_log_returns),
-                            'mean_return': np.mean(annualized_log_returns),
+                            'median_return': np.median(lockup_log_returns),
+                            'mean_return': np.mean(lockup_log_returns),
                             'var_5': var_5,
                             'var_95': var_95,
                             'actual_premium_rate': scenario['premium_rate']
@@ -1053,19 +919,19 @@ def generate_chapter(context):
                         scenario_issue_price = scenario['issue_price']
                         # 对数收益率（连续复利）
                         log_returns = np.log(final_prices / scenario_issue_price)
-                        # 年化：120日 = 120个交易日
-                        annualized_log_returns = log_returns * (252.0 / 120)
+                        # 锁定期收益率（不年化，直接使用120日的收益率）
+                        lockup_log_returns = log_returns
 
-                        # 计算VaR（使用年化对数收益率）
-                        var_5 = np.percentile(annualized_log_returns, 5)
-                        var_95 = np.percentile(annualized_log_returns, 95)
+                        # 计算VaR（使用锁定期对数收益率）
+                        var_5 = np.percentile(lockup_log_returns, 5)
+                        var_95 = np.percentile(lockup_log_returns, 95)
 
                         # 包装成兼容旧代码的格式
                         scenario_result = {
                             'scenario': scenario,
                             'profit_prob': (log_returns > 0).mean() * 100,
-                            'median_return': np.median(annualized_log_returns),
-                            'mean_return': np.mean(annualized_log_returns),
+                            'median_return': np.median(lockup_log_returns),
+                            'mean_return': np.mean(lockup_log_returns),
                             'var_5': var_5,
                             'var_95': var_95,
                             'actual_premium_rate': scenario['premium_rate']
@@ -1204,19 +1070,19 @@ def generate_chapter(context):
                         scenario_issue_price = scenario['issue_price']
                         # 对数收益率（连续复利）
                         log_returns = np.log(final_prices / scenario_issue_price)
-                        # 年化：120日 = 120个交易日
-                        annualized_log_returns = log_returns * (252.0 / 120)
+                        # 锁定期收益率（不年化，直接使用120日的收益率）
+                        lockup_log_returns = log_returns
 
-                        # 计算VaR（使用年化对数收益率）
-                        var_5 = np.percentile(annualized_log_returns, 5)
-                        var_95 = np.percentile(annualized_log_returns, 95)
+                        # 计算VaR（使用锁定期对数收益率）
+                        var_5 = np.percentile(lockup_log_returns, 5)
+                        var_95 = np.percentile(lockup_log_returns, 95)
 
                         # 包装成兼容旧代码的格式
                         scenario_result = {
                             'scenario': scenario,
                             'profit_prob': (log_returns > 0).mean() * 100,
-                            'median_return': np.median(annualized_log_returns),
-                            'mean_return': np.mean(annualized_log_returns),
+                            'median_return': np.median(lockup_log_returns),
+                            'mean_return': np.mean(lockup_log_returns),
                             'var_5': var_5,
                             'var_95': var_95,
                             'actual_premium_rate': scenario['premium_rate']
@@ -1295,11 +1161,9 @@ def generate_chapter(context):
             scenario_obj = result.get('scenario', result)
             scenario_name = scenario_obj.get('name', '未知')
 
-            # 提取情景类型（市场指数、行业指数、行业PE、个股PE、DCF估值）
+            # 提取情景类型（市场指数、行业PE、个股PE、DCF估值）
             if '市场指数' in scenario_name:
                 scenario_type = '市场指数情景'
-            elif '行业指数' in scenario_name:
-                scenario_type = '行业指数情景'
             elif '行业PE' in scenario_name:
                 scenario_type = '行业PE情景'
             elif '个股PE' in scenario_name:
@@ -1364,7 +1228,7 @@ def generate_chapter(context):
             [f'• 最低盈利概率', f'{min_profit_prob:.1f}%', f'最差情景：{worst_scenario_name}'],
             ['', '', ''],
             ['收益率中位数统计', '', ''],
-            [f'• 平均收益率', f'{avg_median_return*100:+.1f}%', '年化收益率'],
+            [f'• 平均收益率', f'{avg_median_return*100:+.1f}%', '锁定期收益率'],
             [f'• 最高收益率', f'{max_median_return*100:+.1f}%', f'情景：{best_scenario_name}'],
             [f'• 最低收益率', f'{min_median_return*100:+.1f}%', f'情景：{worst_scenario_name}'],
         ])
@@ -1374,8 +1238,7 @@ def generate_chapter(context):
         # 添加说明（表格与正文之间不需要空行）
         add_paragraph(document, ' 情景说明：')
         add_paragraph(document, f'• 6.1多参数情景：{scenario_type_counts.get("多参数情景", 0)}个，涵盖漂移率、波动率、溢价率的全部组合')
-        add_paragraph(document, f'• 6.2.1市场指数情景：{scenario_type_counts.get("市场指数情景", 0)}个（3×3×5矩阵）')
-        add_paragraph(document, f'• 6.2.2行业指数情景：{scenario_type_counts.get("行业指数情景", 0)}个（3×3×5矩阵）')
+        add_paragraph(document, f'• 6.2市场指数情景：{scenario_type_counts.get("市场指数情景", 0)}个（3×3×5矩阵）')
         add_paragraph(document, f'• 6.3行业PE情景：{scenario_type_counts.get("行业PE情景", 0)}个（1×3×5矩阵）')
         add_paragraph(document, f'• 6.4个股PE情景：{scenario_type_counts.get("个股PE情景", 0)}个（1×3×5矩阵）')
         add_paragraph(document, f'• 6.5 DCF估值情景：{scenario_type_counts.get("DCF估值情景", 0)}个（1×3×5矩阵）')
@@ -1384,26 +1247,6 @@ def generate_chapter(context):
         add_paragraph(document, ' 评级说明：')
         add_paragraph(document, f'• 平均盈利概率：{avg_profit_prob:.1f}%，{"较高" if avg_profit_prob >= 70 else "中等" if avg_profit_prob >= 50 else "较低"}')
         add_paragraph(document, f'• 平均收益率：{avg_median_return*100:+.1f}%，{"表现良好" if avg_median_return >= 0.10 else "表现一般" if avg_median_return >= 0 else "表现不佳"}')
-        add_paragraph(document, f'• 最优情景：{best_scenario_name}，盈利概率{best_scenario.get("profit_prob", 0):.1f}%，收益率{best_scenario.get("median_return", 0)*100:+.1f}%')
-        add_paragraph(document, f'• 最差情景：{worst_scenario_name}，盈利概率{worst_scenario.get("profit_prob", 0):.1f}%，收益率{worst_scenario.get("median_return", 0)*100:+.1f}%')
-
-    # 生成多维度情景图表（补充分析）
-    # 注：波动率×折价率热力图已在6.3章节展示，此处不再重复
-    try:
-        multi_dim_chart_paths = generate_multi_dimension_scenario_charts_split(
-            project_params['current_price'], ma20, risk_params['volatility'],
-            risk_params['drift'], project_params['lockup_period'], IMAGES_DIR)
-
-        # 该函数只返回1个图表（3D分析图）
-        if len(multi_dim_chart_paths) > 0:
-            add_paragraph(document, '图表 6.6: 多维度情景分析（波动率 × 时间窗口 × 折扣率）')
-            add_image(document, multi_dim_chart_paths[0], width=Inches(6.5))
-            add_paragraph(document, '')
-
-    except Exception as e:
-        print(f" 生成多维度图表失败: {e}")
-        import traceback
-        traceback.print_exc()
 
     add_section_break(document)
 

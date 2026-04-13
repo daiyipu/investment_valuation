@@ -1,39 +1,39 @@
 {
   "stock_code": "300735.SZ",
-  "stock_name": "光弘科技",
-  "analysis_date": "20260410",
-  "latest_trading_date": "20260410",
-  "issue_date": "20260410",
-  "invitation_date": "20260407",
-  "current_price": 21.99,
-  "avg_price_all": 24.53,
+  "stock_name": "300735.SZ",
+  "analysis_date": "20260408",
+  "latest_trading_date": "20260408",
+  "current_price": 22.12,
+  "avg_price_all": 24.5,
   "median_price": 25.03,
-  "price_std": 6.27,
-  "volatility_20d": 0.4038,
-  "volatility_60d": 0.3641,
-  "volatility_120d": 0.363,
-  "volatility_250d": 0.4294,
-  "volatility": 0.3641,
-  "annual_return_20d": -0.4862,
-  "annual_return_60d": -0.5608,
-  "annual_return_120d": -0.4348,
-  "annual_return_250d": -0.2059,
-  "period_return_20d": -0.0389,
-  "period_return_60d": -0.1346,
-  "period_return_120d": -0.2087,
-  "period_return_250d": -0.2059,
-  "drift": -0.5608,
-  "ma_20": 21.66,
-  "ma_30": 22.49,
-  "ma_60": 24.04,
-  "ma_120": 25.32,
-  "ma_250": 26.1,
-  "win_rate_20d": 0.45,
+  "price_std": 6.32,
+  "volatility_20d": 0.4107,
+  "volatility_60d": 0.3639,
+  "volatility_120d": 0.3635,
+  "volatility_250d": 0.4297,
+  "volatility": 0.3639,
+  "annual_return_20d": -0.8432,
+  "annual_return_60d": -0.5622,
+  "annual_return_120d": -0.5111,
+  "annual_return_250d": -0.2139,
+  "period_return_20d": -0.0675,
+  "period_return_60d": -0.1349,
+  "period_return_120d": -0.2453,
+  "period_return_250d": -0.2139,
+  "drift": -0.5622,
+  "ma_20": 21.8,
+  "ma_30": 22.78,
+  "ma_60": 24.16,
+  "ma_120": 25.44,
+  "ma_250": 26.14,
+  "win_rate_20d": 0.4,
   "win_rate_60d": 0.5167,
-  "win_rate_120d": 0.5,
+  "win_rate_120d": 0.4917,
   "win_rate_250d": 0.508,
   "total_days": 662,
   "price_series": [
+    26.17,
+    27.66,
     29.21,
     28.11,
     28.44,
@@ -531,23 +531,25 @@
     20.86,
     20.76,
     20.82,
-    22.12,
-    21.82,
-    21.99
+    22.12
   ],
   "data_source": "tushare_realtime",
-  "generated_at": "2026-04-10 20:58:37",
+  "generated_at": "2026-04-08 19:35:07",
   "market_turnover": {
     "current_turnover": 3.146,
-    "latest_turnover": 3.4629,
-    "historical_count": 1198,
-    "historical_percentile": 84.22,
-    "historical_mean": 2.3567,
-    "historical_median": 2.1154,
-    "historical_std": 0.7975,
+    "latest_turnover": 2.377,
+    "historical_count": 1196,
+    "historical_percentile": 84.45,
+    "historical_mean": 2.3536,
+    "historical_median": 2.1142,
+    "historical_std": 0.7968,
     "historical_min": 1.2038,
     "historical_max": 6.496,
     "historical_data": [
+      {
+        "date": "20210428",
+        "turnover": 1.6731
+      },
       {
         "date": "20210429",
         "turnover": 1.691
@@ -5327,20 +5329,8 @@
       {
         "date": "20260407",
         "turnover": 2.377
-      },
-      {
-        "date": "20260408",
-        "turnover": 3.4815
-      },
-      {
-        "date": "20260409",
-        "turnover": 3.1713
-      },
-      {
-        "date": "20260410",
-        "turnover": 3.4629
       }
     ],
-    "data_fetched_at": "2026-04-10 20:58:37"
+    "data_fetched_at": "2026-04-08 19:35:07"
   }
 }

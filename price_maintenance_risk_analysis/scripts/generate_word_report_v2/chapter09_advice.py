@@ -20,7 +20,7 @@ from module_utils import generate_break_even_chart, generate_market_turnover_cha
 import chapter09_01_evaluation
 
 
-def calculate_macro_environment_assessment(market_data, document, industry_cycle_override=None):
+def calculate_macro_environment_assessment(market_data, document, context=None, industry_cycle_override=None):
     """
     计算市场环境评估得分
 
@@ -505,7 +505,7 @@ def generate_chapter(context):
     add_paragraph(document, '')
 
     # 计算宏观环境评分
-    macro_assessment = calculate_macro_environment_assessment(market_data, document)
+    macro_assessment = calculate_macro_environment_assessment(market_data, document, context)
 
     # 保存市场环境评估结果到context，供后续情景选择使用
     context['macro_environment_assessment'] = macro_assessment
@@ -857,15 +857,30 @@ def generate_chapter(context):
     premium_to_ma20 = premium_to_ma20_adjusted  # 名义溢价率（相对MA20）
     premium_to_current = premium_to_current_adjusted  # 实际溢价率（相对报价日价格）
 
+    # 保存反向推算结果到context，供后续章节使用
+    if 'results' not in context:
+        context['results'] = {}
+    context['results']['reverse_calculation'] = {
+        'max_issue_price_adjusted': max_issue_price_adjusted,
+        'premium_to_ma20_adjusted': premium_to_ma20_adjusted,
+        'premium_to_current_adjusted': premium_to_current_adjusted,
+        'current_price_eval': current_price_eval,
+        'recommended_price': recommended_price,
+        'premium_to_ma20': premium_to_ma20,
+        'premium_to_current': premium_to_current
+    }
+    print(f"调试：反向推算结果已保存到context - 溢价率: {premium_to_ma20_adjusted:.2f}%")
+
     add_paragraph(document, '• 推荐使用方法2（考虑市场环境波动率安全边际）')
     add_paragraph(document, f'• 建议最高报价：不高于{recommended_price:.2f}元/股')
-    add_paragraph(document, f'• 名义溢价率（相对MA20）：{premium_to_ma20:+.2f}%')
+    add_paragraph(document, f'• 名义溢价率（相对MA20）：{premium_to_ma20:+.2f}%（溢价率上限）')
     # 根据是否有确定报价日显示不同的描述
     if date_source == "指定报价日":
         add_paragraph(document, f'• 实际溢价率（相对报价日价格{current_price_eval:.2f}元）：{premium_to_current:+.2f}%')
     else:
         add_paragraph(document, f'• 实际溢价率（相对当前价格{current_price_eval:.2f}元，默认为报价日价格）：{premium_to_current:+.2f}%')
     add_paragraph(document, f'• 该溢价率已考虑市场环境评分{macro_score:.1f}分对应波动率的安全边际')
+    add_paragraph(document, f'• 说明：定增名义溢价率最低限为MA20的-20%，反向推算确定上限为{premium_to_ma20:+.2f}%，建议区间为[-20%, {premium_to_ma20:+.2f}%]')
     add_paragraph(document, '')
 
     # 投资建议
@@ -887,10 +902,206 @@ def generate_chapter(context):
     add_paragraph(document, '• 建议结合其他分析方法（如DCF估值、相对估值）综合判断')
     add_paragraph(document, '• 如果实际发行价高于推荐报价，建议谨慎参与或放弃')
 
-    # ==================== 9.3.2.2 基于历史数据场景的筛选 ====================
-    add_title(document, '9.3.2.2 基于历史数据场景的筛选', level=4)
+    # ==================== 9.3.2.2 基于蒙特卡洛模拟的情景筛选 ====================
+    add_title(document, '9.3.2.2 基于蒙特卡洛模拟的情景筛选', level=4)
 
-    add_paragraph(document, '本节基于第六章的195种历史数据场景（市场指数、行业指数、行业PE、个股PE、DCF估值），通过严格筛选条件，从风险收益平衡角度推荐最优报价方案。')
+    add_paragraph(document, '本节基于第五章5.5节的蒙特卡洛模拟结果，分析不同溢价率水平下的风险收益特征，找出符合严格筛选条件的溢价率区间，为报价决策提供量化依据。')
+    add_paragraph(document, '')
+
+    # 从第五章获取溢价率模拟结果
+    premium_simulation_results = context['results'].get('premium_simulation_results', [])
+    premium_simulation_params = context['results'].get('premium_simulation_params', {})
+
+    if not premium_simulation_results:
+        add_paragraph(document, '⚠️ 未找到第五章的溢价率模拟结果，无法进行筛选分析。')
+        add_paragraph(document, '   请确认第五章5.5节已正常生成溢价率模拟数据。')
+    else:
+        # 获取模拟参数信息
+        param_source = premium_simulation_params.get('param_source', '未知参数来源')
+        drift_source = premium_simulation_params.get('drift', 0)
+        vol_source = premium_simulation_params.get('volatility', 0.3)
+
+        # 筛选条件说明
+        add_paragraph(document, '蒙特卡洛模拟筛选分析：', bold=True)
+        add_paragraph(document, f'本分析基于第五章的{param_source}（漂移率{drift_source*100:.2f}%，波动率{vol_source*100:.2f}%），对21种溢价率（-20%至0%，1%一档）进行筛选，找出符合以下条件的方案：')
+        add_paragraph(document, '')
+
+        screening_conditions = [
+            '1. 预测中位数收益率 > 8%（年化收益达标）',
+            '2. 95% VaR > -30%（最大损失控制在30%以内）',
+            '3. 盈利概率 > 70%（盈利可能性较高）',
+            '4. 溢价率不设下限（根据市场情况灵活定价）'
+        ]
+
+        for condition in screening_conditions:
+            add_paragraph(document, condition)
+
+        add_paragraph(document, '')
+
+        # 分析现有结果，检查符合条件的情况
+        qualified_mc_rates = []
+        mc_analysis_results = []
+
+        print(f"\n从第五章获取蒙特卡洛模拟筛选分析...")
+        print(f"  参数来源: {param_source}")
+        print(f"  溢价率模拟结果: {len(premium_simulation_results)}个情景")
+
+        for result in premium_simulation_results:
+            premium_rate = result['premium_rate']
+            # 第五章存储的是年化对数收益率（小数形式）
+            median_return_annual = result['median_return'] * 100  # 年化收益率
+            var_5_annual = result['percentile_5'] * 100  # 年化VaR
+            profit_prob_mc = result['profit_prob']  # 盈利概率
+
+            # 转换为锁定期收益率用于筛选（避免年化VaR超过-100%的问题）
+            # 锁定期收益率 = 年化收益率 × (6/12) = 年化收益率 × 0.5
+            median_return_lockup = median_return_annual * 0.5
+            var_5_lockup = var_5_annual * 0.5
+
+            # 检查是否符合筛选条件（使用锁定期收益率）
+            condition_1 = median_return_lockup > 8  # 中位数收益率 > 8%（锁定期）
+            condition_2 = var_5_lockup > -30  # VaR损失控制在30%以内（锁定期）
+            condition_3 = profit_prob_mc > 70  # 盈利概率 > 70%
+            condition_4 = True  # 溢价率不设下限
+
+            is_qualified = condition_1 and condition_2 and condition_3 and condition_4
+
+            mc_analysis_results.append({
+                'premium_rate': premium_rate,
+                'issue_price': result['issue_price'],
+                'profit_prob': profit_prob_mc,
+                'median_return_annual': median_return_annual,  # 年化收益率
+                'median_return_lockup': median_return_lockup,  # 锁定期收益率
+                'var_5_annual': var_5_annual,  # 年化VaR
+                'var_5_lockup': var_5_lockup,  # 锁定期VaR
+                'is_qualified': is_qualified,
+                'conditions': {
+                    'return_check': condition_1,
+                    'var_check': condition_2,
+                    'prob_check': condition_3
+                }
+            })
+
+            if is_qualified:
+                qualified_mc_rates.append(premium_rate)
+
+            # 输出调试信息（仅显示关键节点）
+            if premium_rate in [-20, -15, -10, -5, 0]:
+                status = "✅符合" if is_qualified else "❌不符合"
+                print(f"  溢价率{premium_rate:+3d}%: {status} - 盈利概率{profit_prob_mc:.1f}%, 锁定期中位数收益{median_return_lockup:.2f}%, 锁定期VaR{var_5_lockup:.2f}%")
+
+        # 创建筛选结果表格
+        add_paragraph(document, '不同溢价率筛选结果（基于锁定期收益率）：', bold=True)
+
+        mc_screening_headers = [
+            '名义溢价率',
+            '发行价格(元)',
+            '盈利概率(%)',
+            '中位数收益(%)',
+            '5% VaR(%)',
+            '收益率>8%',
+            'VaR>-30%',
+            '盈利概率>70%',
+            '符合条件'
+        ]
+
+        mc_screening_data = []
+        for result in mc_analysis_results:
+            premium_rate = result['premium_rate']
+            # 对关键节点进行标记
+            if premium_rate in [-20, -15, -10, -5, 0]:
+                rate_label = f"★ {premium_rate:+d}%"
+            else:
+                rate_label = f"  {premium_rate:+d}%"
+
+            # 使用锁定期收益率进行显示和筛选（避免年化VaR超过-100%的问题）
+            mc_screening_data.append([
+                rate_label,
+                f"{result['issue_price']:.2f}",
+                f"{result['profit_prob']:.1f}",
+                f"{result['median_return_lockup']:.2f}",  # 锁定期收益率
+                f"{result['var_5_lockup']:.2f}",  # 锁定期VaR
+                "✅" if result['conditions']['return_check'] else "❌",
+                "✅" if result['conditions']['var_check'] else "❌",
+                "✅" if result['conditions']['prob_check'] else "❌",
+                "✅符合" if result['is_qualified'] else "❌不符合"
+            ])
+
+        add_table_data(document, mc_screening_headers, mc_screening_data)
+
+        # 添加表格说明
+        add_paragraph(document, '')
+        add_paragraph(document, '表格说明：', bold=True)
+        add_paragraph(document, '• 表格中的收益率和VaR均基于锁定期（6个月）计算，避免年化值超过-100%的问题')
+        add_paragraph(document, '• 锁定期收益率 = 年化收益率 × 0.5，更直观反映定增实际投资回报')
+        add_paragraph(document, '• 第六章情景分析使用年化收益率，但本节使用锁定期收益率以保持数值合理性')
+        add_paragraph(document, '• 筛选条件（收益率>8%、VaR>-30%）均基于锁定期收益率进行判断')
+        add_paragraph(document, '• 盈利概率基于锁定期（6个月）的模拟结果计算')
+
+        # 筛选结果分析
+        add_paragraph(document, '')
+        add_paragraph(document, '筛选结果分析：', bold=True)
+
+        if qualified_mc_rates:
+            best_mc_rate = max(qualified_mc_rates, key=lambda x: next(r['median_return_lockup'] for r in mc_analysis_results if r['premium_rate'] == x))
+            worst_mc_rate = min(qualified_mc_rates, key=lambda x: next(r['median_return_lockup'] for r in mc_analysis_results if r['premium_rate'] == x))
+
+            add_paragraph(document, f'• 符合条件的溢价率范围：{min(qualified_mc_rates):+d}% 至 {max(qualified_mc_rates):+d}%')
+            add_paragraph(document, f'• 推荐溢价率区间：{worst_mc_rate:+d}% 至 {best_mc_rate:+d}%')
+
+            # 获取对应的结果数据
+            best_result = next(r for r in mc_analysis_results if r['premium_rate'] == best_mc_rate)
+            worst_result = next(r for r in mc_analysis_results if r['premium_rate'] == worst_mc_rate)
+
+            add_paragraph(document, f'  对应发行价区间：{worst_result["issue_price"]:.2f}元 至 {best_result["issue_price"]:.2f}元')
+            add_paragraph(document, f'  盈利概率区间：{worst_result["profit_prob"]:.1f}% 至 {best_result["profit_prob"]:.1f}%')
+            add_paragraph(document, f'  预期收益区间：{worst_result["median_return_lockup"]:.2f}% 至 {best_result["median_return_lockup"]:.2f}%（锁定期）')
+            add_paragraph(document, f'• 共{len(qualified_mc_rates)}个溢价率档次符合严格的筛选条件')
+        else:
+            # 如果没有完全符合条件的，找出最接近的
+            if mc_analysis_results:
+                # 按综合得分排序（盈利概率 * 锁定期收益率 * VaR安全性）
+                best_overall = max(mc_analysis_results, key=lambda x: x['profit_prob'] * x['median_return_lockup'] * (1 if x['var_5_lockup'] > -30 else 0.5))
+                add_paragraph(document, f'• 无溢价率能完全符合所有筛选条件')
+                add_paragraph(document, f'• 最接近条件的溢价率：{best_overall["premium_rate"]:+d}%')
+                add_paragraph(document, f'  对应发行价：{best_overall["issue_price"]:.2f}元')
+                add_paragraph(document, f'  盈利概率：{best_overall["profit_prob"]:.1f}%')
+                add_paragraph(document, f'  预期收益：{best_overall["median_return_lockup"]:.2f}%（锁定期）')
+                add_paragraph(document, f'  VaR损失：{best_overall["var_5_lockup"]:.2f}%（锁定期）')
+
+                # 分析最接近条件的溢价率不满足哪些条件
+                failed_conditions = []
+                if not best_overall['conditions']['return_check']:
+                    failed_conditions.append(f"中位数收益{best_overall['median_return_lockup']:.2f}%未达到8%要求")
+                if not best_overall['conditions']['var_check']:
+                    failed_conditions.append(f"VaR损失{best_overall['var_5_lockup']:.2f}%超过-30%限制")
+                if not best_overall['conditions']['prob_check']:
+                    failed_conditions.append(f"盈利概率{best_overall['profit_prob']:.1f}%未达到70%要求")
+
+                if failed_conditions:
+                    add_paragraph(document, f'• 未满足条件：{"；".join(failed_conditions)}')
+
+        add_paragraph(document, '')
+        add_paragraph(document, '投资建议：', bold=True)
+
+        if qualified_mc_rates:
+            add_paragraph(document, f'• 优先选择符合条件区间内折价率较大的方案（{min(qualified_mc_rates):+d}%至{max(qualified_mc_rates):+d}%），确保安全边际')
+            add_paragraph(document, f'• 推荐重点关注{best_mc_rate:+d}%折价率，预期收益最高且符合所有风控要求')
+        else:
+            if mc_analysis_results:
+                best_overall = max(mc_analysis_results, key=lambda x: x['profit_prob'] * x['median_return_lockup'])
+                add_paragraph(document, f'• 建议谨慎参与，最优溢价率{best_overall["premium_rate"]:+d}%仍无法完全满足风控要求')
+                add_paragraph(document, f'• 如果必须参与，建议要求更高的折价率或等待更好的市场时机')
+
+        add_paragraph(document, f'• 蒙特卡洛模拟基于{param_source}，考虑了市场随机性和波动特征')
+        add_paragraph(document, '• 建议结合历史数据场景分析和参数构造场景分析，综合判断最优报价方案')
+
+        print(f" 蒙特卡洛模拟筛选完成：共{len(mc_analysis_results)}个情景，{len(qualified_mc_rates)}个符合条件")
+
+    # ==================== 9.3.2.3 基于历史数据场景的筛选 ====================
+    add_title(document, '9.3.2.3 基于历史数据场景的筛选', level=4)
+
+    add_paragraph(document, '本节基于第六章的历史数据场景（市场指数、行业PE、个股PE），通过严格筛选条件，从风险收益平衡角度推荐最优报价方案。')
 
     # 市场环境条件筛选
     add_paragraph(document, ' 市场环境条件筛选：', bold=True)
@@ -919,10 +1130,10 @@ def generate_chapter(context):
 
     # 基础筛选条件
     add_paragraph(document, ' 基础筛选条件（必须全部满足）：', bold=True)
-    add_paragraph(document, '1. 溢价率 ≤ -5%（折价至少5%，提供安全边际）')
-    add_paragraph(document, '2. 预测中位数收益率 > 8%（年化收益达标）')
-    add_paragraph(document, '3. 95% VaR < 60%（最大损失可控）')
-    add_paragraph(document, '4. 盈利概率 > 50%（盈利可能性较高）')
+    add_paragraph(document, '1. 预测中位数收益率 > 8%（年化收益达标）')
+    add_paragraph(document, '2. 95% VaR < 30%（最大损失控制在30%以内）')
+    add_paragraph(document, '3. 盈利概率 > 70%（盈利可能性较高）')
+    add_paragraph(document, '4. 溢价率不设下限（根据市场情况灵活定价）')
     add_paragraph(document, '')
 
     # 选择逻辑
@@ -934,7 +1145,7 @@ def generate_chapter(context):
 
     # 从context获取历史数据情景（第六章6.2-6.5节的情景）
     comprehensive_results = context['results'].get('historical_scenarios_195', [])
-    print(f" 第九章9.3.2.2节：获取到{len(comprehensive_results)}个历史数据场景")
+    print(f" 第九章9.3.2.3节：获取到{len(comprehensive_results)}个历史数据场景")
 
     # 确定当前应该选择的档位
     if macro_score >= 80:
@@ -947,7 +1158,7 @@ def generate_chapter(context):
         target_tier = "低"
         tier_keywords = ["25%", "低", "lower", "low"]
 
-    # 收集情景方案（仅筛选6.2-6.5的情景：市场指数、行业指数、行业PE、个股PE、DCF估值）
+    # 收集情景方案（仅筛选6.2-6.5的情景：市场指数、行业PE、个股PE、DCF估值）
     scenario_options = []
 
     if comprehensive_results:
@@ -965,8 +1176,8 @@ def generate_chapter(context):
                 var_5 = result.get('var_5', result.get('var_95', 0))
                 issue_price = result.get('issue_price', scenario_obj.get('issue_price', 0))
 
-                # 只筛选6.2-6.5的情景（市场指数、行业指数、行业PE、个股PE、DCF估值）
-                if not any(keyword in scenario_name for keyword in ['市场指数', '行业指数', '行业PE', '个股PE', 'DCF估值']):
+                # 只筛选6.2-6.5的情景（市场指数、行业PE、个股PE、DCF估值）
+                if not any(keyword in scenario_name for keyword in ['市场指数', '行业PE', '个股PE', 'DCF估值']):
                     continue
 
                 # 根据市场环境评分筛选对应档位的场景
@@ -1006,7 +1217,9 @@ def generate_chapter(context):
                     'profit_prob': profit_prob,
                     'premium_rate': scenario_obj.get('premium_rate', scenario_obj.get('discount', 0)) * 100,  # 转为百分比
                     'var_95': var_95,
-                    'issue_price': issue_price
+                    'issue_price': issue_price,
+                    'drift': scenario_obj.get('drift', 0),
+                    'volatility': scenario_obj.get('volatility', 0)
                 })
 
             elif 'name' in result and 'median_return' in result and 'profit_prob' in result:
@@ -1018,8 +1231,8 @@ def generate_chapter(context):
                 var_5 = result.get('var_5', result.get('var_95', 0))
                 issue_price = result.get('issue_price', 0)
 
-                # 只筛选6.2-6.5的情景（市场指数、行业指数、行业PE、个股PE、DCF估值）
-                if not any(keyword in scenario_name for keyword in ['市场指数', '行业指数', '行业PE', '个股PE', 'DCF估值']):
+                # 只筛选6.2-6.5的情景（市场指数、行业PE、个股PE、DCF估值）
+                if not any(keyword in scenario_name for keyword in ['市场指数', '行业PE', '个股PE', 'DCF估值']):
                     continue
 
                 # 根据市场环境评分筛选对应档位的场景
@@ -1059,7 +1272,9 @@ def generate_chapter(context):
                     'profit_prob': profit_prob,
                     'premium_rate': scenario_obj.get('premium_rate', scenario_obj.get('discount', 0)) * 100,  # 转为百分比
                     'var_95': var_95,
-                    'issue_price': issue_price
+                    'issue_price': issue_price,
+                    'drift': scenario_obj.get('drift', 0),
+                    'volatility': scenario_obj.get('volatility', 0)
                 })
 
             else:
@@ -1068,13 +1283,12 @@ def generate_chapter(context):
 
     # 如果有情景方案，进行筛选和统计
     if scenario_options:
-        # 按大场景分组（5个历史数据场景）
+        # 按大场景分组（3个历史数据场景：市场指数、行业PE、个股PE）
+        # 注意：DCF估值场景在9.3.2.4节单独处理
         scenario_categories = {
             '市场指数': [],
-            '行业指数': [],
             '行业PE': [],
-            '个股PE': [],
-            'DCF估值': []
+            '个股PE': []
         }
 
         # 将情景按大场景分类
@@ -1084,22 +1298,27 @@ def generate_chapter(context):
                     scenario_categories[category].append(scenario)
                     break
 
-        # 对每个大场景应用基础筛选条件
+        # 对每个大场景应用基础筛选条件（优化版）
+        # 优化说明：
+        # 1. 放开溢价率下限：不设最低折价要求，允许根据市场情况灵活定价
+        # 2. 中位数收益率 > 8%：保持年化收益达标要求
+        # 3. 损失率控制在30%：95% VaR > -30%（即最大损失不超过30%）
+        # 4. 盈利概率 > 70%：提高盈利概率要求，降低投资风险
         qualified_by_category = {}
         for category, scenarios in scenario_categories.items():
             qualified = []
             for scenario in scenarios:
-                # 检查四个基础条件
+                # 检查四个基础条件（优化后）
                 # 注意：premium_rate和median_return已经是百分比形式，直接比较
-                condition_1 = scenario['premium_rate'] <= -5  # 溢价率 ≤ -5%
+                condition_1 = True  # 放开溢价率下限限制
                 condition_2 = scenario['median_return'] > 8  # 中位数收益率 > 8%
-                condition_3 = abs(scenario['var_95']) < 60  # |95% VaR| < 60%
-                condition_4 = scenario['profit_prob'] > 50  # 盈利概率 > 50%
+                condition_3 = scenario['var_95'] > -30  # 95% VaR > -30%（损失率控制在30%以内）
+                condition_4 = scenario['profit_prob'] > 70  # 盈利概率 > 70%
 
                 # 显示前几个场景的条件检查结果（调试用）
-                if len(qualified) == 0 and scenario['premium_rate'] > -20:
+                if len(qualified) == 0:
                     print(f"{category} - 场景: {scenario['name']}")
-                    print(f"  条件检查: c1={condition_1}(溢价率{scenario['premium_rate']:.1f}%), c2={condition_2}(中位数收益{scenario['median_return']:.1f}%), c3={condition_3}(VaR{scenario['var_95']:.1f}%), c4={condition_4}(盈利概率{scenario['profit_prob']:.1f}%)")
+                    print(f"  条件检查: c1={condition_1}(无溢价限制), c2={condition_2}(中位数收益{scenario['median_return']:.1f}%), c3={condition_3}(VaR{scenario['var_95']:.1f}%), c4={condition_4}(盈利概率{scenario['profit_prob']:.1f}%)")
 
                 if condition_1 and condition_2 and condition_3 and condition_4:
                     qualified.append(scenario)
@@ -1116,7 +1335,7 @@ def generate_chapter(context):
 
         # 显示统计结果
         add_paragraph(document, '历史数据场景筛选统计：', bold=True)
-        add_paragraph(document, f'• 大场景总数：5个（市场指数、行业指数、行业PE、个股PE、DCF估值）')
+        add_paragraph(document, f'• 大场景总数：3个（市场指数、行业PE、个股PE）')
         add_paragraph(document, f'• 符合条件的大场景数：{total_qualified_categories}个')
         add_paragraph(document, f'• 符合条件的总场景数：{total_qualified_scenarios}个')
         add_paragraph(document, '')
@@ -1133,33 +1352,64 @@ def generate_chapter(context):
                 for scenario in scenarios:
                     category_scenarios_data.append([
                         scenario['name'],
+                        f"{scenario.get('drift', 0)*100:.0f}%",
+                        f"{scenario.get('volatility', 0)*100:.0f}%",
                         f"{scenario['premium_rate']:+.1f}%",
                         f"{scenario['median_return']:+.1f}%",
                         f"{scenario['var_95']:+.1f}%",
                         f"{scenario['profit_prob']:.1f}%"
                     ])
 
-                add_table_data(document, ['情景方案', '溢价率', '中位数收益率', '95% VaR', '盈利概率'], category_scenarios_data)
+                add_table_data(document, ['情景方案', '漂移率', '波动率', '溢价率', '中位数收益率', '95% VaR', '盈利概率'], category_scenarios_data)
                 add_paragraph(document, '')
-            else:
-                add_paragraph(document, f'{category}：无场景符合条件', bold=True)
+            # 删除了"无场景符合条件"的显示
 
         # 投资建议判断
         add_paragraph(document, '投资建议：', bold=True)
         if total_qualified_categories >= 2:
             # 至少两个大场景符合条件，支持报价
-            # 收集所有符合条件场景的溢价率，形成区间
-            all_qualified = []
-            for scenarios in qualified_by_category.values():
-                all_qualified.extend(scenarios)
+            # 计算各场景溢价率范围的交集（保守策略）
+            category_premium_ranges = {}
+            for category, scenarios in qualified_by_category.items():
+                if scenarios:
+                    premiums = [s['premium_rate'] for s in scenarios]
+                    category_premium_ranges[category] = {
+                        'min': min(premiums),
+                        'max': max(premiums),
+                        'count': len(premiums)
+                    }
 
-            # 计算溢价率区间
-            all_premiums = [s['premium_rate'] for s in all_qualified]
-            min_premium = min(all_premiums)  # 最低（最大折价）
-            max_premium = max(all_premiums)  # 最高（最小折价）
+            # 计算交集：取各场景范围的最大值作为下限，最小值作为上限
+            if len(category_premium_ranges) >= 2:
+                # 交集的下限是各范围下限的最大值（最保守的下限）
+                intersection_min = max(r['min'] for r in category_premium_ranges.values())
+                # 交集的上限是各范围上限的最小值（最保守的上限）
+                intersection_max = min(r['max'] for r in category_premium_ranges.values())
 
+                # 如果交集为空（下限>上限），则取并集
+                if intersection_min > intersection_max:
+                    # 无交集，取并集作为备选方案
+                    all_premiums = [s['premium_rate'] for s in all_qualified]
+                    min_premium = min(all_premiums)
+                    max_premium = max(all_premiums)
+                    range_type = "并集"
+                    range_note = f"（各场景无交集，取{len(all_qualified)}个场景的并集）"
+                else:
+                    # 有交集，使用交集
+                    min_premium = intersection_min
+                    max_premium = intersection_max
+                    range_type = "交集"
+                    range_note = f"（{total_qualified_categories}个大场景的共同范围）"
+            else:
+                # 只有一个场景，直接使用其范围
+                min_premium = list(category_premium_ranges.values())[0]['min']
+                max_premium = list(category_premium_ranges.values())[0]['max']
+                range_type = "单场景"
+                range_note = f"（仅1个大场景符合条件）"
+
+            total_scenarios = sum(r['count'] for r in category_premium_ranges.values())
             add_paragraph(document, f'• 至少{total_qualified_categories}个大场景符合条件，支持参与报价')
-            add_paragraph(document, f'• 指导溢价率：{min_premium:+.2f}% 至 {max_premium:+.2f}%（综合{len(all_qualified)}个符合条件的场景）')
+            add_paragraph(document, f'• 指导溢价率：{min_premium:+.2f}% 至 {max_premium:+.2f}%（{range_type}{range_note}）')
             add_paragraph(document, f'• 建议报价范围：溢价率在[{min_premium:+.2f}%, {max_premium:+.2f}%]区间内（折价{abs(min_premium):.1f}%至{abs(max_premium):.1f}%）')
         else:
             # 少于两个大场景符合条件，建议不参与
@@ -1172,11 +1422,125 @@ def generate_chapter(context):
         add_paragraph(document, '• 无历史数据场景可供分析')
         add_paragraph(document, '• 原因：第六章情景分析未生成或数据缺失')
         add_paragraph(document, '• 建议：请检查第六章情景分析是否正常生成')
-        
-    # ==================== 9.3.2.3 基于参数构造场景的筛选 ====================
-    add_title(document, '9.3.2.3 基于参数构造场景的筛选', level=4)
+
+    # ==================== 9.3.2.4 基于DCF估值场景的筛选 ====================
+    add_title(document, '9.3.2.4 基于DCF估值场景的筛选', level=4)
+
+    add_paragraph(document, '本节基于DCF内在估值模型的情景分析，从绝对估值角度筛选符合风险收益要求的报价方案。')
+    add_paragraph(document, 'DCF估值基于公司基本面分析，通过预测未来现金流并折现计算内在价值，为定增定价提供理论支撑。')
+    add_paragraph(document, '')
+
+    # 基础筛选条件
+    add_paragraph(document, ' 基础筛选条件（必须全部满足）：', bold=True)
+    add_paragraph(document, '1. 预测中位数收益率 > 8%（年化收益达标）')
+    add_paragraph(document, '2. 95% VaR < 30%（最大损失控制在30%以内）')
+    add_paragraph(document, '3. 盈利概率 > 70%（盈利可能性较高）')
+    add_paragraph(document, '4. 溢价率不设下限（根据市场情况灵活定价）')
+    add_paragraph(document, '')
+
+    # 从context获取历史数据情景，筛选DCF估值场景
+    comprehensive_results = context['results'].get('historical_scenarios_195', [])
+
+    # 筛选DCF估值场景
+    dcf_scenario_options = []
+    for result in comprehensive_results:
+        # 兼容两种数据结构
+        if 'scenario' in result:
+            scenario_obj = result['scenario']
+        else:
+            scenario_obj = result
+
+        scenario_name = scenario_obj.get('name', '')
+
+        # 只处理DCF估值场景
+        if 'DCF估值' not in scenario_name:
+            continue
+
+        # 提取关键指标
+        median_return = result.get('median_return', 0)
+        profit_prob = result.get('profit_prob', 0)
+        var_5 = result.get('var_5', result.get('var_95', 0))
+        issue_price = scenario_obj.get('issue_price', 0)
+
+        # 数据类型转换
+        median_return = median_return * 100  # 从小数转换为百分比
+        var_95 = var_5 * 100  # 95% VaR
+
+        dcf_scenario_options.append({
+            'name': scenario_name,
+            'description': scenario_obj.get('description', ''),
+            'median_return': median_return,
+            'profit_prob': profit_prob,
+            'premium_rate': scenario_obj.get('premium_rate', scenario_obj.get('discount', 0)) * 100,
+            'var_95': var_95,
+            'issue_price': issue_price
+        })
+
+    if dcf_scenario_options:
+        # 对DCF估值场景应用基础筛选条件
+        qualified_dcf_scenarios = []
+        for scenario in dcf_scenario_options:
+            condition_1 = True  # 放开溢价率下限限制
+            condition_2 = scenario['median_return'] > 8  # 中位数收益率 > 8%
+            condition_3 = scenario['var_95'] > -30  # 95% VaR > -30%
+            condition_4 = scenario['profit_prob'] > 70  # 盈利概率 > 70%
+
+            if condition_1 and condition_2 and condition_3 and condition_4:
+                qualified_dcf_scenarios.append(scenario)
+
+        # 显示筛选结果
+        add_paragraph(document, 'DCF估值场景筛选统计：', bold=True)
+        add_paragraph(document, f'• DCF估值场景总数：{len(dcf_scenario_options)}个')
+        add_paragraph(document, f'• 符合条件的场景数：{len(qualified_dcf_scenarios)}个')
+        add_paragraph(document, '')
+
+        if qualified_dcf_scenarios:
+            add_paragraph(document, '符合条件的DCF估值场景：', bold=True)
+
+            # 创建DCF估值场景表格
+            dcf_scenarios_data = []
+            for scenario in qualified_dcf_scenarios:
+                dcf_scenarios_data.append([
+                    scenario['name'],
+                    f"{scenario.get('drift', 0)*100:.0f}%",
+                    f"{scenario.get('volatility', 0)*100:.0f}%",
+                    f"{scenario['premium_rate']:+.1f}%",
+                    f"{scenario['median_return']:+.1f}%",
+                    f"{scenario['var_95']:+.1f}%",
+                    f"{scenario['profit_prob']:.1f}%"
+                ])
+
+            add_table_data(document, ['情景方案', '漂移率', '波动率', '溢价率', '中位数收益率', '95% VaR', '盈利概率'], dcf_scenarios_data)
+            add_paragraph(document, '')
+
+            # 计算DCF估值场景的溢价率区间
+            dcf_premiums = [s['premium_rate'] for s in qualified_dcf_scenarios]
+            min_dcf_premium = min(dcf_premiums)
+            max_dcf_premium = max(dcf_premiums)
+
+            add_paragraph(document, 'DCF估值投资建议：', bold=True)
+            add_paragraph(document, f'• DCF估值支持报价：共{len(qualified_dcf_scenarios)}个场景符合条件')
+            add_paragraph(document, f'• DCF估值指导溢价率：{min_dcf_premium:+.2f}% 至 {max_dcf_premium:+.2f}%')
+            add_paragraph(document, f'• 说明：DCF估值基于公司内在价值，为定增定价提供理论参考')
+        # 删除了"无DCF估值场景符合条件"的显示
+
+        add_paragraph(document, '')
+    # 删除了无DCF估值场景的提示信息
+
+    add_paragraph(document, '')
+
+    # ==================== 9.3.2.5 基于参数构造场景的筛选 ====================
+    add_title(document, '9.3.2.5 基于参数构造场景的筛选', level=4)
 
     add_paragraph(document, '本节从585种参数构造场景（漂移率13档 × 波动率5档 × 溢价率9档）中筛选符合条件的方案，提供更全面的报价参考。')
+
+    # 基础筛选条件（与历史数据场景保持一致）
+    add_paragraph(document, ' 基础筛选条件（必须全部满足）：', bold=True)
+    add_paragraph(document, '1. 预测中位数收益率 > 8%（年化收益达标）')
+    add_paragraph(document, '2. 95% VaR < 30%（最大损失控制在30%以内）')
+    add_paragraph(document, '3. 盈利概率 > 70%（盈利可能性较高）')
+    add_paragraph(document, '4. 溢价率不设下限（根据市场情况灵活定价）')
+    add_paragraph(document, '')
 
     # 从context获取多参数构造情景（第六章6.1节的情景）
     comprehensive_results = context['results'].get('multi_param_scenarios_585', [])
@@ -1189,9 +1553,9 @@ def generate_chapter(context):
         # 兼容新旧格式
         scenario_obj = result.get('scenario', result)
 
-        # 只处理多参数情景（名称不带"市场指数"、"行业指数"等前缀的）
+        # 只处理多参数情景（名称不带"市场指数"、"行业PE"等前缀的）
         scenario_name = scenario_obj.get('name', '')
-        if any(prefix in scenario_name for prefix in ['市场指数', '行业指数', '行业PE', '个股PE', 'DCF估值']):
+        if any(prefix in scenario_name for prefix in ['市场指数', '行业PE', '个股PE', 'DCF估值']):
             continue
 
         checked_count += 1
@@ -1203,11 +1567,11 @@ def generate_chapter(context):
         var_95_pct = abs(var_5_raw)  # 绝对值，用于筛选条件
         profit_prob_pct = result.get('profit_prob', 0)
 
-        # 检查四个基础条件
-        condition_1 = premium_rate_pct <= -5  # 溢价率 ≤ -5%
+        # 检查四个基础条件（与历史数据场景保持一致）
+        condition_1 = True  # 放开溢价率下限限制，根据市场情况灵活定价
         condition_2 = median_return_pct > 8  # 中位数收益率 > 8%
-        condition_3 = var_95_pct < 60  # |95% VaR| < 60%
-        condition_4 = profit_prob_pct > 50  # 盈利概率 > 50%
+        condition_3 = var_5_raw > -30  # VaR损失控制在30%以内
+        condition_4 = profit_prob_pct > 70  # 盈利概率 > 70%
 
         if condition_1 and condition_2 and condition_3 and condition_4:
             qualified_585_scenarios.append({
@@ -1254,31 +1618,51 @@ def generate_chapter(context):
         if environment_matched_scenarios:
             add_paragraph(document, f'• 从{len(qualified_585_scenarios)}个符合基础条件的场景中找到{len(environment_matched_scenarios)}个符合当前市场环境的方案')
 
-            # 取符合环境场景中能接受的最大溢价率（即溢价率最高的）
+            # 按溢价率从高到低排序
             environment_matched_scenarios.sort(key=lambda x: x['premium_rate'], reverse=True)
+
+            add_paragraph(document, '')
+            add_paragraph(document, '参数构造场景环境匹配方案详情：', bold=True)
+            add_paragraph(document, f'以下{len(environment_matched_scenarios)}个方案同时符合基础条件和当前市场环境（宏观评分{macro_score}分）：')
+            add_paragraph(document, '')
+
+            # 构建表格数据
+            matched_scenarios_data = []
+            for scenario in environment_matched_scenarios:
+                matched_scenarios_data.append([
+                    f"{scenario['premium_rate']:+.1f}%",
+                    f"{scenario['issue_price']:.2f}",
+                    f"{scenario['median_return']:+.1f}%",
+                    f"{scenario['profit_prob']:.1f}%",
+                    f"{scenario['var_95']:+.1f}%",
+                    f"{scenario['drift']*100:+.0f}%",
+                    f"{scenario['volatility']*100:.0f}%"
+                ])
+
+            # 添加表格
+            matched_headers = ['溢价率', '发行价(元)', '收益率(%)', '盈利概率(%)', '95% VaR(%)', '漂移率(%)', '波动率(%)']
+            add_table_data(document, matched_headers, matched_scenarios_data)
+
+            # 添加表格说明
+            add_paragraph(document, '')
+            add_paragraph(document, '表格说明：', bold=True)
+            add_paragraph(document, '• 溢价率：相对MA20的溢价率（负值表示折价）')
+            add_paragraph(document, '• 发行价：基于MA20和溢价率计算的发行价格')
+            add_paragraph(document, '• 收益率：预期中位数年化收益率')
+            add_paragraph(document, '• 盈利概率：蒙特卡洛模拟的盈利概率')
+            add_paragraph(document, '• 95% VaR：95%置信水平下的最大损失（负值表示损失）')
+            add_paragraph(document, '• 漂移率：年化漂移率参数（基于市场环境映射）')
+            add_paragraph(document, '• 波动率：年化波动率参数（基于市场环境映射）')
+            add_paragraph(document, '')
+
+            # 取符合环境场景中能接受的最大溢价率（即溢价率最高的）作为推荐
             best_matched_scenario = environment_matched_scenarios[0]
             environment_premium_threshold = best_matched_scenario['premium_rate']
 
-            add_paragraph(document, f'• 环境匹配阈值溢价率：{environment_premium_threshold:+.2f}%')
-            add_paragraph(document, f'• 来源于：漂移率{best_matched_scenario["drift"]*100:.0f}%, 波动率{best_matched_scenario["volatility"]*100:.0f}%')
-            add_paragraph(document, '')
-
-            # 显示推荐方案详情
-            add_paragraph(document, '参数构造场景推荐方案：', bold=True)
-            recommended_585_data = [
-                ['建议报价', f"{best_matched_scenario['issue_price']:.2f}元/股", f"溢价率{best_matched_scenario['premium_rate']:+.1f}%"],
-                ['预期中位数收益率', f"{best_matched_scenario['median_return']:+.1f}%", '年化收益率'],
-                ['盈利概率', f"{best_matched_scenario['profit_prob']:.1f}%", '蒙特卡洛模拟盈利概率'],
-                ['95% VaR', f"{best_matched_scenario['var_95']:+.1f}%", '锁定期最大损失（负值）'],
-                ['', '', ''],
-                ['市场参数', f"漂移率{best_matched_scenario['drift']*100:+.0f}%, 波动率{best_matched_scenario['volatility']*100:.0f}%", '基于市场环境映射'],
-                [' 溢价率', f"{best_matched_scenario['premium_rate']:+.1f}%", '≤ -5% '],
-                [' 中位数收益率', f"{best_matched_scenario['median_return']:+.1f}%", '> 8% '],
-                [' 95% VaR', f"{best_matched_scenario['var_95']:+.1f}%", '|VaR| < 60% '],
-                [' 盈利概率', f"{best_matched_scenario['profit_prob']:.1f}%", '> 50% '],
-            ]
-
-            add_table_data(document, ['指标', '数值', '说明'], recommended_585_data)
+            add_paragraph(document, '推荐方案：', bold=True)
+            add_paragraph(document, f'• 推荐溢价率：{environment_premium_threshold:+.1f}%（最高溢价率，确保最大安全边际）')
+            add_paragraph(document, f'• 推荐发行价：{best_matched_scenario["issue_price"]:.2f}元/股')
+            add_paragraph(document, f'• 推荐参数：漂移率{best_matched_scenario["drift"]*100:+.0f}%, 波动率{best_matched_scenario["volatility"]*100:.0f}%')
         else:
             add_paragraph(document, f'• 前10个场景中没有完全符合当前市场环境（漂移率{drift_min*100:.0f}-{drift_max*100:.0f}%, 波动率{vol_min*100:.0f}-{vol_max*100:.0f}%）的方案')
             add_paragraph(document, '• 建议适当放宽市场环境要求或调整参数范围')
@@ -1288,101 +1672,187 @@ def generate_chapter(context):
         add_paragraph(document, '• 建议调整筛选条件或等待更好的市场时机')
 
     
-    # ==================== 9.3.2.4 综合溢价率区间建议 ====================
-    add_title(document, '9.3.2.4 综合溢价率区间建议', level=4)
+    # ==================== 9.3.2.6 综合溢价率区间建议 ====================
+    add_title(document, '9.3.2.6 综合溢价率区间建议', level=4)
 
-    add_paragraph(document, '综合以上三种情景筛选结果，给出最终的溢价率区间建议。')
+    add_paragraph(document, '综合以上五种情景筛选结果（反向推算、蒙特卡洛模拟、历史数据、DCF估值、参数构造），给出最终的溢价率区间建议。')
     add_paragraph(document, '')
 
-    # 9.3.2.4.1 溢价率情景对照表
-    add_paragraph(document, '9.3.2.4.1 溢价率情景对照表', bold=True)
+    # 9.3.2.6.1 溢价率情景对照表
+    add_title(document, '9.3.2.6.1 溢价率情景对照表', level=5)
 
     add_paragraph(document, '为明确推导过程，以下是各筛选方法中每一档溢价率对应的情景统计：')
+    add_paragraph(document, '本表综合了五种场景类型的分析结果：')
+    add_paragraph(document, '• 反向推算：基于目标收益率8%的反向推算结果')
+    add_paragraph(document, '• 蒙特卡洛模拟：基于ARIMA+GARCH预测参数的585种情景模拟')
+    add_paragraph(document, '• 历史数据：基于历史数据情景（市场指数、行业PE、个股PE）')
+    add_paragraph(document, '• DCF估值：基于DCF内在估值模型的绝对估值分析')
+    add_paragraph(document, '• 参数构造：基于585种参数构造情景（13种漂移率×5种波动率×9种溢价率）')
     add_paragraph(document, '')
 
-    # 创建综合的溢价率情景对照表
-    # 使用已筛选的符合条件的历史数据场景，而不是所有场景
+    # 创建综合的溢价率情景对照表 - 包含五种场景类型
+    # 收集所有场景的详细信息
+    all_scenarios_details = []
+
+    # 1. 反向推算场景 - 从context中获取9.3.2.1节的计算结果
+    # 反向推算结果要在多个档次中显示：-20%, -15%, -10%
+    # 因为反向推算确定的是上限（-11.56%），更低溢价率更安全也符合条件
+    reverse_calc = context['results'].get('reverse_calculation', {})
+    if reverse_calc:
+        reverse_premium = reverse_calc.get('premium_to_ma20_adjusted', 0)
+        reverse_price = reverse_calc.get('max_issue_price_adjusted', 0)
+        reverse_current_price = reverse_calc.get('current_price_eval', 0)
+
+        print(f"调试：从context读取反向推算结果 - 溢价率: {reverse_premium:.2f}%, 发行价: {reverse_price:.2f}元")
+
+        # 为多个档次添加反向推算场景
+        reverse_levels = [-20.0, -15.0, -10.0]  # 在这些档次中都显示
+        for level in reverse_levels:
+            all_scenarios_details.append({
+                'premium_rate': level,  # 使用档次溢价率而不是实际计算值
+                'scenario_type': '反向推算',
+                'scenario_name': '目标收益率法',
+                'params': f"目标收益8%, 当前价{reverse_current_price:.2f}元, 上限溢价率{reverse_premium:+.1f}%",
+                'results': f"上限发行价{reverse_price:.2f}元",
+                'is_qualified': True,
+                'is_reverse_calc': True  # 标记为反向推算场景
+            })
+        print(f"调试：反向推算场景已添加到all_scenarios_details，总场景数: {len(all_scenarios_details)}")
+    else:
+        print(f"调试：context中未找到反向推算结果")
+
+    # 2. 蒙特卡洛模拟场景
+    if 'mc_analysis_results' in locals() and mc_analysis_results:
+        for result in mc_analysis_results:
+            if result.get('is_qualified', False):
+                all_scenarios_details.append({
+                    'premium_rate': result['premium_rate'],
+                    'scenario_type': '蒙特卡洛模拟',
+                    'scenario_name': '预测参数模拟',
+                    'params': f"漂移率{predicted_drift*100:.0f}%, 波动率{predicted_vol*100:.0f}%, 溢价率{result['premium_rate']:+.0f}%",
+                    'results': f"概率{result['profit_prob']:.1f}%, 收益{result['median_return_lockup']:.1f}%",
+                    'is_qualified': True
+                })
+
+    # 3. 历史数据场景
     if 'qualified_by_category' in locals() and qualified_by_category:
-        # 按溢价率分组统计
-        premium_groups = {}
         for category, scenarios in qualified_by_category.items():
             for scenario in scenarios:
+                scenario_name = scenario['name']
+
+                # 从场景对象中提取漂移率和波动率信息
+                drift_val = scenario.get('drift', 0)
+                vol_val = scenario.get('volatility', 0)
                 premium_rate = scenario['premium_rate']
-                premium_key = f"{premium_rate:+.1f}%"
 
-                if premium_key not in premium_groups:
-                    premium_groups[premium_key] = {
-                        'premium_rate': premium_rate,
-                        'scenarios': [],
-                        'categories': set(),
-                        'count': 0,
-                        'median_return': scenario['median_return'],
-                        'profit_prob': scenario['profit_prob'],
-                        'var_95': scenario.get('var_95', 0)
-                    }
+                # 显示场景对应的实际漂移率和波动率值
+                params = f"漂移率{drift_val*100:.0f}%, 波动率{vol_val*100:.0f}%"
 
-                premium_groups[premium_key]['scenarios'].append(scenario['name'])
-                premium_groups[premium_key]['categories'].add(category)  # 直接使用category
-                premium_groups[premium_key]['count'] += 1
+                # 构建结果指标：盈利概率 + 中位数收益率
+                results = f"概率{scenario['profit_prob']:.1f}%, 收益{scenario['median_return']:.1f}%"
 
-        # 获取所有溢价率并排序
-        sorted_premiums = sorted(premium_groups.keys(), key=lambda x: float(x.replace('%', '')), reverse=True)
+                all_scenarios_details.append({
+                    'premium_rate': scenario['premium_rate'],
+                    'scenario_type': '历史数据',
+                    'scenario_name': f"{category}",
+                    'params': params,
+                    'results': results,
+                    'is_qualified': True
+                })
 
-        # 构建表格数据
-        premium_table_data = []
-        for premium_key in sorted_premiums:
-            group = premium_groups[premium_key]
-            scenarios_list = list(group['categories'])
-            scenarios_list.sort()
+    # 4. DCF估值场景
+    if 'qualified_dcf_scenarios' in locals() and qualified_dcf_scenarios:
+        for scenario in qualified_dcf_scenarios:
+            scenario_name = scenario['name']
 
-            # 获取该档次第一个情景的详细信息（从已筛选的情景中）
-            first_scenario = None
-            for category, scenarios in qualified_by_category.items():
-                for scenario in scenarios:
-                    if f"{scenario['premium_rate']:+.1f}%" == premium_key:
-                        first_scenario = scenario
-                        break
-                if first_scenario:
-                    break
+            # 从场景对象中提取漂移率和波动率信息
+            drift_val = scenario.get('drift', 0)
+            vol_val = scenario.get('volatility', 0)
+            premium_rate = scenario['premium_rate']
 
-            # 情景特征说明
-            scenario_features = []
-            if first_scenario:
-                if first_scenario['median_return'] > 8:
-                    scenario_features.append(f"收益率{first_scenario['median_return']:.1f}%")
-                if first_scenario['profit_prob'] > 50:
-                    scenario_features.append(f"盈利概率{first_scenario['profit_prob']:.1f}%")
-                if abs(first_scenario.get('var_95', 0)) < 60:
-                    scenario_features.append(f"风险可控")
+            # 显示场景对应的实际漂移率和波动率值
+            params = f"漂移率{drift_val*100:.0f}%, 波动率{vol_val*100:.0f}%"
 
-            premium_table_data.append([
-                premium_key,
-                f"{group['count']}个",
-                ', '.join(scenarios_list),
-                '; '.join(scenario_features) if scenario_features else "基础符合条件"
+            # 构建结果指标：盈利概率 + 中位数收益率
+            results = f"概率{scenario['profit_prob']:.1f}%, 收益{scenario['median_return']:.1f}%"
+
+            all_scenarios_details.append({
+                'premium_rate': scenario['premium_rate'],
+                'scenario_type': 'DCF估值',
+                'scenario_name': 'DCF绝对估值',
+                'params': params,
+                'results': results,
+                'is_qualified': True
+            })
+
+    # 5. 参数构造场景
+    if 'environment_matched_scenarios' in locals() and environment_matched_scenarios:
+        for scenario in environment_matched_scenarios:
+            all_scenarios_details.append({
+                'premium_rate': scenario['premium_rate'],
+                'scenario_type': '参数构造',
+                'scenario_name': '多参数组合',
+                'params': f"漂移率{scenario['drift']*100:.0f}%, 波动率{scenario['volatility']*100:.0f}%, 溢价率{scenario['premium_rate']:+.0f}%",
+                'results': f"概率{scenario['profit_prob']:.1f}%, 收益{scenario['median_return']:.1f}%",
+                'is_qualified': True
+            })
+
+    # 按溢价率档次排序（从低到高：-20.0% → +0.0%）
+    premium_levels = [-20.0, -15.0, -10.0, -5.0, +0.0]
+
+    # 构建表格数据 - 每个场景单独一行
+    comprehensive_table_data = []
+
+    for premium_level in premium_levels:
+        # 找到该溢价率档次的所有场景
+        scenarios_in_level = []
+        for scenario in all_scenarios_details:
+            premium_rate = scenario['premium_rate']
+            # 检查是否在当前档次范围内（±2.5%）
+            if premium_level - 2.5 <= premium_rate < premium_level + 2.5:
+                scenarios_in_level.append(scenario)
+
+        if scenarios_in_level:
+            # 添加溢价率档次标题行
+            comprehensive_table_data.append([
+                f"{premium_level:+.1f}%",
+                '', '', '', '', ''
             ])
 
-        premium_headers = ['溢价率档次', '符合情景数量', '情景类型', '情景特征']
-        add_table_data(document, premium_headers, premium_table_data)
+            # 为该档位的每个场景添加一行
+            for scenario in scenarios_in_level:
+                comprehensive_table_data.append([
+                    '',
+                    scenario['scenario_type'],
+                    scenario['scenario_name'],
+                    f"{scenario['premium_rate']:+.1f}%",  # 具体溢价率数值
+                    scenario['params'],
+                    scenario['results']
+                ])
+        else:
+            # 没有符合该档位的场景，显示空行
+            comprehensive_table_data.append([
+                f"{premium_level:+.1f}%",
+                '无符合条件场景', '', '', '', ''
+            ])
 
-        add_paragraph(document, '')
-        add_paragraph(document, '表格说明：')
-        add_paragraph(document, '• 溢价率档次：按名义溢价率（相对MA20）从高到低排序，数值越大折价越大')
-        add_paragraph(document, '• 符合情景数量：该档次中满足筛选条件的情景总数，反映历史数据支持程度')
-        add_paragraph(document, '• 情景类型：涉及的5个大类（市场指数、行业指数、行业PE、个股PE、DCF估值）')
-        add_paragraph(document, '• 情景特征：该档次情景的关键指标特征（收益率、盈利概率、风险水平）')
-        add_paragraph(document, '')
+    # 添加综合表格
+    comprehensive_headers = ['溢价率档次', '场景类型', '场景名称', '具体溢价率', '参数条件', '结果指标']
+    add_table_data(document, comprehensive_headers, comprehensive_table_data)
 
-        # 添加推导说明
-        add_paragraph(document, '区间推导逻辑：', bold=True)
-        add_paragraph(document, '• 最终报价区间基于上述表格中的溢价率档次分布综合确定')
-        add_paragraph(document, '• 优先选择符合条件数量较多的溢价率区间，确保历史数据支持充分')
-        add_paragraph(document, '• 结合反向推算和参数构造情景的约束条件，确定区间的上下限')
-        add_paragraph(document, '• 综合考虑三种筛选方法（历史数据、参数构造、反向推算）的交集结果')
-        add_paragraph(document, '')
+    # 添加表格说明
+    add_paragraph(document, '')
+    add_paragraph(document, '表格说明：', bold=True)
+    add_paragraph(document, '• 溢价率档次：按名义溢价率（相对MA20）从低到高排序，-20.0%表示最大折价，+0.0%表示平价')
+    add_paragraph(document, '• 场景类型：包含反向推算、蒙特卡洛模拟、历史数据、参数构造四种类型')
+    add_paragraph(document, '• 场景名称：具体情景的类别名称')
+    add_paragraph(document, '• 具体溢价率：该情景使用的精确溢价率数值')
+    add_paragraph(document, '• 参数条件：该情景使用的关键参数（如漂移率、波动率等）')
+    add_paragraph(document, '• 结果指标：盈利概率和中位数收益率')
+    add_paragraph(document, '')
 
-    # 9.3.2.4.2 综合分析结果
-    add_paragraph(document, '9.3.2.4.2 综合分析结果', bold=True)
+    # 9.3.2.6.2 综合分析结果
+    add_title(document, '9.3.2.6.2 综合分析结果', level=5)
     add_paragraph(document, '')
 
     # 这里需要汇总前面三个子节的阈值结果
@@ -1391,35 +1861,116 @@ def generate_chapter(context):
 
     # 1. 历史数据场景阈值（如果有符合条件的）
     historical_threshold = None
+    historical_valid = False  # 标记历史场景是否能形成有效交集
+    historical_min_premium = None
+    historical_max_premium = None
+
     if 'scenario_options' in locals():
         historical_qualified = []
         for scenario in scenario_options:
-            condition_1 = scenario['premium_rate'] <= -5
+            condition_1 = True  # 放开溢价率下限限制
             condition_2 = scenario['median_return'] > 8
-            condition_3 = abs(scenario['var_95']) < 60
-            condition_4 = scenario['profit_prob'] > 50
+            condition_3 = scenario['var_95'] > -30  # 95% VaR > -30%（损失率控制在30%以内）
+            condition_4 = scenario['profit_prob'] > 70  # 盈利概率 > 70%
 
             if condition_1 and condition_2 and condition_3 and condition_4:
                 historical_qualified.append(scenario)
 
-        if historical_qualified and len(qualified_by_category) >= 2:
-            historical_qualified.sort(key=lambda x: x['premium_rate'], reverse=True)
-            historical_threshold = historical_qualified[0]['premium_rate']
+        if historical_qualified:
+            # 重新按场景类型分组，确保在当前作用域中可用
+            scenario_categories = {
+                '市场指数': [],
+                '行业PE': [],
+                '个股PE': []
+            }
+
+            # 将情景按大场景分类
+            for scenario in historical_qualified:
+                for category in scenario_categories.keys():
+                    if category in scenario['name']:
+                        scenario_categories[category].append(scenario)
+                        break
+
+            # 对每个大场景应用基础筛选条件
+            qualified_by_category = {}
+            for category, scenarios in scenario_categories.items():
+                qualified = []
+                for scenario in scenarios:
+                    # 检查四个基础条件（优化后）
+                    condition_1 = True  # 放开溢价率下限限制
+                    condition_2 = scenario['median_return'] > 8  # 中位数收益率 > 8%
+                    condition_3 = scenario['var_95'] > -30  # 95% VaR > -30%
+                    condition_4 = scenario['profit_prob'] > 70  # 盈利概率 > 70%
+
+                    if condition_1 and condition_2 and condition_3 and condition_4:
+                        qualified.append(scenario)
+                qualified_by_category[category] = qualified
+
+            # 计算各场景类型的溢价率范围，然后取交集（保守策略）
+            # 关键：至少需要2个场景类型有符合条件的小场景才能形成有效交集
+            category_premium_ranges = {}
+            for category, scenarios in qualified_by_category.items():
+                if scenarios:
+                    premiums = [s['premium_rate'] for s in scenarios]
+                    category_premium_ranges[category] = {
+                        'min': min(premiums),
+                        'max': max(premiums),
+                        'count': len(premiums)
+                    }
+
+            # 只有当至少2个场景类型有符合条件的小场景时，才计算有效交集
+            if len(category_premium_ranges) >= 2:
+                # 交集的下限是各范围下限的最大值（最保守的下限）
+                historical_min_premium = max(r['min'] for r in category_premium_ranges.values())
+                # 交集的上限是各范围上限的最小值（最保守的上限）
+                historical_max_premium = min(r['max'] for r in category_premium_ranges.values())
+
+                # 如果交集为空（下限>上限），则历史场景无效
+                if historical_min_premium > historical_max_premium:
+                    # 无交集，历史场景无法形成有效报价空间
+                    historical_valid = False
+                    historical_threshold = None
+                    historical_min_premium = None
+                    historical_max_premium = None
+                else:
+                    # 有效交集
+                    historical_valid = True
+                    historical_threshold = (historical_min_premium + historical_max_premium) / 2
+            else:
+                # 少于2个场景类型有符合条件的小场景，历史场景无效
+                historical_valid = False
+                historical_threshold = None
+                historical_min_premium = None
+                historical_max_premium = None
 
     # 2. 参数构造场景阈值（如果有符合条件的）
     param_threshold = None
     param_threshold_actual = None
+    param_valid = False  # 默认无效
     if 'environment_matched_scenarios' in locals() and environment_matched_scenarios:
         param_nominal_premium = environment_matched_scenarios[0]['premium_rate']  # 名义溢价率（相对MA20）
+        # 参数构造确定上限，下限为定增规则最低限-20%
+        param_min_premium = -20.0  # 定增名义溢价率最低限
+        param_max_premium = param_nominal_premium  # 参数构造确定的上限
         # 基于名义溢价率计算发行价：发行价 = MA20 × (1 + 名义溢价率)
         issue_price_from_nominal = ma20_price * (1 + param_nominal_premium / 100)
         # 计算实际溢价率（相对当前价格）：实际溢价率 = 发行价 / 当前价格 - 1
         param_threshold_actual = (issue_price_from_nominal / current_price_eval - 1) * 100
         # 名义溢价率（保持不变）
         param_threshold = param_nominal_premium
+        param_valid = True  # 有符合条件的环境匹配场景，有效
 
     # 3. 反向推算阈值（使用名义溢价率相对MA20）
     reverse_nominal_premium = premium_to_ma20_adjusted  # 从9.3.2.1节获取名义溢价率（相对MA20）
+    reverse_valid = False  # 默认无效
+    # 反向推算确定上限，下限为定增规则最低限-20%
+    reverse_min_premium = -20.0  # 定增名义溢价率最低限
+    reverse_max_premium = reverse_nominal_premium  # 反向推算确定的上限
+    # 只有当反向推算上限 > -20%时才有效（即有溢价空间）
+    if reverse_max_premium > reverse_min_premium:
+        reverse_valid = True  # 反向推算有效
+    else:
+        reverse_valid = False  # 反向推算无效（上限等于或低于下限）
     # 基于名义溢价率计算发行价：发行价 = MA20 × (1 + 名义溢价率)
     issue_price_from_nominal = ma20_price * (1 + reverse_nominal_premium / 100)
     # 计算实际溢价率（相对当前价格）：实际溢价率 = 发行价 / 当前价格 - 1
@@ -1427,26 +1978,59 @@ def generate_chapter(context):
     # 名义溢价率（保持不变）
     reverse_threshold = reverse_nominal_premium
 
-    # 汇总结果（统一使用名义溢价率）
+    # 汇总结果（统一使用区间形式，只包含有效的大类）
     thresholds = []
-    if historical_threshold is not None:
-        thresholds.append(('历史数据场景', historical_threshold))
-    if param_threshold is not None:
-        thresholds.append(('参数构造场景', param_threshold))
-    if reverse_threshold is not None:
-        thresholds.append(('反向推算', reverse_threshold))
+
+    # 只有当历史场景形成有效交集时才加入
+    if historical_valid and historical_threshold is not None:
+        total_count = sum(r['count'] for r in category_premium_ranges.values())
+        thresholds.append(('历史数据场景', {
+            'min_premium': historical_min_premium,
+            'max_premium': historical_max_premium,
+            'avg_premium': historical_threshold,
+            'count': total_count
+        }))
+
+    # 参数构造场景（只有当有符合条件的环境匹配场景时才有效）
+    if param_valid and param_threshold is not None:
+        thresholds.append(('参数构造场景', {
+            'min_premium': param_min_premium,
+            'max_premium': param_max_premium,
+            'avg_premium': param_threshold,
+            'count': len(environment_matched_scenarios) if 'environment_matched_scenarios' in locals() else 0
+        }))
+
+    # 反向推算（只有当上限 > -20%时才有效）
+    if reverse_valid and 'premium_to_ma20_adjusted' in locals():
+        thresholds.append(('反向推算', {
+            'min_premium': reverse_min_premium,
+            'max_premium': reverse_max_premium,
+            'avg_premium': reverse_nominal_premium,
+            'count': 1  # 反向推算只有一个结果
+        }))
 
     if len(thresholds) >= 2:
-        # 统一使用名义溢价率（相对MA20）
-        all_premiums = [t[1] for t in thresholds]
+        # 提取所有阈值的最小值和最大值
+        all_min_premiums = []
+        all_max_premiums = []
 
-        min_premium = min(all_premiums)
-        max_premium = max(all_premiums)
+        for name, threshold in thresholds:
+            # 所有阈值现在都是区间形式（dict）
+            all_min_premiums.append(threshold['min_premium'])
+            all_max_premiums.append(threshold['max_premium'])
+
+        min_premium = min(all_min_premiums)
+        max_premium = max(all_max_premiums)
         premium_range = max_premium - min_premium
 
         add_paragraph(document, f'• 有效阈值数量：{len(thresholds)}个')
         for name, threshold in thresholds:
-            add_paragraph(document, f'• {name}阈值：{threshold:+.2f}%（名义溢价率，相对MA20）')
+            # 所有阈值都显示为区间形式
+            count_val = threshold['count']
+            count_str = f"，共{count_val}个符合情景" if count_val > 1 else ""
+            min_val = threshold['min_premium']
+            max_val = threshold['max_premium']
+            add_paragraph(document, f'• {name}阈值：[{min_val:+.1f}%, {max_val:+.1f}%]（名义溢价率，相对MA20{count_str}）')
 
         add_paragraph(document, '')
         add_paragraph(document, '最终溢价率区间建议：', bold=True)
@@ -1461,7 +2045,11 @@ def generate_chapter(context):
     else:
         add_paragraph(document, '• 有效阈值数量不足（少于2个）')
         add_paragraph(document, '• 无法形成可靠的溢价率区间，建议谨慎参与本次定增')
-        add_paragraph(document, '• 或参考单一可用的阈值进行报价决策')
+        add_paragraph(document, '• 可能原因：')
+        add_paragraph(document, '  - 历史数据场景：未能形成有效交集（需要至少2个场景类型有符合条件的小场景）')
+        add_paragraph(document, '  - 参数构造场景：未能筛选出符合条件的环境匹配场景')
+        add_paragraph(document, '  - 反向推算：上限值≤-20%，无溢价空间（无法在定增规则下达到8%收益目标）')
+        add_paragraph(document, '• 建议：参考单一可用的有效阈值（如有）或谨慎参与本次定增')
 
         # ==================== 9.4 主要风险提示 ====================
     add_title(document, '9.4 主要风险提示', level=2)

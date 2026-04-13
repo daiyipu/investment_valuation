@@ -66,13 +66,16 @@ os.makedirs(OUTPUTS_DIR, exist_ok=True)
 font_prop = get_font_prop()
 
 
-def _get_historical_price_and_ma20(stock_code, issue_date_str):
+def _get_historical_price_and_ma20(stock_code, issue_date_str, force_regenerate=False):
     """
     获取指定日期的股票价格和MA20（基于发行日）
+
+    重要：一旦发行日确定，MA20等基准数据将被锁定保存，后续只更新当前价格
 
     参数:
         stock_code: 股票代码
         issue_date_str: 发行日/报价日字符串（YYYYMMDD格式）
+        force_regenerate: 是否强制重新生成锁定数据（默认False）
 
     返回:
         tuple: (bidding_date_price, ma20_price) 或 (None, None)
@@ -80,28 +83,93 @@ def _get_historical_price_and_ma20(stock_code, issue_date_str):
     try:
         import sys
         import os
+        import json
         from datetime import datetime
         # 添加scripts目录到路径
         scripts_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'scripts')
         if scripts_dir not in sys.path:
             sys.path.insert(0, scripts_dir)
 
+        # 定义锁定数据文件路径
+        locked_data_file = os.path.join(DATA_DIR, f"{stock_code.replace('.', '_')}_issue_date_locked.json")
+
+        # 检查是否存在锁定的发行日数据
+        if os.path.exists(locked_data_file) and not force_regenerate:
+            print(f"  发现已锁定的发行日数据文件: {locked_data_file}")
+            with open(locked_data_file, 'r', encoding='utf-8') as f:
+                locked_data = json.load(f)
+
+            # 验证锁定数据的发行日是否匹配
+            locked_issue_date = locked_data.get('issue_date')
+            if locked_issue_date == issue_date_str:
+                print(f"  ✅ 使用已锁定的发行日数据（发行日：{issue_date_str}）")
+                ma20_price = locked_data.get('ma_20')
+                bidding_date_price = locked_data.get('issue_date_price')
+
+                # 只更新当前价格（最新交易日价格）
+                print(f"  更新当前价格（最新交易日价格）...")
+                from update_market_data import fetch_latest_data
+                latest_data = fetch_latest_data(stock_code)
+                if latest_data is not None and not latest_data.empty:
+                    # 获取最新数据（使用最后一行，不是第一行）
+                    current_price = latest_data.iloc[-1]['close']  # 使用最后一行的收盘价
+                    analysis_date = latest_data.iloc[-1]['trade_date']
+                    print(f"  当前价格已更新至：{analysis_date} - {current_price:.2f}元")
+
+                    # 更新锁定数据中的当前价格，不改变MA20等基准数据
+                    locked_data['current_price'] = float(current_price)
+                    locked_data['analysis_date'] = analysis_date
+
+                    # 保存更新后的锁定数据
+                    with open(locked_data_file, 'w', encoding='utf-8') as f:
+                        json.dump(locked_data, f, ensure_ascii=False, indent=2)
+                else:
+                    print(f"  ⚠️ 无法获取最新价格，保持锁定数据中的当前价格：{locked_data.get('current_price', 'N/A')}元")
+
+                return bidding_date_price, ma20_price
+            else:
+                print(f"  ⚠️ 锁定数据的发行日({locked_issue_date})与指定发行日({issue_date_str})不匹配")
+                print(f"  将重新生成锁定数据...")
+
         # 导入数据更新模块
         from update_market_data import generate_market_data, fetch_latest_data
 
         # 使用update_market_data生成市场数据（基于发行日）
+        print(f"  基于发行日{issue_date_str}生成市场数据...")
         market_data = generate_market_data(stock_code, stock_code, issue_date_str)
 
         if market_data is None:
             return None, None
 
         ma20_price = market_data.get('ma_20')
-        current_price = market_data.get('current_price')
+        bidding_date_price = market_data.get('current_price')  # 发行日当天的价格
 
-        return current_price, ma20_price
+        # 创建锁定数据结构
+        locked_data = {
+            'issue_date': issue_date_str,
+            'issue_date_price': bidding_date_price,
+            'ma_20': ma20_price,
+            'current_price': bidding_date_price,  # 初始时当前价格等于发行日价格
+            'analysis_date': issue_date_str,
+            'stock_code': stock_code,
+            'locked_timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+
+        # 保存锁定数据
+        with open(locked_data_file, 'w', encoding='utf-8') as f:
+            json.dump(locked_data, f, ensure_ascii=False, indent=2)
+
+        print(f"  ✅ 发行日数据已锁定保存：{locked_data_file}")
+        print(f"     发行日：{issue_date_str}")
+        print(f"     MA20价格：{ma20_price:.2f}元")
+        print(f"     发行日价格：{bidding_date_price:.2f}元")
+
+        return bidding_date_price, ma20_price
 
     except Exception as e:
-        print(f"  获取历史价格和MA20失败: {e}")
+        print(f"  ❌ 获取历史价格和MA20失败: {e}")
+        import traceback
+        traceback.print_exc()
         return None, None
 
 
@@ -168,7 +236,7 @@ def check_data_freshness(market_data, max_trading_days=0):
         return True, f"无法解析数据日期：{e}"
 
 
-def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_date=None, force=False):
+def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_date=None, force=False, debug_mode=False, target_chapter=None):
     """
     生成完整的定增风险分析报告
 
@@ -189,6 +257,12 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
     print(f"股票代码: {stock_code}")
     print(f"股票名称: {stock_name}")
     print(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+    if debug_mode:
+        print("🔍 调试模式已启用")
+    if target_chapter:
+        print(f"📄 仅生成章节: {target_chapter}")
+
     print("="*70)
 
     # 创建Word文档
@@ -243,6 +317,15 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
     print("\n 加载配置数据...")
     project_params, risk_params, market_data = load_placement_config(stock_code)
     industry_data = _load_industry_data(stock_code)
+
+    # 优先从配置文件中读取发行日（一旦配置文件中有发行日，就始终使用它）
+    config_issue_date = project_params.get('issue_date', '')
+    if config_issue_date:
+        if issue_date and config_issue_date != issue_date:
+            print(f"  ⚠️ 配置文件发行日({config_issue_date})与命令行参数({issue_date})不同，使用配置文件中的发行日")
+        else:
+            print(f"  从配置文件读取发行日：{config_issue_date}")
+        issue_date = config_issue_date  # 始终使用配置文件中的发行日
 
     # 处理报价日和询价邀请日
     if issue_date:

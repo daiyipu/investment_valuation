@@ -1096,8 +1096,172 @@ def generate_chapter(context):
         }
         print(f" 已保存历史参数模拟结果到context：盈利概率{profit_prob_hist_120d:.1f}%，预期收益{mean_return_hist_120d:.2f}%")
 
+        # ==================== 不同溢价率模拟汇总表 ====================
+        add_paragraph(document, '')
+        add_paragraph(document, '不同溢价率情景模拟汇总：', bold=True)
+        add_paragraph(document, '根据5.3和5.4节预测的参数，对名义溢价率从-20%至0%进行蒙特卡洛模拟（1%一档），分析各溢价率水平下的预期收益和风险特征。')
+        add_paragraph(document, '')
+
+        # 使用MA20作为名义溢价率的基准
+        ma20_price = market_data.get('ma_20', project_params['current_price'])
+
+        # 溢价率从-20%到0%，1%一档
+        premium_rates = list(range(-20, 1))  # -20%, -19%, ..., -1%, 0%
+
+        # 关键节点（用于突出显示）
+        key_rates = [-20, -15, -10, -5, 0]
+
+        # 存储不同溢价率的模拟结果
+        premium_simulation_results = []
+
+        print(f"\n运行不同溢价率情景模拟（-20%至0%，1%一档）...")
+        print(f"  基准价格(MA20): {ma20_price:.2f}元")
+        print(f"  预测漂移率: {predicted_drift*100:.2f}%")
+        print(f"  预测波动率: {predicted_vol*100:.2f}%")
+
+        for premium_rate in premium_rates:
+            # 计算该溢价率下的发行价
+            # premium_rate为负数表示折价，正数表示溢价
+            simulated_issue_price = ma20_price * (1 + premium_rate / 100)
+
+            # 使用预测参数运行蒙特卡洛模拟
+            sim_premium = analyzer.monte_carlo_simulation(
+                n_simulations=10000,  # 使用较高次数确保准确性
+                time_steps=120,  # 120日
+                volatility=predicted_vol,
+                drift=predicted_drift,
+                seed=42 + premium_rate + 20  # 使用不同种子确保各情景独立
+            )
+
+            # 计算结果
+            final_prices_premium = sim_premium.iloc[:, -1].values
+            # 连续复利（对数收益率）
+            log_returns_premium = np.log(final_prices_premium / simulated_issue_price)
+            # 年化收益率
+            annualized_log_returns_premium = log_returns_premium * (252.0 / 120)
+
+            # 统计
+            profit_prob_premium = (log_returns_premium > 0).mean() * 100
+            mean_return_premium = annualized_log_returns_premium.mean()
+            median_return_premium = np.median(annualized_log_returns_premium)
+            percentile_5_premium = np.percentile(annualized_log_returns_premium, 5)
+            percentile_95_premium = np.percentile(annualized_log_returns_premium, 95)
+
+            # 计算与当前价格的差异
+            price_diff_vs_current = (simulated_issue_price - project_params['current_price']) / project_params['current_price'] * 100
+
+            premium_simulation_results.append({
+                'premium_rate': premium_rate,
+                'issue_price': simulated_issue_price,
+                'price_diff_vs_current': price_diff_vs_current,
+                'profit_prob': profit_prob_premium,
+                'mean_return': mean_return_premium,
+                'median_return': median_return_premium,
+                'percentile_5': percentile_5_premium,
+                'percentile_95': percentile_95_premium
+            })
+
+            print(f"  溢价率{premium_rate:+3d}%: 发行价{simulated_issue_price:.2f}元, 盈利概率{profit_prob_premium:.1f}%, 预期收益{mean_return_premium*100:.2f}%")
+
+        # 创建汇总表
+        premium_table_headers = [
+            '名义溢价率',
+            '发行价格(元)',
+            '与当前价差异(%)',
+            '盈利概率(%)',
+            '预期年化收益(%)',
+            '中位数收益(%)',
+            '5% VaR(%)',
+            '95% VaR(%)'
+        ]
+
+        premium_table_data = []
+        for result in premium_simulation_results:
+            premium_rate = result['premium_rate']
+            # 对关键节点进行标记
+            if premium_rate in key_rates:
+                rate_label = f"★ {premium_rate:+d}%"  # 用★标记关键节点
+            else:
+                rate_label = f"  {premium_rate:+d}%"  # 普通节点用空格缩进
+
+            premium_table_data.append([
+                rate_label,
+                f"{result['issue_price']:.2f}",
+                f"{result['price_diff_vs_current']:+.2f}",
+                f"{result['profit_prob']:.1f}",
+                f"{result['mean_return']*100:.2f}",
+                f"{result['median_return']*100:.2f}",
+                f"{result['percentile_5']*100:.2f}",
+                f"{result['percentile_95']*100:.2f}"
+            ])
+
+        # 添加汇总表到文档
+        add_table_data(document, premium_table_headers, premium_table_data)
+
+        # 添加分析说明
+        add_paragraph(document, '')
+        add_paragraph(document, '表格分析说明：', bold=True)
+        add_paragraph(document, f'• 名义溢价率：相对MA20价格({ma20_price:.2f}元)的溢价率，负值表示折价')
+        add_paragraph(document, f'• 发行价格：根据名义溢价率计算的定增发行价格')
+        add_paragraph(document, f'• 与当前价差异：发行价格相对当前价格({project_params["current_price"]:.2f}元)的差异百分比')
+        add_paragraph(document, f'• 盈利概率：蒙特卡洛模拟中收益率为正的概率，基于{predicted_drift*100:.2f}%漂移率和{predicted_vol*100:.2f}%波动率')
+        add_paragraph(document, f'• 预期年化收益：基于预测参数的蒙特卡洛模拟得出的平均年化收益率（连续复利）')
+        add_paragraph(document, f'• 5% VaR：95%置信度下的最大损失（年化）')
+        add_paragraph(document, f'• 95% VaR：5%置信度下的最大收益（年化，乐观情景）')
+
+        # 找出最优溢价率区间
+        add_paragraph(document, '')
+        add_paragraph(document, '溢价率区间建议：', bold=True)
+
+        # 筛选出符合条件的溢价率
+        qualified_rates = [
+            r for r in premium_simulation_results
+            if r['profit_prob'] >= 70 and r['percentile_5'] > -30
+        ]
+
+        if qualified_rates:
+            best_rate = max(qualified_rates, key=lambda x: x['mean_return'])
+            worst_qualified_rate = min(qualified_rates, key=lambda x: x['mean_return'])
+
+            add_paragraph(document, f'• 符合条件（盈利概率≥70%且VaR>-30%）的溢价率：')
+            qualified_rate_list = [f"{r['premium_rate']:+d}%" for r in qualified_rates]
+            add_paragraph(document, f"  {', '.join(qualified_rate_list)}")
+            add_paragraph(document, f'• 推荐溢价率区间：{worst_qualified_rate["premium_rate"]:+d}% 至 {best_rate["premium_rate"]:+d}%')
+            add_paragraph(document, f'  对应发行价：{worst_qualified_rate["issue_price"]:.2f}元 至 {best_rate["issue_price"]:.2f}元')
+            add_paragraph(document, f'  预期年化收益：{worst_qualified_rate["mean_return"]*100:.2f}% 至 {best_rate["mean_return"]*100:.2f}%')
+        else:
+            # 如果没有完全符合条件的，找出最接近的
+            if premium_simulation_results:
+                best_overall = max(premium_simulation_results, key=lambda x: x['profit_prob'] * x['mean_return'])
+                add_paragraph(document, f'• 基于预测参数，最优溢价率：{best_overall["premium_rate"]:+d}%')
+                add_paragraph(document, f'  对应发行价：{best_overall["issue_price"]:.2f}元')
+                add_paragraph(document, f'  盈利概率：{best_overall["profit_prob"]:.1f}%')
+                add_paragraph(document, f'  预期年化收益：{best_overall["mean_return"]*100:.2f}%')
+
+        add_paragraph(document, '')
+        add_paragraph(document, '投资建议：', bold=True)
+        add_paragraph(document, '• 深度折价区间（-20%至-16%）：安全边际充足，盈利概率高，推荐积极配置')
+        add_paragraph(document, '• 中等折价区间（-15%至-11%）：风险收益平衡，适合稳健投资者')
+        add_paragraph(document, '• 浅度折价区间（-10%至-6%）：安全边际有限，需谨慎评估')
+        add_paragraph(document, '• 临界区间（-5%至-1%）：风险较高，仅建议在强烈看好标的前提下考虑')
+        add_paragraph(document, '• 平价及以上（0%及正溢价）：风险最大，一般不建议参与')
+
+        print(f" 溢价率模拟完成：共{len(premium_simulation_results)}个情景（从-20%至0%，1%一档）")
+
+        # 保存溢价率模拟结果到context，供第九章使用
+        context['results']['premium_simulation_results'] = premium_simulation_results
+        context['results']['premium_simulation_params'] = {
+            'drift': predicted_drift,
+            'volatility': predicted_vol,
+            'param_source': 'ARIMA+GARCH预测' if not skip_time_series else '历史120日窗口',
+            'ma20_price': ma20_price,
+            'time_steps': 120
+        }
+        print(f" 已保存溢价率模拟结果到context，供第九章筛选分析使用")
+
         # 添加模拟参数说明
-        add_paragraph(document, '模拟参数：', bold=True)
+        add_paragraph(document, '')
+        add_paragraph(document, '基础模拟参数：', bold=True)
 
         # 计算名义溢价率和实际溢价率
         pricing_ma20 = project_params.get('pricing_ma20', market_data.get('ma_20', project_params['current_price']))

@@ -22,9 +22,10 @@ import argparse
 
 def calculate_annual_return_v2(df, window):
     """
-    计算年化收益率（修复后的公式）
+    计算年化收益率（连续复利/对数收益率）
 
-    年化方法（单利）：年化收益率 = 期间收益率 × (250 / 窗口期天数)
+    年化方法：年化收益率 = 对数收益率 × (250 / 窗口期天数)
+    与第5、6章蒙特卡洛和情景分析保持一致
     """
     if len(df) < window:
         return np.nan, np.nan
@@ -33,13 +34,13 @@ def calculate_annual_return_v2(df, window):
     start_price = df['close'].iloc[-window]
     end_price = df['close'].iloc[-1]
 
-    # 计算期间收益率
-    period_return = (end_price - start_price) / start_price
+    # 计算期间对数收益率（连续复利）
+    period_log_return = np.log(end_price / start_price)
 
     # 按交易日比例年化（250个交易日/年）
-    annual_return = period_return * (250.0 / window)
+    annual_log_return = period_log_return * (250.0 / window)
 
-    return annual_return, period_return
+    return annual_log_return, period_log_return
 
 
 def calculate_volatility(df, window):

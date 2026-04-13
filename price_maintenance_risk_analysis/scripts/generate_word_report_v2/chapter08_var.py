@@ -140,10 +140,10 @@ def generate_chapter(context):
     ]
 
     # 添加项目参数
-    ma120_var = market_data.get('ma_120', 0)
-    if ma120_var > 0:
-        discount_var = (project_params["issue_price"] - ma120_var) / ma120_var * 100
-        discount_note = f"（相对MA120: {ma120_var:.2f}元）"
+    ma20_var = market_data.get('ma_20', 0)
+    if ma20_var > 0:
+        discount_var = (project_params["issue_price"] - ma20_var) / ma20_var * 100
+        discount_note = f"（相对MA20: {ma20_var:.2f}元）"
     else:
         discount_var = (project_params["issue_price"] - project_params["current_price"]) / project_params["current_price"] * 100
         discount_note = f"（相对当前价: {project_params['current_price']:.2f}元）"

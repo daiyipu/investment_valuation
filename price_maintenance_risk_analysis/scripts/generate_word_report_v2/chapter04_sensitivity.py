@@ -157,7 +157,7 @@ def generate_discount_scenario_charts_split(base_price, current_price, volatilit
     生成发行价折扣敏感性分析图表（拆分版）
 
     参数:
-        base_price: 基准价格（MA120）
+        base_price: 基准价格（MA20）
         current_price: 当前价格
         volatility: 波动率
         drift: 漂移率
@@ -220,7 +220,7 @@ def generate_discount_scenario_charts_split(base_price, current_price, volatilit
     # 左图：盈利概率
     axes[0].bar(discount_labels, prob_results, color=colors, alpha=0.7, edgecolor='white')
     axes[0].axhline(y=50, color='black', linestyle='--', linewidth=1, label='盈亏平衡线')
-    axes[0].set_xlabel('发行价折扣/溢价率（相对MA120）', fontproperties=font_prop, fontsize=11)
+    axes[0].set_xlabel('发行价折扣/溢价率（相对MA20）', fontproperties=font_prop, fontsize=11)
     axes[0].set_ylabel('盈利概率 (%)', fontproperties=font_prop, fontsize=11)
     axes[0].set_title('发行价对盈利概率的影响', fontproperties=font_prop, fontsize=13, fontweight='bold')
     axes[0].legend(prop=font_prop)
@@ -249,7 +249,7 @@ def generate_discount_scenario_charts_split(base_price, current_price, volatilit
 
     axes[1].bar(discount_labels, return_results, color=colors_return, alpha=0.7, edgecolor='white')
     axes[1].axhline(y=0, color='black', linestyle='--', linewidth=1)
-    axes[1].set_xlabel('发行价折扣/溢价率（相对MA120）', fontproperties=font_prop, fontsize=11)
+    axes[1].set_xlabel('发行价折扣/溢价率（相对MA20）', fontproperties=font_prop, fontsize=11)
     axes[1].set_ylabel('期望年化收益率 (%)', fontproperties=font_prop, fontsize=11)
     axes[1].set_title('发行价对期望收益率的影响', fontproperties=font_prop, fontsize=13, fontweight='bold')
     axes[1].grid(True, alpha=0.3, axis='y')
@@ -792,7 +792,7 @@ def generate_chapter(context):
 
     # 生成发行价折扣情景图表（统一版）
     scenario_chart_paths = generate_discount_scenario_charts_split(
-        ma120, project_params['current_price'], risk_params['volatility'],
+        pricing_ma20, project_params['current_price'], risk_params['volatility'],
         risk_params['drift'], project_params['lockup_period'], IMAGES_DIR)
 
     # 添加统一图表

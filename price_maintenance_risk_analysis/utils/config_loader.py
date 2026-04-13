@@ -202,6 +202,20 @@ def load_placement_config(
         'premium_rate': premium_rate if 'premium_rate' in locals() else placement_params.get('premium_rate', -0.10),
     }
 
+    # 处理发行日相关参数（如果配置文件中有）
+    if 'issue_date' in placement_params and placement_params['issue_date']:
+        project_params['issue_date'] = placement_params['issue_date']
+        print(f"✅ 从配置文件读取发行日：{placement_params['issue_date']}")
+
+    if 'invitation_date' in placement_params and placement_params['invitation_date']:
+        project_params['invitation_date'] = placement_params['invitation_date']
+
+    if 'ma20_price' in placement_params and placement_params['ma20_price']:
+        project_params['ma20_price'] = placement_params['ma20_price']
+
+    if 'issue_date_price' in placement_params and placement_params['issue_date_price']:
+        project_params['issue_date_price'] = placement_params['issue_date_price']
+
     # 将pricing_ma20也添加到market_data中，确保统一
     if market_data:
         market_data['pricing_ma20'] = pricing_ma20
