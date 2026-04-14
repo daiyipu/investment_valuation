@@ -953,14 +953,17 @@ def generate_chapter(context):
             var_5_annual = result['percentile_5'] * 100  # 年化VaR
             profit_prob_mc = result['profit_prob']  # 盈利概率
 
-            # 转换为锁定期收益率用于筛选（避免年化VaR超过-100%的问题）
-            # 锁定期收益率 = 年化收益率 × (6/12) = 年化收益率 × 0.5
-            median_return_lockup = median_return_annual * 0.5
-            var_5_lockup = var_5_annual * 0.5
+            # 统一转换为120日区间对数收益率（与市场指数情景保持一致）
+            # 年化目标收益率转换为区间目标收益率：8% × (120/250) = 3.84%
+            target_return_period = target_return * (120.0 / 250.0) * 100  # 8% → 3.84%
 
-            # 检查是否符合筛选条件（使用锁定期收益率）
-            condition_1 = median_return_lockup > 8  # 中位数收益率 > 8%（锁定期）
-            condition_2 = var_5_lockup > -30  # VaR损失控制在30%以内（锁定期）
+            # 转换当前收益率：年化对数收益率 → 120日区间对数收益率
+            median_return_period = median_return_annual * (120.0 / 250.0)  # 年化 → 120日
+            var_5_period = var_5_annual * (120.0 / 250.0)
+
+            # 检查是否符合筛选条件（使用区间对数收益率，与市场指数情景一致）
+            condition_1 = median_return_period > target_return_period  # 中位数收益率 > 3.84%（120日区间）
+            condition_2 = var_5_period > -30  # VaR损失控制在30%以内（120日区间）
             condition_3 = profit_prob_mc > 70  # 盈利概率 > 70%
             condition_4 = True  # 溢价率不设下限
 
@@ -970,13 +973,13 @@ def generate_chapter(context):
                 'premium_rate': premium_rate,
                 'issue_price': result['issue_price'],
                 'profit_prob': profit_prob_mc,
-                'median_return_annual': median_return_annual,  # 年化收益率
-                'median_return_lockup': median_return_lockup,  # 锁定期收益率
-                'var_5_annual': var_5_annual,  # 年化VaR
-                'var_5_lockup': var_5_lockup,  # 锁定期VaR
+                'median_return_annual': median_return_annual,  # 年化收益率（保留用于参考）
+                'median_return_period': median_return_period,  # 120日区间收益率（用于筛选）
+                'var_5_annual': var_5_annual,  # 年化VaR（保留用于参考）
+                'var_5_period': var_5_period,  # 120日区间VaR（用于筛选）
                 'is_qualified': is_qualified,
                 'conditions': {
-                    'return_check': condition_1,
+                    'return_check': condition_1,  # 区间收益率检查
                     'var_check': condition_2,
                     'prob_check': condition_3
                 }
@@ -988,7 +991,7 @@ def generate_chapter(context):
             # 输出调试信息（仅显示关键节点）
             if premium_rate in [-20, -15, -10, -5, 0]:
                 status = "✅符合" if is_qualified else "❌不符合"
-                print(f"  溢价率{premium_rate:+3d}%: {status} - 盈利概率{profit_prob_mc:.1f}%, 锁定期中位数收益{median_return_lockup:.2f}%, 锁定期VaR{var_5_lockup:.2f}%")
+                print(f"  溢价率{premium_rate:+3d}%: {status} - 盈利概率{profit_prob_mc:.1f}%, 锁定期中位数收益{median_return_period:.2f}%, 锁定期VaR{var_5_period:.2f}%")
 
         # 创建筛选结果表格
         add_paragraph(document, '不同溢价率筛选结果（基于锁定期收益率）：', bold=True)
@@ -999,7 +1002,7 @@ def generate_chapter(context):
             '盈利概率(%)',
             '中位数收益(%)',
             '5% VaR(%)',
-            '收益率>8%',
+            '收益率>3.84%',  # 8%年化转换为120日区间收益率
             'VaR>-30%',
             '盈利概率>70%',
             '符合条件'
@@ -1014,13 +1017,13 @@ def generate_chapter(context):
             else:
                 rate_label = f"  {premium_rate:+d}%"
 
-            # 使用锁定期收益率进行显示和筛选（避免年化VaR超过-100%的问题）
+            # 使用120日区间收益率进行显示和筛选（与市场指数情景保持一致）
             mc_screening_data.append([
                 rate_label,
                 f"{result['issue_price']:.2f}",
                 f"{result['profit_prob']:.1f}",
-                f"{result['median_return_lockup']:.2f}",  # 锁定期收益率
-                f"{result['var_5_lockup']:.2f}",  # 锁定期VaR
+                f"{result['median_return_period']:.2f}",  # 120日区间收益率
+                f"{result['var_5_period']:.2f}",  # 120日区间VaR
                 "✅" if result['conditions']['return_check'] else "❌",
                 "✅" if result['conditions']['var_check'] else "❌",
                 "✅" if result['conditions']['prob_check'] else "❌",
@@ -1032,19 +1035,19 @@ def generate_chapter(context):
         # 添加表格说明
         add_paragraph(document, '')
         add_paragraph(document, '表格说明：', bold=True)
-        add_paragraph(document, '• 表格中的收益率和VaR均基于锁定期（6个月）计算，避免年化值超过-100%的问题')
-        add_paragraph(document, '• 锁定期收益率 = 年化收益率 × 0.5，更直观反映定增实际投资回报')
-        add_paragraph(document, '• 第六章情景分析使用年化收益率，但本节使用锁定期收益率以保持数值合理性')
-        add_paragraph(document, '• 筛选条件（收益率>8%、VaR>-30%）均基于锁定期收益率进行判断')
-        add_paragraph(document, '• 盈利概率基于锁定期（6个月）的模拟结果计算')
+        add_paragraph(document, '• 表格中的收益率和VaR均基于120日区间对数收益率计算，与市场指数情景保持一致')
+        add_paragraph(document, '• 120日区间收益率 = 年化收益率 × (120/250)，匹配定增锁定期（6个月）')
+        add_paragraph(document, '• 筛选条件：目标收益率8%（年化）转换为120日区间收益率3.84%进行筛选')
+        add_paragraph(document, '• VaR>-30%基于120日区间收益率，避免年化VaR超过-100%的问题')
+        add_paragraph(document, '• 盈利概率基于蒙特卡洛模拟的120日锁定期结果计算')
 
         # 筛选结果分析
         add_paragraph(document, '')
         add_paragraph(document, '筛选结果分析：', bold=True)
 
         if qualified_mc_rates:
-            best_mc_rate = max(qualified_mc_rates, key=lambda x: next(r['median_return_lockup'] for r in mc_analysis_results if r['premium_rate'] == x))
-            worst_mc_rate = min(qualified_mc_rates, key=lambda x: next(r['median_return_lockup'] for r in mc_analysis_results if r['premium_rate'] == x))
+            best_mc_rate = max(qualified_mc_rates, key=lambda x: next(r['median_return_period'] for r in mc_analysis_results if r['premium_rate'] == x))
+            worst_mc_rate = min(qualified_mc_rates, key=lambda x: next(r['median_return_period'] for r in mc_analysis_results if r['premium_rate'] == x))
 
             add_paragraph(document, f'• 符合条件的溢价率范围：{min(qualified_mc_rates):+d}% 至 {max(qualified_mc_rates):+d}%')
             add_paragraph(document, f'• 推荐溢价率区间：{worst_mc_rate:+d}% 至 {best_mc_rate:+d}%')
@@ -1055,26 +1058,26 @@ def generate_chapter(context):
 
             add_paragraph(document, f'  对应发行价区间：{worst_result["issue_price"]:.2f}元 至 {best_result["issue_price"]:.2f}元')
             add_paragraph(document, f'  盈利概率区间：{worst_result["profit_prob"]:.1f}% 至 {best_result["profit_prob"]:.1f}%')
-            add_paragraph(document, f'  预期收益区间：{worst_result["median_return_lockup"]:.2f}% 至 {best_result["median_return_lockup"]:.2f}%（锁定期）')
+            add_paragraph(document, f'  预期收益区间：{worst_result["median_return_period"]:.2f}% 至 {best_result["median_return_period"]:.2f}%（120日区间）')
             add_paragraph(document, f'• 共{len(qualified_mc_rates)}个溢价率档次符合严格的筛选条件')
         else:
             # 如果没有完全符合条件的，找出最接近的
             if mc_analysis_results:
                 # 按综合得分排序（盈利概率 * 锁定期收益率 * VaR安全性）
-                best_overall = max(mc_analysis_results, key=lambda x: x['profit_prob'] * x['median_return_lockup'] * (1 if x['var_5_lockup'] > -30 else 0.5))
+                best_overall = max(mc_analysis_results, key=lambda x: x['profit_prob'] * x['median_return_period'] * (1 if x['var_5_period'] > -30 else 0.5))
                 add_paragraph(document, f'• 无溢价率能完全符合所有筛选条件')
                 add_paragraph(document, f'• 最接近条件的溢价率：{best_overall["premium_rate"]:+d}%')
                 add_paragraph(document, f'  对应发行价：{best_overall["issue_price"]:.2f}元')
                 add_paragraph(document, f'  盈利概率：{best_overall["profit_prob"]:.1f}%')
-                add_paragraph(document, f'  预期收益：{best_overall["median_return_lockup"]:.2f}%（锁定期）')
-                add_paragraph(document, f'  VaR损失：{best_overall["var_5_lockup"]:.2f}%（锁定期）')
+                add_paragraph(document, f'  预期收益：{best_overall["median_return_period"]:.2f}%（120日区间）')
+                add_paragraph(document, f'  VaR损失：{best_overall["var_5_period"]:.2f}%（锁定期）')
 
                 # 分析最接近条件的溢价率不满足哪些条件
                 failed_conditions = []
                 if not best_overall['conditions']['return_check']:
-                    failed_conditions.append(f"中位数收益{best_overall['median_return_lockup']:.2f}%未达到8%要求")
+                    failed_conditions.append(f"中位数收益{best_overall['median_return_period']:.2f}%未达到3.84%要求（8%年化转换为120日区间）")
                 if not best_overall['conditions']['var_check']:
-                    failed_conditions.append(f"VaR损失{best_overall['var_5_lockup']:.2f}%超过-30%限制")
+                    failed_conditions.append(f"VaR损失{best_overall['var_5_period']:.2f}%超过-30%限制")
                 if not best_overall['conditions']['prob_check']:
                     failed_conditions.append(f"盈利概率{best_overall['profit_prob']:.1f}%未达到70%要求")
 
@@ -1089,7 +1092,7 @@ def generate_chapter(context):
             add_paragraph(document, f'• 推荐重点关注{best_mc_rate:+d}%折价率，预期收益最高且符合所有风控要求')
         else:
             if mc_analysis_results:
-                best_overall = max(mc_analysis_results, key=lambda x: x['profit_prob'] * x['median_return_lockup'])
+                best_overall = max(mc_analysis_results, key=lambda x: x['profit_prob'] * x['median_return_period'])
                 add_paragraph(document, f'• 建议谨慎参与，最优溢价率{best_overall["premium_rate"]:+d}%仍无法完全满足风控要求')
                 add_paragraph(document, f'• 如果必须参与，建议要求更高的折价率或等待更好的市场时机')
 
@@ -1695,29 +1698,40 @@ def generate_chapter(context):
     all_scenarios_details = []
 
     # 1. 反向推算场景 - 从context中获取9.3.2.1节的计算结果
-    # 反向推算结果要在多个档次中显示：-20%, -15%, -10%
-    # 因为反向推算确定的是上限（-11.56%），更低溢价率更安全也符合条件
+    # 反向推算确定的是区间[min_premium, max_premium]，在这个区间内的所有档次都显示
     reverse_calc = context['results'].get('reverse_calculation', {})
     if reverse_calc:
         reverse_premium = reverse_calc.get('premium_to_ma20_adjusted', 0)
         reverse_price = reverse_calc.get('max_issue_price_adjusted', 0)
         reverse_current_price = reverse_calc.get('current_price_eval', 0)
 
-        print(f"调试：从context读取反向推算结果 - 溢价率: {reverse_premium:.2f}%, 发行价: {reverse_price:.2f}元")
+        # 获取反向推算的区间范围
+        min_premium = reverse_calc.get('min_premium', -20.0)  # 下限
+        max_premium = reverse_calc.get('max_premium', reverse_premium)  # 上限（计算出的-11.4%）
 
-        # 为多个档次添加反向推算场景
-        reverse_levels = [-20.0, -15.0, -10.0]  # 在这些档次中都显示
-        for level in reverse_levels:
+        print(f"调试：从context读取反向推算结果 - 区间: [{min_premium:.1f}%, {max_premium:.1f}%], 发行价: {reverse_price:.2f}元")
+
+        # 反向推算结果：在区间内的所有溢价率档次都显示
+        # 所有溢价率档次
+        all_premium_levels = [-20.0, -15.0, -10.0, -5.0, 0.0]
+
+        # 找出在区间内的档次
+        reverse_premium_levels = [level for level in all_premium_levels
+                                 if min_premium <= level <= max_premium]
+
+        print(f"调试：反向推算区间[{min_premium:.1f}%, {max_premium:.1f}%]涵盖的档次: {reverse_premium_levels}")
+
+        for premium_level in reverse_premium_levels:
             all_scenarios_details.append({
-                'premium_rate': level,  # 使用档次溢价率而不是实际计算值
+                'premium_rate': premium_level,  # 使用档次溢价率，确保出现在对应档次
                 'scenario_type': '反向推算',
                 'scenario_name': '目标收益率法',
-                'params': f"目标收益8%, 当前价{reverse_current_price:.2f}元, 上限溢价率{reverse_premium:+.1f}%",
+                'params': f"目标收益8%, 当前价{reverse_current_price:.2f}元, 上限溢价率{max_premium:+.1f}%",
                 'results': f"上限发行价{reverse_price:.2f}元",
                 'is_qualified': True,
                 'is_reverse_calc': True  # 标记为反向推算场景
             })
-        print(f"调试：反向推算场景已添加到all_scenarios_details，总场景数: {len(all_scenarios_details)}")
+        print(f"调试：反向推算场景已添加到all_scenarios_details（{len(reverse_premium_levels)}个档次），总场景数: {len(all_scenarios_details)}")
     else:
         print(f"调试：context中未找到反向推算结果")
 
@@ -1730,7 +1744,7 @@ def generate_chapter(context):
                     'scenario_type': '蒙特卡洛模拟',
                     'scenario_name': '预测参数模拟',
                     'params': f"漂移率{predicted_drift*100:.0f}%, 波动率{predicted_vol*100:.0f}%, 溢价率{result['premium_rate']:+.0f}%",
-                    'results': f"概率{result['profit_prob']:.1f}%, 收益{result['median_return_lockup']:.1f}%",
+                    'results': f"概率{result['profit_prob']:.1f}%, 收益{result['median_return_period']:.1f}%",
                     'is_qualified': True
                 })
 
@@ -2019,8 +2033,11 @@ def generate_chapter(context):
             all_min_premiums.append(threshold['min_premium'])
             all_max_premiums.append(threshold['max_premium'])
 
-        min_premium = min(all_min_premiums)
-        max_premium = max(all_max_premiums)
+        # 使用真正的交集逻辑（保守原则）
+        # 交集下限 = 各方法最小值中的最大值（最保守的下限）
+        # 交集上限 = 各方法最大值中的最小值（最保守的上限）
+        min_premium = max(all_min_premiums)  # 取最小值中的最大值（保守下限）
+        max_premium = min(all_max_premiums)  # 取最大值中的最小值（保守上限）
         premium_range = max_premium - min_premium
 
         add_paragraph(document, f'• 有效阈值数量：{len(thresholds)}个')

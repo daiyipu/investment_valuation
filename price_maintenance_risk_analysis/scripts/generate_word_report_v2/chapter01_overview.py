@@ -287,15 +287,8 @@ def generate_chapter(context):
     add_paragraph(document, '本章节分析主要市场指数的表现，包括波动率、收益率、胜率等指标，为项目风险评估提供市场环境参考。')
 
     # 加载指数数据（从data目录）
-    # 优先使用新方法计算的指数数据（使用修复后的年化收益率公式）
-    indices_data_file_v2 = os.path.join(DATA_DIR, 'market_indices_scenario_data_v2.json')
-    indices_data_file = os.path.join(DATA_DIR, 'market_indices_scenario_data.json')
+    indices_data_file = os.path.join(DATA_DIR, 'market_indices_scenario_data_v2.json')
     indices_charts_paths = []
-
-    # 优先使用新数据
-    if os.path.exists(indices_data_file_v2):
-        print(" 使用新方法计算的指数数据（修复后的年化收益率公式）")
-        indices_data_file = indices_data_file_v2
 
     if os.path.exists(indices_data_file):
         print("加载市场指数数据...")
@@ -310,21 +303,22 @@ def generate_chapter(context):
             add_paragraph(document, '')
             add_paragraph(document, '主要市场指数60日指标对比：')
 
-            index_headers_60d = ['指数', '当前点位', '波动率', '区间收益率', '年化收益率', '胜率']
+            index_headers_60d = ['指数', '当前点位', '波动率', '区间收益率', '胜率']
             index_table_data_60d = []
             for name, data in indices_data.items():
-                # 从年化收益率反推区间收益率（使用简单年化方法）
-                # 年化收益率 = 区间收益率 × (250/60)
+                # 从年化对数收益率反推区间对数收益率（连续复利）
+                # 对数收益率具有时间可加性：年化收益率 = 区间收益率 × (250/60)
                 # 反推：区间收益率 = 年化收益率 × (60/250)
-                annual_ret = data.get('return_60d', 0)
-                period_ret_60d = annual_ret * (60.0 / 250.0)
+                annual_log_ret = data.get('return_60d', 0)
+                period_log_ret_60d = annual_log_ret * (60.0 / 250.0)
+                # 转换为常规收益率用于显示
+                period_ret_60d = np.exp(period_log_ret_60d) - 1
 
                 index_table_data_60d.append([
                     name,
                     f"{data.get('current_level', 0):.2f}",
                     f"{data.get('volatility_60d', 0)*100:.2f}%",
                     f"{period_ret_60d*100:+.2f}%",
-                    f"{data.get('return_60d', 0)*100:+.2f}%",
                     f"{data.get('win_rate_60d', 0)*100:.1f}%"
                 ])
             add_table_data(document, index_headers_60d, index_table_data_60d)
@@ -333,12 +327,14 @@ def generate_chapter(context):
             add_paragraph(document, '')
             add_paragraph(document, '主要市场指数120日指标对比（半年线）：')
 
-            index_headers_120d = ['指数', '当前点位', '波动率', '区间收益率', '年化收益率', '胜率']
+            index_headers_120d = ['指数', '当前点位', '波动率', '区间收益率', '胜率']
             index_table_data_120d = []
             for name, data in indices_data.items():
-                # 从年化收益率反推区间收益率（使用简单年化方法）
-                annual_ret = data.get('return_120d', 0)
-                period_ret_120d = annual_ret * (120.0 / 250.0)
+                # 从年化对数收益率反推区间对数收益率（连续复利）
+                annual_log_ret = data.get('return_120d', 0)
+                period_log_ret_120d = annual_log_ret * (120.0 / 250.0)
+                # 转换为常规收益率用于显示
+                period_ret_120d = np.exp(period_log_ret_120d) - 1
 
                 # 如果没有win_rate_120d，使用win_rate_60d作为近似值
                 win_rate_120d = data.get('win_rate_120d', 0)
@@ -348,7 +344,6 @@ def generate_chapter(context):
                     f"{data.get('current_level', 0):.2f}",
                     f"{data.get('volatility_120d', 0)*100:.2f}%",
                     f"{period_ret_120d*100:+.2f}%",
-                    f"{data.get('return_120d', 0)*100:+.2f}%",
                     f"{win_rate_120d*100:.1f}%"
                 ])
             add_table_data(document, index_headers_120d, index_table_data_120d)
@@ -357,12 +352,14 @@ def generate_chapter(context):
             add_paragraph(document, '')
             add_paragraph(document, '主要市场指数250日指标对比（年线）：')
 
-            index_headers_250d = ['指数', '当前点位', '波动率', '区间收益率', '年化收益率', '胜率']
+            index_headers_250d = ['指数', '当前点位', '波动率', '区间收益率', '胜率']
             index_table_data_250d = []
             for name, data in indices_data.items():
-                # 对于250日窗口，年化收益率≈区间收益率（250个交易日≈1年）
-                annual_ret = data.get('return_250d', 0)
-                period_ret = annual_ret  # 250日≈1年，区间收益率≈年化收益率
+                # 对于250日窗口，年化对数收益率≈区间对数收益率（250个交易日≈1年）
+                annual_log_ret = data.get('return_250d', 0)
+                period_log_ret = annual_log_ret  # 250日≈1年，区间对数收益率≈年化对数收益率
+                # 转换为常规收益率用于显示
+                period_ret = np.exp(period_log_ret) - 1
 
                 # 如果没有win_rate_250d，使用win_rate_60d作为近似值
                 win_rate_250d = data.get('win_rate_250d', 0)
@@ -372,7 +369,6 @@ def generate_chapter(context):
                     f"{data.get('current_level', 0):.2f}",
                     f"{data.get('volatility_250d', 0)*100:.2f}%",
                     f"{period_ret*100:+.2f}%",
-                    f"{annual_ret*100:+.2f}%",
                     f"{win_rate_250d*100:.1f}%"
                 ])
             add_table_data(document, index_headers_250d, index_table_data_250d)
@@ -380,9 +376,9 @@ def generate_chapter(context):
             add_paragraph(document, '')
             add_paragraph(document, '说明：')
             add_paragraph(document, '• 250日（年线）包含约250个交易日，接近一年的交易日数量（约252天）')
-            add_paragraph(document, '• 年化收益率≈区间收益率（因250日≈1年，无需额外年化处理）')
+            add_paragraph(document, '• 区间收益率反映各时间窗口的实际累计涨跌幅')
             add_paragraph(document, '• 胜率基于实际历史数据计算，反映各时间窗口的上涨天数占比')
-            add_paragraph(document, '• 建议以沪深300为基准参考，其年化收益率反映了市场整体表现')
+            add_paragraph(document, '• 建议以沪深300为基准参考，其区间收益率反映了市场整体表现')
             add_paragraph(document, '• 个股投资应结合行业特征和市场环境综合判断')
 
             # 添加图表 - 60日窗口
@@ -391,7 +387,7 @@ def generate_chapter(context):
                 add_image(document, indices_charts_paths[0], width=Inches(6))
                 add_paragraph(document, '')
 
-            add_paragraph(document, '图表 1.5: 各指数年化收益率对比 (60日窗口)')
+            add_paragraph(document, '图表 1.5: 各指数区间收益率对比 (60日窗口)')
             if len(indices_charts_paths) > 1 and os.path.exists(indices_charts_paths[1]):
                 add_image(document, indices_charts_paths[1], width=Inches(6))
                 add_paragraph(document, '')
@@ -407,7 +403,7 @@ def generate_chapter(context):
                 add_image(document, indices_charts_paths[4], width=Inches(6))
                 add_paragraph(document, '')
 
-            add_paragraph(document, '图表 1.8: 各指数年化收益率对比 (120日窗口/半年线)')
+            add_paragraph(document, '图表 1.8: 各指数区间收益率对比 (120日窗口/半年线)')
             if len(indices_charts_paths) > 5 and os.path.exists(indices_charts_paths[5]):
                 add_image(document, indices_charts_paths[5], width=Inches(6))
                 add_paragraph(document, '')
@@ -418,7 +414,7 @@ def generate_chapter(context):
                 add_image(document, indices_charts_paths[6], width=Inches(6.3))
                 add_paragraph(document, '')
 
-            add_paragraph(document, '图表 1.10: 各指数年化收益率对比 (250日年线窗口)')
+            add_paragraph(document, '图表 1.10: 各指数区间收益率对比 (250日年线窗口)')
             if len(indices_charts_paths) > 7 and os.path.exists(indices_charts_paths[7]):
                 add_image(document, indices_charts_paths[7], width=Inches(6.3))
                 add_paragraph(document, '')

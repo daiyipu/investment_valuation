@@ -164,6 +164,20 @@ def _get_historical_price_and_ma20(stock_code, issue_date_str, force_regenerate=
         print(f"     MA20价格：{ma20_price:.2f}元")
         print(f"     发行日价格：{bidding_date_price:.2f}元")
 
+        # 自动生成基于发行日的锁定指数数据
+        print()
+        print(f"  🔄 生成基于发行日的锁定指数数据...")
+        try:
+            from update_indices_data import rebuild_locked_indices_data
+            indices_results = rebuild_locked_indices_data(stock_code, issue_date_str)
+            if indices_results:
+                print(f"  ✅ 锁定指数数据生成成功")
+            else:
+                print(f"  ⚠️ 锁定指数数据生成失败，将使用最新指数数据")
+        except Exception as e:
+            print(f"  ❌ 锁定指数数据生成异常: {e}")
+            print(f"  ⚠️ 将使用最新指数数据")
+
         return bidding_date_price, ma20_price
 
     except Exception as e:
