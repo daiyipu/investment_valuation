@@ -1737,13 +1737,18 @@ def generate_chapter(context):
 
     # 2. 蒙特卡洛模拟场景
     if 'mc_analysis_results' in locals() and mc_analysis_results:
+        # 获取蒙特卡洛模拟的参数信息
+        premium_simulation_params = context['results'].get('premium_simulation_params', {})
+        mc_drift = premium_simulation_params.get('drift', 0)
+        mc_vol = premium_simulation_params.get('volatility', 0.3)
+
         for result in mc_analysis_results:
             if result.get('is_qualified', False):
                 all_scenarios_details.append({
                     'premium_rate': result['premium_rate'],
                     'scenario_type': '蒙特卡洛模拟',
                     'scenario_name': '预测参数模拟',
-                    'params': f"漂移率{predicted_drift*100:.0f}%, 波动率{predicted_vol*100:.0f}%, 溢价率{result['premium_rate']:+.0f}%",
+                    'params': f"漂移率{mc_drift*100:.0f}%, 波动率{mc_vol*100:.0f}%, 溢价率{result['premium_rate']:+.0f}%",
                     'results': f"概率{result['profit_prob']:.1f}%, 收益{result['median_return_period']:.1f}%",
                     'is_qualified': True
                 })
