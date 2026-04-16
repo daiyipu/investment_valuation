@@ -617,17 +617,116 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
     return document
 
 
-def _load_industry_data(stock_code):
-    """加载行业数据"""
+def _load_industry_data(stock_code, auto_generate=True):
+    """
+    加载行业数据，支持自动生成和数据更新检查
+
+    参数:
+        stock_code: 股票代码
+        auto_generate: 是否自动生成缺失的数据（默认True）
+
+    返回:
+        行业数据字典，如果失败返回None
+    """
     import json
+    from datetime import datetime, timedelta
+
     industry_data_file = os.path.join(DATA_DIR, f"{stock_code.replace('.', '_')}_industry_data.json")
 
-    if os.path.exists(industry_data_file):
-        with open(industry_data_file, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    else:
-        print(f" 未找到行业数据文件: {industry_data_file}")
-        return None
+    # 检查文件是否存在
+    if not os.path.exists(industry_data_file):
+        print(f" ⚠️ 未找到行业数据文件: {industry_data_file}")
+
+        if auto_generate:
+            print(f" 📥 自动生成行业数据...")
+            try:
+                # 导入数据生成模块
+                scripts_dir = os.path.join(PROJECT_DIR, 'scripts')
+                if scripts_dir not in sys.path:
+                    sys.path.insert(0, scripts_dir)
+
+                from update_market_data import generate_industry_data
+
+                # 生成行业数据
+                industry_data = generate_industry_data(stock_code)
+
+                if industry_data:
+                    # 保存到文件
+                    with open(industry_data_file, 'w', encoding='utf-8') as f:
+                        json.dump(industry_data, f, ensure_ascii=False, indent=2)
+                    print(f" ✅ 行业数据生成成功！已保存到: {industry_data_file}")
+                    print(f"    行业: {industry_data.get('sw_l1_name', 'N/A')}")
+                    print(f"    指数代码: {industry_data.get('index_code', 'N/A')}")
+                    print(f"    当前点位: {industry_data.get('current_level', 0):.2f}")
+                    return industry_data
+                else:
+                    print(f" ❌ 行业数据生成失败！")
+                    return None
+
+            except Exception as e:
+                print(f" ❌ 自动生成行业数据失败: {e}")
+                print(f"    请手动运行以下命令生成数据：")
+                print(f"    python scripts/update_market_data.py --stock {stock_code}")
+                return None
+        else:
+            return None
+
+    # 文件存在，加载数据
+    with open(industry_data_file, 'r', encoding='utf-8') as f:
+        industry_data = json.load(f)
+
+    # 检查数据新鲜度
+    generated_at = industry_data.get('generated_at', '')
+    analysis_date = industry_data.get('analysis_date', '')
+
+    if generated_at:
+        try:
+            # 解析生成时间
+            data_time = datetime.strptime(generated_at, '%Y-%m-%d %H:%M:%S')
+            current_time = datetime.now()
+
+            # 计算数据年龄（天数）
+            data_age = (current_time - data_time).days
+
+            # 如果数据超过7天，建议更新
+            if data_age > 7:
+                print(f" ⚠️ 行业数据已过期 {data_age} 天（生成时间: {generated_at}）")
+
+                if auto_generate:
+                    print(f" 📥 自动更新行业数据...")
+                    try:
+                        from update_market_data import generate_industry_data
+
+                        # 生成新的行业数据
+                        new_industry_data = generate_industry_data(stock_code)
+
+                        if new_industry_data:
+                            # 备份旧文件
+                            backup_file = industry_data_file.replace('.json', f'_backup_{current_time.strftime("%Y%m%d_%H%M%S")}.json')
+                            import shutil
+                            shutil.copy2(industry_data_file, backup_file)
+                            print(f"    已备份旧数据到: {backup_file}")
+
+                            # 保存新数据
+                            with open(industry_data_file, 'w', encoding='utf-8') as f:
+                                json.dump(new_industry_data, f, ensure_ascii=False, indent=2)
+                            print(f" ✅ 行业数据更新成功！")
+                            print(f"    更新时间: {new_industry_data.get('generated_at', 'N/A')}")
+                            return new_industry_data
+                        else:
+                            print(f" ⚠️ 行业数据更新失败，使用旧数据")
+                            return industry_data
+
+                    except Exception as e:
+                        print(f" ❌ 自动更新行业数据失败: {e}，使用旧数据")
+                        return industry_data
+                else:
+                    print(f"    建议运行: python scripts/update_market_data.py --stock {stock_code}")
+        except Exception as e:
+            print(f" ⚠️ 无法解析数据生成时间: {generated_at}，使用现有数据")
+
+    print(f" ✅ 已加载行业数据: {industry_data_file}")
+    return industry_data
 
 
 def save_report(document, stock_code, stock_name):

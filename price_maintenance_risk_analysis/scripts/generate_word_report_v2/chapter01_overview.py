@@ -202,13 +202,9 @@ def generate_chapter(context):
         ['半年波动率(120日)', f'{market_data.get("volatility_120d", 0)*100:.2f}%'],
         ['年度波动率(250日)', f'{market_data.get("volatility_250d", 0)*100:.2f}%'],
         ['月度区间收益率(20日)', f'{market_data.get("period_return_20d", 0)*100:+.2f}%'],
-        ['月度年化收益率(20日)', f'{market_data.get("annual_return_20d", 0)*100:+.2f}%'],
         ['季度区间收益率(60日)', f'{market_data.get("period_return_60d", 0)*100:+.2f}%'],
-        ['季度年化收益率(60日)', f'{market_data.get("annual_return_60d", 0)*100:+.2f}%'],
         ['半年区间收益率(120日)', f'{market_data.get("period_return_120d", 0)*100:+.2f}%'],
-        ['半年年化收益率(120日)', f'{market_data.get("annual_return_120d", 0)*100:+.2f}%'],
         ['年度区间收益率(250日)', f'{market_data.get("period_return_250d", 0)*100:+.2f}%'],
-        ['年度年化收益率(250日)', f'{market_data.get("annual_return_250d", 0)*100:+.2f}%'],
         ['MA20', f'{market_data.get("ma_20", 0):.2f} 元/股'],
         ['MA60', f'{market_data.get("ma_60", 0):.2f} 元/股'],
         ['MA120', f'{market_data.get("ma_120", 0):.2f} 元/股'],
@@ -276,7 +272,7 @@ def generate_chapter(context):
                 add_paragraph(document, '分析结论：')
                 add_paragraph(document, f'• 当前股价{market_data["current_price"]:.2f}元，{issue_type}于MA20({ma20:.2f}元)')
                 add_paragraph(document, f'• 60日年化波动率为{market_data.get("volatility_60d", 0)*100:.2f}%，{"高于" if market_data.get("volatility_60d", 0) > 0.3 else "低于"}市场平均水平')
-                add_paragraph(document, f'• 60日年化收益率为{market_data.get("annual_return_60d", 0)*100:.2f}%，{"表现良好" if market_data.get("annual_return_60d", 0) > 0 else "表现不佳"}')
+                add_paragraph(document, f'• 60日区间收益率为{market_data.get("period_return_60d", 0)*100:+.2f}%，{"表现良好" if market_data.get("period_return_60d", 0) > 0 else "表现不佳"}')
     except Exception as e:
         print(f" 生成个股市场数据图表失败: {e}")
 
@@ -438,15 +434,10 @@ def generate_chapter(context):
 
     add_paragraph(document, '本章节分析所属行业的申万三级行业指数表现，为项目风险评估提供行业环境参考。')
 
-    # 尝试加载行业数据
-    try:
-        industry_data_file = os.path.join(DATA_DIR, f'{stock_code.replace(".", "_")}_industry_data.json')
-
-        if os.path.exists(industry_data_file):
-            with open(industry_data_file, 'r', encoding='utf-8') as f:
-                industry_data = json.load(f)
-
-            print(f" 已加载行业数据: {industry_data_file}")
+    # 加载行业数据（已在main.py中自动生成和更新检查）
+    if industry_data:
+        try:
+            print(f" 使用行业数据生成1.4节内容...")
 
             # 1.4.1 行业基本信息
             add_paragraph(document, '')
@@ -472,25 +463,21 @@ def generate_chapter(context):
 
             # 综合指标表格（风险 + 收益率）
             risk_return_data = [
-                ['时间窗口', '波动率', '区间收益率', '年化收益率'],
+                ['时间窗口', '波动率', '区间收益率'],
                 ['月度(20日)',
                  f"{industry_data.get('volatility_20d', 0)*100:.2f}%",
-                 f"{industry_data.get('period_return_20d', 0)*100:+.2f}%",
-                 f"{industry_data.get('annual_return_20d', 0)*100:+.2f}%"],
+                 f"{industry_data.get('period_return_20d', 0)*100:+.2f}%"],
                 ['季度(60日)',
                  f"{industry_data.get('volatility_60d', 0)*100:.2f}%",
-                 f"{industry_data.get('period_return_60d', 0)*100:+.2f}%",
-                 f"{industry_data.get('annual_return_60d', 0)*100:+.2f}%"],
+                 f"{industry_data.get('period_return_60d', 0)*100:+.2f}%"],
                 ['半年(120日)',
                  f"{industry_data.get('volatility_120d', 0)*100:.2f}%",
-                 f"{industry_data.get('period_return_120d', 0)*100:+.2f}%",
-                 f"{industry_data.get('annual_return_120d', 0)*100:+.2f}%"],
+                 f"{industry_data.get('period_return_120d', 0)*100:+.2f}%"],
                 ['年度(250日)',
                  f"{industry_data.get('volatility_250d', 0)*100:.2f}%",
-                 f"{industry_data.get('period_return_250d', 0)*100:+.2f}%",
-                 f"{industry_data.get('annual_return_250d', 0)*100:+.2f}%"],
+                 f"{industry_data.get('period_return_250d', 0)*100:+.2f}%"],
             ]
-            add_table_data(document, ['时间窗口', '波动率(风险)', '区间收益率', '年化收益率'], risk_return_data)
+            add_table_data(document, ['时间窗口', '波动率(风险)', '区间收益率'], risk_return_data)
 
             add_paragraph(document, '')
 
@@ -523,8 +510,7 @@ def generate_chapter(context):
             add_paragraph(document, '')
             add_paragraph(document, '指标说明：')
             add_paragraph(document, '• 波动率：反映行业指数的不确定性程度，越高风险越大')
-            add_paragraph(document, '• 区间收益率：时间窗口内的累计涨跌幅')
-            add_paragraph(document, '• 年化收益率：将区间收益率年化后的收益率，便于不同窗口期对比')
+            add_paragraph(document, '• 区间收益率：时间窗口内的累计涨跌幅，反映实际投资表现')
             add_paragraph(document, '• 移动平均线：行业指数在相应时间窗口内的平均价格，反映趋势')
             add_paragraph(document, '• 胜率：上涨天数占总交易日的比例，反映趋势强度')
 
@@ -568,14 +554,14 @@ def generate_chapter(context):
             ]
 
             # 构建多窗口期对比表格
-            comparison_headers = ['窗口期', '波动率（个股）', '波动率（行业）', '差异', '年化收益率（个股）', '年化收益率（行业）', '差异']
+            comparison_headers = ['窗口期', '波动率（个股）', '波动率（行业）', '差异', '区间收益率（个股）', '区间收益率（行业）', '差异']
             comparison_data = []
 
             for window_name, window_suffix in windows:
                 stock_vol = market_data.get(f'volatility_{window_suffix}', 0)
                 industry_vol = industry_data.get(f'volatility_{window_suffix}', 0)
-                stock_ret = market_data.get(f'annual_return_{window_suffix}', 0)
-                industry_ret = industry_data.get(f'annual_return_{window_suffix}', 0)
+                stock_ret = market_data.get(f'period_return_{window_suffix}', 0)
+                industry_ret = industry_data.get(f'period_return_{window_suffix}', 0)
 
                 vol_diff = (stock_vol - industry_vol) * 100
                 ret_diff = (stock_ret - industry_ret) * 100
@@ -617,13 +603,14 @@ def generate_chapter(context):
             add_paragraph(document, '• 建议结合行业景气度、公司基本面等因素综合评估投资价值')
             add_paragraph(document, '• 不同窗口期反映不同时间维度的市场表现，短期波动较大，长期趋势相对稳定')
 
-        else:
-            print(f" 行业数据文件不存在: {industry_data_file}")
-            add_paragraph(document, ' 行业数据暂未加载，请先运行update_market_data.py生成数据')
-
-    except Exception as e:
-        print(f" 加载行业数据失败: {e}")
-        add_paragraph(document, f' 行业数据加载失败: {e}')
+        except Exception as e:
+            print(f" ❌ 1.4节内容生成失败: {e}")
+            add_paragraph(document, f' ⚠️ 行业数据分析部分生成失败: {e}')
+            import traceback
+            traceback.print_exc()
+    else:
+        print(f" ⚠️ 行业数据不可用，跳过1.4节")
+        add_paragraph(document, ' ⚠️ 行业数据暂未加载，请检查数据生成过程')
 
     add_section_break(document)
 

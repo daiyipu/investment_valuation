@@ -265,6 +265,10 @@ def generate_chapter(context):
     # 从context['results']中获取其他章节的计算结果
     all_scenarios_for_appendix = context['results'].get('all_scenarios', [])
     intrinsic_value = context.get('intrinsic_value', 25.0)
+
+    # 初始化蒙特卡洛模拟结果变量（确保在整个函数中可访问）
+    qualified_mc_rates = []
+    mc_analysis_results = []
     discount_premium = context['results'].get('discount_premium', 0.0)
     issue_type = project_params.get('issue_type', '竞价')
 
@@ -923,7 +927,8 @@ def generate_chapter(context):
 
         # 筛选条件说明
         add_paragraph(document, '蒙特卡洛模拟筛选分析：', bold=True)
-        add_paragraph(document, f'本分析基于第五章的{param_source}（漂移率{drift_source*100:.2f}%，波动率{vol_source*100:.2f}%），对21种溢价率（-20%至0%，1%一档）进行筛选，找出符合以下条件的方案：')
+        add_paragraph(document, f'本分析基于第五章的{param_source}（漂移率{drift_source*100:.2f}%，波动率{vol_source*100:.2f}%），对41种溢价率（-20%至+20%，1%一档）进行筛选，找出符合以下条件的方案：')
+        add_paragraph(document, '覆盖折价、平价和溢价情况，寻找盈亏平衡点和最高可接受溢价率。')
         add_paragraph(document, '')
 
         screening_conditions = [
@@ -939,9 +944,7 @@ def generate_chapter(context):
         add_paragraph(document, '')
 
         # 分析现有结果，检查符合条件的情况
-        qualified_mc_rates = []
-        mc_analysis_results = []
-
+        # 使用函数级别的变量，避免重复定义
         print(f"\n从第五章获取蒙特卡洛模拟筛选分析...")
         print(f"  参数来源: {param_source}")
         print(f"  溢价率模拟结果: {len(premium_simulation_results)}个情景")
@@ -1000,8 +1003,8 @@ def generate_chapter(context):
             '名义溢价率',
             '发行价格(元)',
             '盈利概率(%)',
-            '中位数收益(%)',
-            '5% VaR(%)',
+            '区间中位数收益(%)',
+            '区间VaR(%)',
             '收益率>3.84%',  # 8%年化转换为120日区间收益率
             'VaR>-30%',
             '盈利概率>70%',
@@ -1736,7 +1739,7 @@ def generate_chapter(context):
         print(f"调试：context中未找到反向推算结果")
 
     # 2. 蒙特卡洛模拟场景
-    if 'mc_analysis_results' in locals() and mc_analysis_results:
+    if mc_analysis_results:
         # 获取蒙特卡洛模拟的参数信息
         premium_simulation_params = context['results'].get('premium_simulation_params', {})
         mc_drift = premium_simulation_params.get('drift', 0)
@@ -2017,6 +2020,18 @@ def generate_chapter(context):
             'max_premium': param_max_premium,
             'avg_premium': param_threshold,
             'count': len(environment_matched_scenarios) if 'environment_matched_scenarios' in locals() else 0
+        }))
+
+    # 蒙特卡洛模拟场景（只有当有符合条件的溢价率时才有效）
+    if 'qualified_mc_rates' in locals() and qualified_mc_rates:
+        mc_min_premium = min(qualified_mc_rates)
+        mc_max_premium = max(qualified_mc_rates)
+        mc_threshold = (mc_min_premium + mc_max_premium) / 2
+        thresholds.append(('蒙特卡洛模拟', {
+            'min_premium': mc_min_premium,
+            'max_premium': mc_max_premium,
+            'avg_premium': mc_threshold,
+            'count': len(qualified_mc_rates)
         }))
 
     # 反向推算（只有当上限 > -20%时才有效）

@@ -612,6 +612,11 @@ def generate_chapter(context):
             cagr_fcf_display = (last_fcf / first_fcf) ** (1 / years_span) - 1
         else:
             cagr_fcf_display = 0.05  # 默认5%（仅用于显示）
+            first_fcf_year = None
+            last_fcf_year = None
+            first_fcf = 0
+            last_fcf = 0
+            years_span = 0
 
         # 注意：实际使用 fcf_growth_example（已在前面计算，优先使用FCF CAGR）
         # 这里不重新计算，保持与前面的一致性
@@ -627,7 +632,10 @@ def generate_chapter(context):
             fcf_table_data.append([f"{item['year']}年", f"{item['fcf']:.2f}"])
         add_table_data(document, ['年份', 'FCF（亿）'], fcf_table_data)
 
-        add_paragraph(document, f'• 历史CAGR: {cagr_fcf_display*100:.2f}%（从{first_fcf_year["year"]}年{first_fcf:.2f}亿到{last_fcf_year["year"]}年{last_fcf:.2f}亿，跨度{years_span}年）')
+        if first_fcf_year is not None:
+            add_paragraph(document, f'• 历史CAGR: {cagr_fcf_display*100:.2f}%（从{first_fcf_year["year"]}年{first_fcf:.2f}亿到{last_fcf_year["year"]}年{last_fcf:.2f}亿，跨度{years_span}年）')
+        else:
+            add_paragraph(document, f'• 历史CAGR: {cagr_fcf_display*100:.2f}%（正FCF数据不足，使用默认增长率）')
         add_paragraph(document, f'• 采用预测增长率: {fcf_growth_example*100:.1f}%（基于历史CAGR，优先使用FCF数据计算）')
 
         # 基于最新FCF，预测未来10年（使用历史增长率）

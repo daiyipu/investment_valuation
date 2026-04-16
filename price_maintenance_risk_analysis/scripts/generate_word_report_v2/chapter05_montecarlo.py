@@ -575,7 +575,7 @@ def generate_chapter(context):
     current_premium_discount = (project_params['issue_price'] - project_params['current_price']) / project_params['current_price'] * 100
 
     # 修正表头，明确区分历史数据和模拟结果，删除折价/溢价率列（已在窗口期中体现）
-    window_headers = ['窗口期', '波动率', '历史年化收益率', '模拟预期年化收益', '中位数收益', '盈利概率', '5% VaR', '95% VaR']
+    window_headers = ['窗口期', '波动率', '历史年化收益率', '模拟预期年化收益', '区间中位数收益', '盈利概率', '区间5% VaR', '区间95% VaR']
     window_table_data = []
 
     # 为每个窗口期，计算不同溢价率下的模拟结果
@@ -1099,22 +1099,24 @@ def generate_chapter(context):
         # ==================== 不同溢价率模拟汇总表 ====================
         add_paragraph(document, '')
         add_paragraph(document, '不同溢价率情景模拟汇总：', bold=True)
-        add_paragraph(document, '根据5.3和5.4节预测的参数，对名义溢价率从-20%至0%进行蒙特卡洛模拟（1%一档），分析各溢价率水平下的预期收益和风险特征。')
+        add_paragraph(document, '根据5.3和5.4节预测的参数，对名义溢价率从-20%至+20%进行蒙特卡洛模拟（1%一档），分析各溢价率水平下的预期收益和风险特征。')
+        add_paragraph(document, '通过模拟溢价情况，寻找盈亏平衡点和最高可接受溢价率，为热门股票溢价发行提供决策依据。')
         add_paragraph(document, '')
 
         # 使用MA20作为名义溢价率的基准
         ma20_price = market_data.get('ma_20', project_params['current_price'])
 
-        # 溢价率从-20%到0%，1%一档
-        premium_rates = list(range(-20, 1))  # -20%, -19%, ..., -1%, 0%
+        # 溢价率范围扩展：-20%到+20%，1%一档
+        # 覆盖折价、平价和溢价情况，寻找盈亏平衡点和最高可接受溢价率
+        premium_rates = list(range(-20, 21))  # -20%, -19%, ..., +19%, +20%
 
         # 关键节点（用于突出显示）
-        key_rates = [-20, -15, -10, -5, 0]
+        key_rates = [-20, -15, -10, -5, 0, 5, 10, 15, 20]
 
         # 存储不同溢价率的模拟结果
         premium_simulation_results = []
 
-        print(f"\n运行不同溢价率情景模拟（-20%至0%，1%一档）...")
+        print(f"\n运行不同溢价率情景模拟（-20%至+20%，1%一档）...")
         print(f"  基准价格(MA20): {ma20_price:.2f}元")
         print(f"  预测漂移率: {predicted_drift*100:.2f}%")
         print(f"  预测波动率: {predicted_vol*100:.2f}%")
@@ -1244,9 +1246,11 @@ def generate_chapter(context):
         add_paragraph(document, '• 中等折价区间（-15%至-11%）：风险收益平衡，适合稳健投资者')
         add_paragraph(document, '• 浅度折价区间（-10%至-6%）：安全边际有限，需谨慎评估')
         add_paragraph(document, '• 临界区间（-5%至-1%）：风险较高，仅建议在强烈看好标的前提下考虑')
-        add_paragraph(document, '• 平价及以上（0%及正溢价）：风险最大，一般不建议参与')
+        add_paragraph(document, '• 平价及小幅溢价（0%至+5%）：盈亏平衡附近，强烈看好时考虑')
+        add_paragraph(document, '• 中等溢价（+6%至+10%）：风险较大，需极高确定性才能参与')
+        add_paragraph(document, '• 大幅溢价（+11%至+20%）：风险极高，一般不建议参与')
 
-        print(f" 溢价率模拟完成：共{len(premium_simulation_results)}个情景（从-20%至0%，1%一档）")
+        print(f" 溢价率模拟完成：共{len(premium_simulation_results)}个情景（从-20%至+20%，1%一档）")
 
         # 保存溢价率模拟结果到context，供第九章使用
         context['results']['premium_simulation_results'] = premium_simulation_results
@@ -1280,17 +1284,6 @@ def generate_chapter(context):
             ['锁定期', f'{project_params["lockup_period"]}个月']
         ]
         add_table_data(document, ['参数', '值'], mc_5_5_params)
-
-        # 添加漂移率说明
-        add_paragraph(document, '')
-        add_paragraph(document, '重要说明：漂移率的一致性')
-        add_paragraph(document, '')
-        add_paragraph(document, '• 预测漂移率（-9.01%）是连续复利（对数收益率），可直接用于几何布朗运动（GBM）模型')
-        add_paragraph(document, '• 历史窗口漂移率（60日/120日/250日）是离散复利（单利），如需用于GBM需转换为连续复利')
-        add_paragraph(document, '• 转换公式：连续复利 = ln(1 + 离散复利)')
-        add_paragraph(document, '• 例如：-59%离散复利 → ln(1 - 0.59) = ln(0.41) ≈ -89.1%连续复利')
-        add_paragraph(document, '')
-        add_paragraph(document, '本节使用ARIMA预测的连续复利漂移率，确保与GBM模型一致。')
 
         # 添加模拟结果
         add_paragraph(document, '')
