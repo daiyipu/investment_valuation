@@ -641,18 +641,16 @@ class Chapter05Financial:
             return '-'
 
         if is_reverse:
-            sorted_values = peer_values.sort_values(ascending=True)
+            # 反向指标：越低越好，排名 = 比公司值低的数量 + 1
+            better_count = (peer_values < company_value).sum()
         else:
-            sorted_values = peer_values.sort_values(ascending=False)
+            # 正向指标：越高越好，排名 = 比公司值高的数量 + 1
+            better_count = (peer_values > company_value).sum()
 
-        rank = 1
-        for val in sorted_values:
-            if abs(float(val) - company_value) < 1e-10:
-                break
-            rank += 1
-        rank = min(rank, len(sorted_values))
+        rank = int(better_count) + 1
+        rank = min(rank, len(peer_values))
 
-        return f"{rank}/{len(sorted_values)}"
+        return f"{rank}/{len(peer_values)}"
 
     # ============================================================
     # 5.7 分红情况分析
