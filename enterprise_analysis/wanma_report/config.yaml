@@ -1,0 +1,139 @@
+# 定增项目企业基本面分析报告配置
+# 项目信息通过命令行参数传入（--stock 和 --name），此处无需配置
+
+# Tushare API配置（token从环境变量TUSHARE_TOKEN读取）
+tushare:
+  token: ""
+
+# 报告生成配置
+report:
+  output_dir: "output"
+  template_dir: "templates"
+  chapter_dir: "chapters"
+
+# 财务评分配置（基于EFAES评分系统，27项指标）
+scoring:
+  # 运营能力 (15%权重)
+  operations:
+    weight: 0.15
+    indicators:
+      - name: "存货周转率"
+        field: "inv_turn"
+        weight: 0.20
+      - name: "应收账款周转率"
+        field: "ar_turn"
+        weight: 0.30
+      - name: "流动资产周转率"
+        field: "ca_turn"
+        weight: 0.20
+      - name: "总资产周转率"
+        field: "assets_turn"
+        weight: 0.30
+
+  # 盈利能力 (30%权重)
+  profitability:
+    weight: 0.30
+    indicators:
+      - name: "净利率"
+        field: "netprofit_margin"
+        weight: 0.20
+      - name: "毛利率"
+        field: "grossprofit_margin"
+        weight: 0.15
+      - name: "净资产收益率"
+        field: "roe"
+        weight: 0.15
+      - name: "扣非净资产收益率"
+        field: "roe_dt"
+        weight: 0.15
+      - name: "总资产报酬率"
+        field: "roa"
+        weight: 0.15
+      - name: "总资产净利润率"
+        field: "npta"
+        weight: 0.20
+
+  # 偿债能力 (30%权重，短期偿债50% + 长期偿债50%)
+  solvency:
+    weight: 0.30
+    sub_dimensions:
+      short_term:
+        name: "短期偿债"
+        weight: 0.50
+        indicators:
+          - name: "流动比率"
+            field: "current_ratio"
+            weight: 0.25
+          - name: "速动比率"
+            field: "quick_ratio"
+            weight: 0.25
+          - name: "现金与流动负债比率"
+            field: "cash_to_liqdebt"
+            weight: 0.25
+          - name: "现金与带息流动负债比率"
+            field: "cash_to_liqdebt_withinterest"
+            weight: 0.25
+      long_term:
+        name: "长期偿债"
+        weight: 0.50
+        indicators:
+          - name: "资产负债率"
+            field: "debt_to_assets"
+            weight: 0.25
+            reverse: true
+          - name: "带息债务/全部投入资本"
+            field: "int_to_talcap"
+            weight: 0.25
+            reverse: true
+          - name: "产权比率"
+            field: "debt_to_eqt"
+            weight: 0.25
+            reverse: true
+          - name: "利息保障倍数"
+            field: "ebit_to_interest"
+            weight: 0.25
+
+  # 成长能力 (25%权重)
+  growth:
+    weight: 0.25
+    indicators:
+      - name: "净利润同比增长率"
+        field: "netprofit_yoy"
+        weight: 0.10
+      - name: "扣非净利润同比增长率"
+        field: "dt_netprofit_yoy"
+        weight: 0.15
+      - name: "净资产收益率同比增长率"
+        field: "roe_yoy"
+        weight: 0.10
+      - name: "营业总收入同比增长率"
+        field: "tr_yoy"
+        weight: 0.15
+      - name: "营业收入同比增长率"
+        field: "or_yoy"
+        weight: 0.10
+      - name: "净资产同比增长率"
+        field: "equity_yoy"
+        weight: 0.10
+      - name: "营业利润同比增长率"
+        field: "op_yoy"
+        weight: 0.10
+      - name: "利润总额同比增长率"
+        field: "ebt_yoy"
+        weight: 0.10
+      - name: "研发费用率"
+        field: "rd_exp_ratio"
+        weight: 0.10
+
+# 定增项目信息（模板，可通过dingzeng配置文件覆盖）
+dingzeng:
+  purpose: "用于公司业务发展及补充流动资金"
+  fundraising_amount: "待定"
+  issue_price: "不低于定价基准日前20个交易日均价的80%"
+  issue_shares: "根据最终发行价格确定"
+
+# 行业配置（自动模式：根据股票代码从Tushare查找同行业公司）
+# 仅作为后备默认值使用
+industry:
+  name: ""
+  codes: []

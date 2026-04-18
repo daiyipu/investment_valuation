@@ -10,7 +10,7 @@ DCF估值计算工具
 
 import pandas as pd
 import numpy as np
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 
 
 class DCFCalculator:
@@ -46,8 +46,11 @@ class DCFCalculator:
         """
         result = {}
 
+        # 从资产负债表计算实际债务比例
+        debt_ratio = self._get_debt_ratio(financial_statements)
+
         # 计算折现率
-        wacc = self._calculate_wacc(risk_free_rate, market_risk_premium, beta, financial_statements)
+        wacc = self._calculate_wacc(risk_free_rate, market_risk_premium, beta, debt_ratio)
         ke = self._calculate_ke(risk_free_rate, market_risk_premium, beta)
 
         result['wacc'] = wacc
@@ -56,6 +59,7 @@ class DCFCalculator:
         result['market_risk_premium'] = market_risk_premium
         result['beta'] = beta
         result['terminal_growth_rate'] = terminal_growth_rate
+        result['debt_ratio'] = debt_ratio
 
         # 获取历史FCF数据并预测
         fcf_data = self._prepare_fcf_data(financial_statements, financial_indicators)
@@ -69,9 +73,9 @@ class DCFCalculator:
             result['method1_terminal_value'] = terminal_value_ff
             result['method1_cf_list'] = cf_list_ff
 
-            # 方法2: FCFE法计算股权价值
+            # 方法2: FCFE法计算股权价值（使用实际债务比例）
             equity_value_fe, terminal_value_fe, cf_list_fe = self._calculate_equity_from_fcfe(
-                fcf_data, ke, terminal_growth_rate, forecast_years
+                fcf_data, ke, terminal_growth_rate, forecast_years, debt_ratio
             )
             result['method2_equity_value'] = equity_value_fe
             result['method2_terminal_value'] = terminal_value_fe
@@ -85,12 +89,41 @@ class DCFCalculator:
 
         return result
 
+    def _get_debt_ratio(self, financial_statements: Dict[str, pd.DataFrame]) -> float:
+        """从资产负债表计算实际资产负债率
+
+        Args:
+            financial_statements: 财务报表
+
+        Returns:
+            债务比例(D/A)
+        """
+        balance_sheet = financial_statements.get('balance_sheet', pd.DataFrame())
+        if balance_sheet.empty:
+            return 0.4
+
+        # 获取最新一期数据
+        if 'end_date' in balance_sheet.columns:
+            bs_sorted = balance_sheet.sort_values('end_date', ascending=False)
+            latest = bs_sorted.iloc[0]
+        else:
+            latest = balance_sheet.iloc[-1]
+
+        total_assets = latest.get('total_assets')
+        total_liab = latest.get('total_liab')
+
+        if (total_assets is not None and pd.notna(total_assets) and total_assets > 0
+                and total_liab is not None and pd.notna(total_liab)):
+            return float(total_liab) / float(total_assets)
+
+        return 0.4
+
     def _calculate_wacc(
         self,
         risk_free_rate: float,
         market_risk_premium: float,
         beta: float,
-        financial_statements: Dict[str, pd.DataFrame]
+        debt_ratio: float
     ) -> float:
         """计算WACC
 
@@ -98,35 +131,16 @@ class DCFCalculator:
             risk_free_rate: 无风险利率
             market_risk_premium: 市场风险溢价
             beta: Beta系数
-            financial_statements: 财务报表
+            debt_ratio: 债务比例(D/A)
 
         Returns:
             WACC
         """
-        # 权益成本 Ke = Rf + β * (Rm - Rf)
         ke = risk_free_rate + beta * market_risk_premium
-
-        # 债务成本 (假设为5%)
         kd = 0.05
-
-        # 计算债务和权益比例
-        balance_sheet = financial_statements.get('balance_sheet', pd.DataFrame())
-        if balance_sheet.empty:
-            # 默认假设60%权益，40%债务
-            equity_ratio = 0.6
-            debt_ratio = 0.4
-        else:
-            # 从资产负债表中获取数据
-            # 这里简化处理
-            equity_ratio = 0.6
-            debt_ratio = 0.4
-
-        # 税率 (假设25%)
+        equity_ratio = 1 - debt_ratio
         tax_rate = 0.25
-
-        # WACC = Ke * E/(E+D) + Kd * (1-T) * D/(E+D)
         wacc = ke * equity_ratio + kd * (1 - tax_rate) * debt_ratio
-
         return wacc
 
     def _calculate_ke(
@@ -135,16 +149,7 @@ class DCFCalculator:
         market_risk_premium: float,
         beta: float
     ) -> float:
-        """计算权益成本Ke
-
-        Args:
-            risk_free_rate: 无风险利率
-            market_risk_premium: 市场风险溢价
-            beta: Beta系数
-
-        Returns:
-            Ke
-        """
+        """计算权益成本Ke"""
         return risk_free_rate + beta * market_risk_premium
 
     def _prepare_fcf_data(
@@ -154,42 +159,53 @@ class DCFCalculator:
     ) -> pd.DataFrame:
         """准备FCF数据
 
-        Args:
-            financial_statements: 财务报表
-            financial_indicators: 财务指标
-
-        Returns:
-            FCF历史数据
+        使用Tushare标准英文字段名获取现金流数据
+        FCFF ≈ 经营活动现金流净额 + 投资活动现金流净额
         """
         cashflow = financial_statements.get('cashflow', pd.DataFrame())
-        income = financial_statements.get('income_statement', pd.DataFrame())
-        balance_sheet = financial_statements.get('balance_sheet', pd.DataFrame())
 
         if cashflow.empty:
             return pd.DataFrame()
 
-        # 提取FCFF和FCFE数据
-        # FCFF = 经营活动现金流 + 税后利息支出 - 资本支出
-        # FCFE = 经营活动现金流 - 资本支出 + 净借款
-
         cashflow = cashflow.copy()
 
-        # 简化处理：直接使用现金流量表中的自由现金流
-        if 'c、资金活动产生的现金流量净额' in cashflow.columns:
-            cashflow['fcff'] = cashflow['c、资金活动产生的现金流量净额'].fillna(0)
+        # 查找经营和投资活动现金流净额列（优先Tushare英文字段名）
+        oper_col = self._find_column(
+            cashflow,
+            ['n_cashflow_act'],
+            ['经营活动', '净额']
+        )
+        invest_col = self._find_column(
+            cashflow,
+            ['n_cashflow_inv_act'],
+            ['投资活动', '净额']
+        )
 
-        # 如果有经营活动现金流
-        oper_cf_cols = [c for c in cashflow.columns if '经营活动' in str(c) and '净额' in str(c)]
-        invest_cf_cols = [c for c in cashflow.columns if '投资活动' in str(c) and '净额' in str(c)]
+        if oper_col and invest_col:
+            cashflow['fcff'] = cashflow[oper_col].fillna(0) + cashflow[invest_col].fillna(0)
+        elif oper_col:
+            capex_col = self._find_column(
+                cashflow,
+                ['c_paid_for_assets'],
+                ['购建', '长期资产']
+            )
+            if capex_col:
+                cashflow['fcff'] = cashflow[oper_col].fillna(0) - cashflow[capex_col].fillna(0).abs()
+            else:
+                cashflow['fcff'] = cashflow[oper_col].fillna(0) * 0.7
+        else:
+            return pd.DataFrame()
 
-        if oper_cf_cols and invest_cf_cols:
-            cashflow['fcff'] = cashflow[oper_cf_cols[0]].fillna(0) + cashflow[invest_cf_cols[0]].fillna(0)
+        # Tushare现金流数据单位为元，统一转换为万元
+        cashflow['fcff'] = cashflow['fcff'] / 10000
 
-        # 提取年份
+        # 只保留年报数据(12月31日)并按年汇总
         if 'end_date' in cashflow.columns and 'fcff' in cashflow.columns:
-            cashflow['year'] = cashflow['end_date'].astype(str).str[:4].astype(int)
+            cashflow = cashflow[cashflow['end_date'].astype(str).str.contains('1231', na=False)]
+            if cashflow.empty:
+                return pd.DataFrame()
 
-            # 按年份汇总
+            cashflow['year'] = cashflow['end_date'].astype(str).str[:4].astype(int)
             fcf_data = cashflow.groupby('year').agg({
                 'fcff': 'sum'
             }).reset_index()
@@ -198,6 +214,22 @@ class DCFCalculator:
 
         return pd.DataFrame()
 
+    def _find_column(
+        self,
+        df: pd.DataFrame,
+        english_names: List[str],
+        chinese_keywords: List[str]
+    ) -> Optional[str]:
+        """在DataFrame中查找列名，优先英文名，回退中文关键字匹配"""
+        for name in english_names:
+            if name in df.columns:
+                return name
+        for col in df.columns:
+            col_str = str(col)
+            if all(kw in col_str for kw in chinese_keywords):
+                return col
+        return None
+
     def _calculate_ev_from_fcff(
         self,
         fcf_data: pd.DataFrame,
@@ -205,56 +237,39 @@ class DCFCalculator:
         terminal_growth_rate: float,
         forecast_years: int
     ) -> Tuple[float, float, list]:
-        """方法1: FCFF法计算企业价值
-
-        Args:
-            fcf_data: 历史FCF数据
-            wacc: 加权平均资本成本
-            terminal_growth_rate: 永续增长率
-            forecast_years: 预测年数
-
-        Returns:
-            (企业价值, 终值, 现金流列表)
-        """
+        """方法1: FCFF法计算企业价值"""
         if fcf_data.empty:
             return 0, 0, []
 
-        # 计算历史平均增长率
         fcff_values = fcf_data['fcff'].values
         if len(fcff_values) >= 2:
             growth_rates = np.diff(fcff_values) / np.abs(fcff_values[:-1])
-            avg_growth = np.mean(growth_rates)
+            growth_rates = growth_rates[np.isfinite(growth_rates)]
+            growth_rates = growth_rates[(growth_rates > -0.5) & (growth_rates < 2.0)]
+            avg_growth = np.mean(growth_rates) if len(growth_rates) > 0 else 0.05
         else:
             avg_growth = 0.05
 
-        # 限制增长率在合理范围
         avg_growth = max(min(avg_growth, 0.20), -0.10)
 
-        # 预测未来FCFF
         last_fcff = fcff_values[-1] if len(fcff_values) > 0 else 0
         forecast_cf_list = []
 
         for year in range(1, forecast_years + 1):
-            forecast_fcff = last_fcff * (1 + avg_growth) ** year
-            forecast_cf_list.append(forecast_fcff)
+            forecast_cf_list.append(last_fcff * (1 + avg_growth) ** year)
 
-        # 计算预测期现金流现值
-        pv_cashflows = 0
-        for year, cf in enumerate(forecast_cf_list, 1):
-            pv = cf / (1 + wacc) ** year
-            pv_cashflows += pv
+        pv_cashflows = sum(
+            cf / (1 + wacc) ** year
+            for year, cf in enumerate(forecast_cf_list, 1)
+        )
 
-        # 计算终值
-        if len(forecast_cf_list) > 0:
+        if forecast_cf_list and wacc > terminal_growth_rate:
             terminal_fcff = forecast_cf_list[-1] * (1 + terminal_growth_rate)
             terminal_value = terminal_fcff / (wacc - terminal_growth_rate)
         else:
             terminal_value = 0
 
-        # 终值现值
         pv_terminal = terminal_value / (1 + wacc) ** forecast_years
-
-        # 企业价值
         ev = pv_cashflows + pv_terminal
 
         return ev, terminal_value, forecast_cf_list
@@ -264,64 +279,49 @@ class DCFCalculator:
         fcf_data: pd.DataFrame,
         ke: float,
         terminal_growth_rate: float,
-        forecast_years: int
+        forecast_years: int,
+        debt_ratio: float = 0.4
     ) -> Tuple[float, float, list]:
         """方法2: FCFE法计算股权价值
 
-        Args:
-            fcf_data: 历史FCF数据
-            ke: 权益资本成本
-            terminal_growth_rate: 永续增长率
-            forecast_years: 预测年数
-
-        Returns:
-            (股权价值, 终值, 现金流列表)
+        FCFE = FCFF * (1 - debt_ratio) 简化估算，使用实际资产负债率
         """
         if fcf_data.empty:
             return 0, 0, []
 
-        # FCFE ≈ FCFF - 税后利息支出 + 净借款
-        # 简化处理: FCFE = FCFF * (1 - 债务比例)
-        debt_ratio = 0.4
-
+        equity_ratio = 1 - debt_ratio
         fcfe_data = fcf_data.copy()
-        fcfe_data['fcfe'] = fcfe_data['fcff'] * (1 - debt_ratio)
+        fcfe_data['fcfe'] = fcfe_data['fcff'] * equity_ratio
 
-        # 计算历史平均增长率
         fcfe_values = fcfe_data['fcfe'].values
         if len(fcfe_values) >= 2:
             growth_rates = np.diff(fcfe_values) / np.abs(fcfe_values[:-1])
-            avg_growth = np.mean(growth_rates)
+            growth_rates = growth_rates[np.isfinite(growth_rates)]
+            growth_rates = growth_rates[(growth_rates > -0.5) & (growth_rates < 2.0)]
+            avg_growth = np.mean(growth_rates) if len(growth_rates) > 0 else 0.05
         else:
             avg_growth = 0.05
 
         avg_growth = max(min(avg_growth, 0.20), -0.10)
 
-        # 预测未来FCFE
         last_fcfe = fcfe_values[-1] if len(fcfe_values) > 0 else 0
         forecast_cf_list = []
 
         for year in range(1, forecast_years + 1):
-            forecast_fcfe = last_fcfe * (1 + avg_growth) ** year
-            forecast_cf_list.append(forecast_fcfe)
+            forecast_cf_list.append(last_fcfe * (1 + avg_growth) ** year)
 
-        # 计算预测期现金流现值
-        pv_cashflows = 0
-        for year, cf in enumerate(forecast_cf_list, 1):
-            pv = cf / (1 + ke) ** year
-            pv_cashflows += pv
+        pv_cashflows = sum(
+            cf / (1 + ke) ** year
+            for year, cf in enumerate(forecast_cf_list, 1)
+        )
 
-        # 计算终值
-        if len(forecast_cf_list) > 0:
+        if forecast_cf_list and ke > terminal_growth_rate:
             terminal_fcfe = forecast_cf_list[-1] * (1 + terminal_growth_rate)
             terminal_value = terminal_fcfe / (ke - terminal_growth_rate)
         else:
             terminal_value = 0
 
-        # 终值现值
         pv_terminal = terminal_value / (1 + ke) ** forecast_years
-
-        # 股权价值
         equity_value = pv_cashflows + pv_terminal
 
         return equity_value, terminal_value, forecast_cf_list
@@ -329,38 +329,42 @@ class DCFCalculator:
     def _calculate_net_debt(self, financial_statements: Dict[str, pd.DataFrame]) -> float:
         """计算净债务
 
-        Args:
-            financial_statements: 财务报表
-
-        Returns:
-            净债务
+        使用Tushare标准英文字段名:
+        - st_loan: 短期借款
+        - lt_borr: 长期借款
+        - non_cur_liab_within_1y: 一年内到期的非流动负债
+        - money_cap: 货币资金
         """
         balance_sheet = financial_statements.get('balance_sheet', pd.DataFrame())
 
         if balance_sheet.empty:
             return 0
 
-        # 净债务 = 债务 - 现金
-        # 简化处理：假设债务为短期借款 + 长期借款，现金为货币资金
+        if 'end_date' in balance_sheet.columns:
+            bs_sorted = balance_sheet.sort_values('end_date', ascending=False)
+            latest = bs_sorted.iloc[0]
+        else:
+            latest = balance_sheet.iloc[-1]
 
-        debt = 0
-        cash = 0
+        st_loan = latest.get('st_loan', 0)
+        if pd.isna(st_loan):
+            st_loan = 0
 
-        # 查找相关科目 (使用中文列名)
-        for col in balance_sheet.columns:
-            col_str = str(col)
-            if '借款' in col_str and '一年' not in col_str and '应付' not in col_str:
-                if '短期借款' in col_str:
-                    debt += balance_sheet[col].fillna(0).iloc[-1] if len(balance_sheet) > 0 else 0
-            elif '长期借款' in col_str:
-                debt += balance_sheet[col].fillna(0).iloc[-1] if len(balance_sheet) > 0 else 0
-            elif '货币资金' in col_str:
-                cash += balance_sheet[col].fillna(0).iloc[-1] if len(balance_sheet) > 0 else 0
+        lt_borr = latest.get('lt_borr', 0)
+        if pd.isna(lt_borr):
+            lt_borr = 0
 
-        # 如果没有找到具体科目，返回一个估算值
-        if debt == 0:
-            # 使用财务指标估算
-            return 0
+        non_cur_liab_within_1y = latest.get('non_cur_liab_within_1y', 0)
+        if pd.isna(non_cur_liab_within_1y):
+            non_cur_liab_within_1y = 0
+
+        money_cap = latest.get('money_cap', 0)
+        if pd.isna(money_cap):
+            money_cap = 0
+
+        # Tushare资产负债表数据单位为元，转换为万元
+        debt = (float(st_loan) + float(lt_borr) + float(non_cur_liab_within_1y)) / 10000
+        cash = float(money_cap) / 10000
 
         net_debt = debt - cash
         return max(net_debt, 0)
@@ -371,19 +375,9 @@ class DCFCalculator:
         shares_outstanding: float = None,
         current_price: float = None
     ) -> pd.DataFrame:
-        """生成估值汇总表
-
-        Args:
-            dcf_result: DCF估值结果
-            shares_outstanding: 总股本(万股)
-            current_price: 当前股价
-
-        Returns:
-            估值汇总DataFrame
-        """
+        """生成估值汇总表"""
         rows = []
 
-        # 方法1: FCFF法
         ev = dcf_result.get('method1_ev', 0)
         rows.append({
             '估值方法': 'FCFF法(企业价值)',
@@ -391,7 +385,6 @@ class DCFCalculator:
             '说明': 'EV = Σ FCFF/(1+WACC)^t + TV/(1+WACC)^n'
         })
 
-        # 方法2: FCFE法
         equity_fe = dcf_result.get('method2_equity_value', 0)
         rows.append({
             '估值结果(万元)': round(equity_fe, 2),
@@ -399,7 +392,6 @@ class DCFCalculator:
             '说明': '股权价值 = Σ FCFE/(1+Ke)^t + TV/(1+Ke)^n'
         })
 
-        # 方法3: 间接法
         equity_indirect = dcf_result.get('method3_equity_value', 0)
         net_debt = dcf_result.get('net_debt', 0)
         rows.append({
@@ -410,9 +402,10 @@ class DCFCalculator:
 
         df = pd.DataFrame(rows)
 
-        # 如果有股本数据，计算每股价值
+        # 每股价值(元) = 估值(万元) / 股本(万股)
+        # 因为: 万元/万股 = 万元/(万股) = (万元*10000元/万元)/(万股*10000股/万股) = 元/股
         if shares_outstanding and shares_outstanding > 0:
-            df['每股价值(元)'] = df['估值结果(万元)'] / shares_outstanding * 10000
+            df['每股价值(元)'] = df['估值结果(万元)'] / shares_outstanding
 
             if current_price:
                 df['估值空间'] = ((df['每股价值(元)'] / current_price) - 1) * 100

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-第四章：估值风险分析
+第六章：公司估值
 包含：
 - 当前估值水平
 - 历史FCF数据分析
@@ -11,18 +11,19 @@
 - 企业价值与股权价值推导
 - 历史估值对比
 - 估值敏感性分析
-- 估值风险评估
+- 公司估值评估
 """
 
 from typing import Dict, Any, List
+from datetime import datetime
 import pandas as pd
 import numpy as np
 
 from utils.dcf_calculator import DCFCalculator
 
 
-class Chapter04Valuation:
-    """估值风险分析章节生成器"""
+class Chapter06Valuation:
+    """公司估值分析章节生成器"""
 
     def __init__(self, config: Dict[str, Any], data: Dict[str, Any]):
         self.config = config
@@ -35,18 +36,18 @@ class Chapter04Valuation:
     def generate(self) -> List[Dict[str, Any]]:
         elements = []
 
-        elements.append({'type': 'heading', 'content': '第四章 估值风险分析', 'level': 1})
+        elements.append({'type': 'heading', 'content': '第六章 公司估值', 'level': 1})
 
-        # 4.1 当前估值水平
-        elements.append({'type': 'heading', 'content': '4.1 当前估值水平', 'level': 2})
+        # 6.1 当前估值水平
+        elements.append({'type': 'heading', 'content': '6.1 当前估值水平', 'level': 2})
         elements.extend(self._generate_current_valuation())
 
         # 4.2 历史自由现金流分析
         elements.append({'type': 'heading', 'content': '4.2 历史自由现金流分析', 'level': 2})
         elements.extend(self._generate_historical_fcf())
 
-        # 4.3 DCF估值分析
-        elements.append({'type': 'heading', 'content': '4.3 DCF估值分析', 'level': 2})
+        # 6.3 DCF估值分析
+        elements.append({'type': 'heading', 'content': '6.3 DCF估值分析', 'level': 2})
         elements.extend(self._generate_dcf_valuation())
 
         # 4.4 历史估值对比
@@ -57,13 +58,17 @@ class Chapter04Valuation:
         elements.append({'type': 'heading', 'content': '4.5 估值敏感性分析', 'level': 2})
         elements.extend(self._generate_sensitivity_analysis())
 
-        # 4.6 估值风险评估
-        elements.append({'type': 'heading', 'content': '4.6 估值风险评估', 'level': 2})
+        # 6.6 估值综合评估
+        elements.append({'type': 'heading', 'content': '6.6 估值综合评估', 'level': 2})
         elements.extend(self._generate_valuation_risk())
+
+        # 6.7 限售股解禁计划
+        elements.append({'type': 'heading', 'content': '6.7 限售股解禁计划', 'level': 2})
+        elements.extend(self._generate_share_float())
 
         return elements
 
-    # ==================== 4.1 当前估值水平 ====================
+    # ==================== 6.1 当前估值水平 ====================
 
     def _generate_current_valuation(self) -> List[Dict[str, Any]]:
         elements = []
@@ -90,7 +95,7 @@ class Chapter04Valuation:
 
         return elements
 
-    # ==================== 4.2 历史FCF分析 ====================
+    # ==================== 6.2 历史FCF分析 ====================
 
     def _generate_historical_fcf(self) -> List[Dict[str, Any]]:
         """从现金流量表提取历史FCF数据并分析"""
@@ -176,7 +181,7 @@ class Chapter04Valuation:
 
         return elements
 
-    # ==================== 4.3 DCF估值分析 ====================
+    # ==================== 6.3 DCF估值分析 ====================
 
     def _generate_dcf_valuation(self) -> List[Dict[str, Any]]:
         elements = []
@@ -632,7 +637,7 @@ class Chapter04Valuation:
 
         return elements
 
-    # ==================== 4.6 估值风险评估 ====================
+    # ==================== 6.6 估值综合评估 ====================
 
     def _generate_valuation_risk(self) -> List[Dict[str, Any]]:
         elements = []
@@ -643,7 +648,7 @@ class Chapter04Valuation:
 
         dcf_result = self._get_dcf_result()
 
-        # 估值风险评估
+        # 公司估值评估
         risk_rows = []
 
         # PE评估
@@ -721,6 +726,76 @@ class Chapter04Valuation:
             'headers': ['评估维度', '评估结果', '风险等级'],
             'data': risk_rows
         })
+
+        return elements
+
+    # ==================== 6.7 限售股解禁计划 ====================
+
+    def _generate_share_float(self) -> List[Dict[str, Any]]:
+        """生成限售股解禁计划分析"""
+        elements = []
+        share_float = self.data.get('share_float', pd.DataFrame())
+
+        if share_float.empty:
+            elements.append({'type': 'paragraph', 'content': '暂无限售股解禁数据。'})
+            return elements
+
+        # 按解禁日期排序
+        share_float = share_float.copy()
+        if 'float_date' in share_float.columns:
+            share_float = share_float.sort_values('float_date')
+
+        # 筛选未来解禁（解禁日期 >= 当前）
+        today = datetime.now().strftime('%Y%m%d')
+        if 'float_date' in share_float.columns:
+            future = share_float[share_float['float_date'].astype(str) >= today]
+            past = share_float[share_float['float_date'].astype(str) < today]
+        else:
+            future = share_float
+            past = pd.DataFrame()
+
+        # 未来解禁计划
+        table_data = []
+        for _, row in future.head(10).iterrows():
+            float_date = str(row.get('float_date', ''))
+            if len(float_date) >= 8:
+                float_date = f"{float_date[:4]}-{float_date[4:6]}-{float_date[6:8]}"
+
+            float_share = row.get('float_share', None)
+            total_share = row.get('total_share', None)
+            float_ratio = row.get('float_ratio', None)
+            holder_type = row.get('holder_type', '')
+            type_map = {'0': '其他', '1': '高管', '2': '个人', '3': '机构'}
+
+            table_data.append({
+                '解禁日期': float_date,
+                '解禁数量(股)': f"{float(float_share):,.0f}" if pd.notna(float_share) else '-',
+                '占总股本比例': f"{float(float_ratio):.2f}%" if pd.notna(float_ratio) else '-',
+                '股东类型': type_map.get(str(holder_type), str(holder_type)),
+            })
+
+        if table_data:
+            elements.append({'type': 'paragraph', 'content': '以下为未来限售股解禁计划：'})
+            elements.append({
+                'type': 'table',
+                'headers': ['解禁日期', '解禁数量(股)', '占总股本比例', '股东类型'],
+                'data': table_data
+            })
+
+            # 解禁压力分析
+            total_float_ratio = sum(
+                float(r['占总股本比例'].rstrip('%'))
+                for r in table_data if r['占总股本比例'] != '-'
+            )
+            if total_float_ratio > 20:
+                text = f"未来解禁股份合计占总股本{total_float_ratio:.2f}%，解禁压力较大，需关注股价冲击风险。"
+            elif total_float_ratio > 5:
+                text = f"未来解禁股份合计占总股本{total_float_ratio:.2f}%，解禁压力适中。"
+            else:
+                text = f"未来解禁股份合计占总股本{total_float_ratio:.2f}%，解禁压力较小。"
+            elements.append({'type': 'paragraph', 'content': text})
+        else:
+            elements.append({'type': 'paragraph', 'content': '当前暂无未来限售股解禁计划。'})
 
         return elements
 

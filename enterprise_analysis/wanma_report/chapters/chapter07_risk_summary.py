@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-第二章：风险概述
+第七章：风险概述
 """
 
 from typing import Dict, Any, List
+from datetime import datetime, timedelta
+import pandas as pd
 
 
-class Chapter02RiskSummary:
+class Chapter07RiskSummary:
     """风险概述章节生成器"""
 
     def __init__(self, config: Dict[str, Any], data: Dict[str, Any]):
@@ -32,7 +34,7 @@ class Chapter02RiskSummary:
         # 章节标题
         elements.append({
             'type': 'heading',
-            'content': '第二章 风险概述',
+            'content': '第七章 风险概述',
             'level': 1
         })
 
@@ -45,19 +47,35 @@ class Chapter02RiskSummary:
 
         elements.extend(self._generate_risk_rating())
 
-        # 2.2 主要风险点
+        # 7.2 主要风险点
         elements.append({
             'type': 'heading',
-            'content': '2.2 主要风险点',
+            'content': '7.2 主要风险点',
             'level': 2
         })
 
         elements.extend(self._generate_risk_points())
 
-        # 2.3 风险应对建议
+        # 7.3 股东交易风险
         elements.append({
             'type': 'heading',
-            'content': '2.3 风险应对建议',
+            'content': '7.3 股东交易风险',
+            'level': 2
+        })
+        elements.extend(self._generate_shareholder_trading_risk())
+
+        # 7.4 限售股解禁风险
+        elements.append({
+            'type': 'heading',
+            'content': '7.4 限售股解禁风险',
+            'level': 2
+        })
+        elements.extend(self._generate_share_float_risk())
+
+        # 7.5 风险应对建议
+        elements.append({
+            'type': 'heading',
+            'content': '7.5 风险应对建议',
             'level': 2
         })
 
@@ -78,14 +96,10 @@ class Chapter02RiskSummary:
         # 计算估值风险评级
         val_risk_rating, val_risk_level = self._assess_valuation_risk(valuation_data)
 
-        # 计算退出风险评级
-        exit_risk_rating, exit_risk_level = self._assess_exit_risk(scoring_result, valuation_data)
-
         # 风险评级表格
         risk_rating = [
             {'维度': '综合财务评分', '评级': f"{total_score:.2f}分 ({grade})", '风险等级': self._score_to_risk_level(total_score)},
             {'维度': '估值风险', '评级': val_risk_rating, '风险等级': val_risk_level},
-            {'维度': '退出风险', '评级': exit_risk_rating, '风险等级': exit_risk_level},
         ]
 
         elements.append({
@@ -164,64 +178,6 @@ class Chapter02RiskSummary:
             if pb_ratio:
                 desc_parts.append(f"PB:{pb_ratio:.1f}")
             return '/'.join(desc_parts), '高风险'
-
-    def _assess_exit_risk(self, scoring_result: Dict, valuation_data: Dict) -> tuple:
-        """评估退出风险
-
-        Args:
-            scoring_result: 评分结果
-            valuation_data: 估值数据
-
-        Returns:
-            (评级描述, 风险等级)
-        """
-        risk_factors = 0
-        total_factors = 0
-
-        # 因子1：财务评分（越低退出风险越高）
-        total_score = scoring_result.get('total_score', 0)
-        if total_score >= 80:
-            risk_factors += 1
-        elif total_score >= 70:
-            risk_factors += 2
-        elif total_score >= 60:
-            risk_factors += 3
-        else:
-            risk_factors += 4
-        total_factors += 1
-
-        # 因子2：估值水平（越高退出风险越高）
-        pe_ratio = valuation_data.get('pe_ratio')
-        if pe_ratio:
-            if pe_ratio < 20:
-                risk_factors += 1
-            elif pe_ratio < 40:
-                risk_factors += 2
-            else:
-                risk_factors += 3
-            total_factors += 1
-
-        # 因子3：流动性（换手率）
-        turnover = valuation_data.get('turnover_rate')
-        if turnover:
-            if turnover > 3:
-                risk_factors += 1
-            elif turnover > 1:
-                risk_factors += 2
-            else:
-                risk_factors += 3
-            total_factors += 1
-
-        if total_factors == 0:
-            return '数据不足', '待评估'
-
-        avg_risk = risk_factors / total_factors
-        if avg_risk <= 1.5:
-            return '退出渠道畅通', '低风险'
-        elif avg_risk <= 2.5:
-            return '退出条件一般', '中等风险'
-        else:
-            return '退出存在不确定性', '较高风险'
 
     def _generate_risk_points(self) -> List[Dict[str, Any]]:
         """生成主要风险点"""
@@ -306,12 +262,6 @@ class Chapter02RiskSummary:
                 '应对建议': '合理评估定增价格，关注行业估值水平变化'
             })
 
-        # 退出风险建议
-        suggestions.append({
-            '风险类型': '退出风险',
-            '应对建议': '制定多元化退出策略（二级市场减持、大宗交易、协议转让），分散减持时点降低冲击成本'
-        })
-
         # 运营风险建议
         operations_score = dimensions.get('operations', {}).get('score', 0)
         if operations_score < 70:
@@ -325,6 +275,117 @@ class Chapter02RiskSummary:
             'headers': ['风险类型', '应对建议'],
             'data': suggestions
         })
+
+        return elements
+
+    def _generate_shareholder_trading_risk(self) -> List[Dict[str, Any]]:
+        """分析大股东交易风险"""
+        elements = []
+        holdertrade = self.data.get('stk_holdertrade', pd.DataFrame())
+
+        if holdertrade.empty:
+            elements.append({'type': 'paragraph', 'content': '暂无大股东交易数据。'})
+            return elements
+
+        # 按交易日期排序
+        holdertrade = holdertrade.copy()
+        if 'ann_date' in holdertrade.columns:
+            holdertrade = holdertrade.sort_values('ann_date', ascending=False)
+
+        # 取最近20笔交易
+        recent_trades = holdertrade.head(20)
+
+        table_data = []
+        for _, row in recent_trades.iterrows():
+            ann_date = str(row.get('ann_date', ''))
+            if len(ann_date) >= 8:
+                ann_date = f"{ann_date[:4]}-{ann_date[4:6]}-{ann_date[6:8]}"
+
+            holder_name = row.get('holder_name', '')
+            trade_type = row.get('trade_type', '')
+            type_desc = {'B': '买入', 'S': '卖出', '增持': '增持', '减持': '减持'}.get(str(trade_type), str(trade_type))
+
+            vol = row.get('vol', None)
+            price = row.get('price', None)
+            change_ratio = row.get('change_ratio', None)
+
+            row_data = {
+                '公告日期': ann_date,
+                '股东名称': str(holder_name),
+                '交易类型': type_desc,
+                '交易数量(股)': f"{float(vol):,.0f}" if pd.notna(vol) else '-',
+                '交易价格': f"{float(price):.2f}" if pd.notna(price) else '-',
+                '变动比例': f"{float(change_ratio):.4f}%" if pd.notna(change_ratio) else '-',
+            }
+            table_data.append(row_data)
+
+        if table_data:
+            elements.append({
+                'type': 'table',
+                'headers': ['公告日期', '股东名称', '交易类型', '交易数量(股)', '交易价格', '变动比例'],
+                'data': table_data
+            })
+
+            # 买卖统计
+            buy_count = sum(1 for r in table_data if r['交易类型'] in ('买入', '增持'))
+            sell_count = sum(1 for r in table_data if r['交易类型'] in ('卖出', '减持'))
+
+            text = f"近期大股东交易中，买入/增持{buy_count}笔，卖出/减持{sell_count}笔。"
+            if sell_count > buy_count * 2:
+                text += "大股东以减持为主，需关注减持对股价的压力。"
+            elif buy_count > sell_count * 2:
+                text += "大股东以增持为主，显示对公司前景的信心。"
+            elements.append({'type': 'paragraph', 'content': text})
+
+        return elements
+
+    def _generate_share_float_risk(self) -> List[Dict[str, Any]]:
+        """分析限售股解禁风险"""
+        elements = []
+        share_float = self.data.get('share_float', pd.DataFrame())
+
+        if share_float.empty:
+            elements.append({'type': 'paragraph', 'content': '暂无限售股解禁数据。'})
+            return elements
+
+        from datetime import datetime
+        today = datetime.now().strftime('%Y%m%d')
+        share_float = share_float.copy()
+
+        # 统计未来6个月解禁
+        six_months_later = (datetime.now() + timedelta(days=180)).strftime('%Y%m%d')
+
+        if 'float_date' in share_float.columns:
+            near_term = share_float[
+                (share_float['float_date'].astype(str) >= today) &
+                (share_float['float_date'].astype(str) <= six_months_later)
+            ]
+        else:
+            near_term = pd.DataFrame()
+
+        if near_term.empty:
+            elements.append({
+                'type': 'paragraph',
+                'content': '未来6个月内无限售股解禁计划，短期解禁压力较小。'
+            })
+            return elements
+
+        total_float = near_term['float_share'].sum() if 'float_share' in near_term.columns else 0
+        total_ratio = near_term['float_ratio'].sum() if 'float_ratio' in near_term.columns else 0
+
+        if pd.notna(total_ratio) and total_ratio > 0:
+            risk_level = '较高风险' if total_ratio > 10 else ('中等风险' if total_ratio > 3 else '低风险')
+            text = (
+                f"未来6个月内有{len(near_term)}笔限售股解禁，"
+                f"合计解禁{total_float:,.0f}股，占总股本{total_ratio:.2f}%。"
+                f"解禁风险等级：{risk_level}。"
+            )
+            elements.append({'type': 'paragraph', 'content': text})
+        else:
+            elements.append({
+                'type': 'paragraph',
+                'content': f"未来6个月有{len(near_term)}笔限售股解禁计划，需关注解禁节奏。"
+            })
 
         return elements
 
