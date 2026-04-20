@@ -70,14 +70,30 @@ class ReportFetcher:
             return []
 
     def fetch_industry_reports(self, industry_keyword: str, max_count: int = 5) -> List[dict]:
-        """获取行业研报（用关键词列表匹配标题和行业字段）"""
+        """获取行业研报（分两轮搜索：先用精确关键词，不够再用宽泛关键词补充）"""
         begin_time = (datetime.now() - timedelta(days=self.date_range_months * 30)).strftime('%Y-%m-%d')
 
         # 从行业名称生成搜索关键词
-        keywords = self._expand_keywords(industry_keyword)
+        all_keywords = self._expand_keywords(industry_keyword)
+        # L1级别的宽泛关键词（用于第二轮补充）
+        broad_keywords = self._get_broad_keywords(industry_keyword)
 
+        # 第一轮：精确关键词搜索
+        all_reports, seen_codes = self._search_reports(all_keywords, begin_time, max_count)
+
+        # 第二轮：如果精确搜索不够，用宽泛关键词补充
+        if len(all_reports) < max_count and broad_keywords:
+            remaining = max_count - len(all_reports)
+            broad_reports, _ = self._search_reports(broad_keywords, begin_time, remaining, seen_codes)
+            all_reports.extend(broad_reports)
+
+        return all_reports[:max_count]
+
+    def _search_reports(self, keywords, begin_time, max_count, seen_codes=None) -> tuple:
+        """按关键词搜索行业研报"""
+        if seen_codes is None:
+            seen_codes = set()
         all_reports = []
-        seen_codes = set()
         page = 1
 
         while len(all_reports) < max_count and page <= 10:
@@ -120,37 +136,90 @@ class ReportFetcher:
                 print(f"  获取行业研报第{page}页失败: {e}")
                 break
 
-        return all_reports[:max_count]
+        return all_reports, seen_codes
+
+    @staticmethod
+    def _get_broad_keywords(industry_name: str) -> list:
+        """提取L1级别宽泛关键词，用于第二轮补充搜索"""
+        parts = [k.strip() for k in industry_name.split(',') if k.strip()]
+        if not parts:
+            return []
+
+        # L1名称映射到宽泛关键词（补充搜索用）
+        broad_map = {
+            '电力设备': ['电力设备', '电力'],
+            '电气设备': ['电力设备', '电气'],
+        }
+        l1_name = parts[0]
+        return broad_map.get(l1_name, [])
 
     @staticmethod
     def _expand_keywords(industry_name: str) -> list:
         """从行业名称生成搜索关键词列表
 
         支持逗号分隔的SW行业层级（如"电力设备, 电网设备, 线缆部件及其他"）
+        优先按最细粒度（L3）的行业名匹配，避免L1太宽泛引入不相关关键词
         """
-        # 基础关键词：按逗号分割的行业名
-        keywords = [k.strip() for k in industry_name.split(',') if k.strip()] if industry_name else []
+        # 基础关键词：按逗号分割的行业名 [L1, L2, L3]
+        parts = [k.strip() for k in industry_name.split(',') if k.strip()] if industry_name else []
 
-        # 行业名称到搜索关键词的扩展映射
-        expansions = {
-            '电力设备': ['电力', '电气', '电力设备', '新能源', '电网', '电池', '线缆', '电缆'],
-            '电气设备': ['电力', '电气', '电力设备', '新能源', '电网', '电池', '线缆', '电缆'],
-            '电网设备': ['电网', '电力', '输变电', '配电', '电缆'],
-            '线缆': ['线缆', '电缆', '电力', '电力设备'],
-            '电池': ['电池', '锂电', '储能', '新能源'],
+        # 行业名称到搜索关键词的扩展映射（所有层级统一映射）
+        expansion_map = {
+            # === 电力设备 L1 下的 L2/L3 ===
+            '线缆部件及其他': ['线缆', '电缆', '电线', '电网', '输变电', '配电'],
+            '输变电设备': ['输变电', '变压器', '电网', '高压', '电缆'],
+            '配电设备': ['配电', '开关', '电网', '电缆'],
+            '电网自动化设备': ['电网', '自动化', '智能电网', '配电'],
+            '电网设备': ['电网', '输变电', '配电', '电力', '电缆'],
+            '电机': ['电机', '电动机', '发电机'],
+            '光伏设备': ['光伏', '太阳能', '硅料'],
+            '风电设备': ['风电', '风力'],
+            '锂电池': ['锂电', '电池', '储能'],
+            '光伏电池组件': ['光伏', '太阳能'],
+            # === L1 级别（最宽泛，仅当L2/L3都没匹配时使用）===
+            '电力设备': ['电力设备', '电力'],
+            '电气设备': ['电力设备', '电气', '电力'],
             '汽车': ['汽车', '新能源车', '电动'],
             '医药': ['医药', '生物', '医疗'],
             '食品': ['食品', '饮料', '白酒'],
             '计算机': ['计算机', '软件', 'AI', '人工智能'],
             '电子': ['电子', '半导体', '芯片'],
+            '基础化工': ['化工', '化学', '化纤'],
+            '有色金属': ['有色', '金属', '铜', '铝'],
+            '银行': ['银行', '金融', '信贷'],
+            '房地产': ['房地产', '地产', '住房'],
+            '通信': ['通信', '5G', '光通信'],
+            '国防军工': ['军工', '国防', '航天'],
+            '机械设备': ['机械', '设备', '工程机械'],
+            '建筑材料': ['建材', '水泥', '玻璃'],
+            '公用事业': ['公用事业', '电力', '燃气', '环保'],
+            '交通运输': ['交通', '物流', '航空', '港口'],
+            '传媒': ['传媒', '影视', '游戏', '广告'],
         }
 
-        for key, words in expansions.items():
-            if any(key in k for k in keywords):
-                keywords.extend(words)
+        # 从最细粒度开始匹配：parts按[L1, L2, L3]排列，倒序遍历
+        expanded = []
+        matched_level = -1  # 匹配到的层级索引
+
+        for i in range(len(parts) - 1, -1, -1):
+            part = parts[i]
+            for key, words in expansion_map.items():
+                if key in part:
+                    expanded = words
+                    matched_level = i
+                    break
+            if expanded:
                 break
 
-        return list(set(keywords)) if keywords else [industry_name]
+        if not expanded:
+            return list(set(parts)) if parts else [industry_name]
+
+        # 只保留匹配层级及以下的关键词（排除更粗粒度的名称）
+        # 例如L3匹配时，不包含L1（太宽泛），但保留L2和L3自身
+        keywords = parts[matched_level:]  # 从匹配层级开始取
+        keywords.extend(expanded)
+
+        return list(set(keywords))
 
     # ----------------------------------------------------------
     # 研报正文提取（从东方财富网页提取）

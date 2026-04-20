@@ -52,20 +52,24 @@ class Chapter04Industry:
     def _get_llm_content(self) -> Dict[str, Any]:
         """尝试通过LLM生成行业分析内容"""
         llm_config = self.config.get('llm', {})
-        research_data = self.data.get('research_reports', {})
 
-        if not llm_config or not llm_config.get('api_key'):
+        if not llm_config:
             return None
+
+        # 先构造LLMWriter，让它从config或环境变量获取api_key
+        from utils.llm_writer import LLMWriter
+        writer = LLMWriter(llm_config)
+
+        if not writer.api_key:
+            return None
+
+        research_data = self.data.get('research_reports', {})
 
         # report_fetcher已经合并好文本，直接使用
         report_text = research_data.get('report_text', '')
 
         # 构建同行数据摘要
         peer_summary = self._build_peer_summary()
-
-        # 调用LLM
-        from utils.llm_writer import LLMWriter
-        writer = LLMWriter(llm_config)
 
         company_info = self.data.get('company_info', {})
         company_name = company_info.get('name', self.project_info.get('name', ''))
