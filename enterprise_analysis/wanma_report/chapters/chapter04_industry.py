@@ -172,7 +172,69 @@ class Chapter04Industry:
                 elements.append({'type': 'heading', 'content': title, 'level': 3})
                 elements.append({'type': 'paragraph', 'content': text})
 
+        # 生成市场规模图表
+        market_data = llm_content.get('market_data', {})
+        if market_data:
+            chart_path = self._generate_market_chart(market_data)
+            if chart_path:
+                elements.append({'type': 'image', 'path': chart_path})
+
         return elements
+
+    def _generate_market_chart(self, market_data: dict) -> Optional[str]:
+        """生成市场规模趋势图"""
+        try:
+            import matplotlib
+            matplotlib.use('Agg')
+            import matplotlib.pyplot as plt
+            import tempfile
+            import os
+
+            plt.rcParams['font.sans-serif'] = ['Arial Unicode MS', 'SimHei', 'STHeiti']
+            plt.rcParams['axes.unicode_minus'] = False
+
+            has_global = 'global' in market_data and market_data['global'].get('years')
+            has_domestic = 'domestic' in market_data and market_data['domestic'].get('years')
+
+            if not has_global and not has_domestic:
+                return None
+
+            fig, ax = plt.subplots(figsize=(8, 4.5))
+
+            if has_global:
+                g = market_data['global']
+                ax.plot(g['years'], g['values'], 'b-o', label=f"全球市场规模（{g.get('unit', '亿美元')}）", linewidth=2, markersize=6)
+
+            if has_domestic:
+                d = market_data['domestic']
+                ax.plot(d['years'], d['values'], 'r-s', label=f"国内市场规模（{d.get('unit', '亿元')}）", linewidth=2, markersize=6)
+
+            ax.set_title('行业市场规模趋势', fontsize=14, fontweight='bold')
+            ax.set_xlabel('年份')
+            ax.set_ylabel('市场规模')
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+
+            # 添加数据标签
+            lines = ax.get_lines()
+            for line in lines:
+                for x, y in zip(line.get_xdata(), line.get_ydata()):
+                    ax.annotate(f'{y:.0f}', (x, y), textcoords="offset points",
+                                xytext=(0, 10), ha='center', fontsize=8)
+
+            plt.tight_layout()
+
+            # 保存到临时文件
+            tmp_dir = tempfile.mkdtemp()
+            chart_path = os.path.join(tmp_dir, 'market_size_chart.png')
+            fig.savefig(chart_path, dpi=150, bbox_inches='tight')
+            plt.close(fig)
+
+            return chart_path
+
+        except Exception as e:
+            print(f"  市场规模图表生成失败: {e}")
+            return None
 
     def _generate_section_4_3(self, llm_content: dict) -> List[Dict]:
         elements = [{'type': 'heading', 'content': '4.3 行业竞争格局', 'level': 2}]

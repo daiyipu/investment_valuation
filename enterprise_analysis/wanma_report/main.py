@@ -754,6 +754,14 @@ class DingZengRiskReportGenerator:
                     doc.add_paragraph(element['content'])
                 elif element['type'] == 'table':
                     self._add_table_to_doc(doc, element['data'], element.get('headers', []))
+                elif element['type'] == 'image':
+                    if element.get('path'):
+                        try:
+                            doc.add_picture(element['path'], width=Inches(6))
+                            last_paragraph = doc.paragraphs[-1]
+                            last_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        except Exception as e:
+                            print(f"  插入图片失败: {e}")
 
         doc.save(output_path)
 
