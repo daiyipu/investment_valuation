@@ -137,3 +137,20 @@ dingzeng:
 industry:
   name: ""
   codes: []
+
+# LLM配置（用于行业研究章节内容生成）
+llm:
+  api_key: ""                                     # 或从环境变量LLM_API_KEY读取
+  base_url: "https://open.bigmodel.cn/api/coding/paas/v4" # 智谱GLM API地址
+  model: "glm-4-flash"                            # 模型名称
+  max_tokens: 8192
+  temperature: 0.3
+
+# 行业研报获取配置（东方财富）
+report_fetcher:
+  max_reports: 8                 # 每次最大下载研报数
+  max_text_per_report: 8000      # 每篇PDF提取最大字符数
+  max_total_text: 40000          # 发送给LLM的最大总字符数
+  pdf_timeout: 30                # PDF下载超时(秒)
+  download_delay: 1.0            # 请求间隔(秒)
+  date_range_months: 24          # 回溯月数

@@ -116,74 +116,95 @@ class DingZengRiskReportGenerator:
             self.industry_analyzer = IndustryAnalyzer(self.pro, self.config['industry'])
 
     def _find_sw_l3_peers(self, industry_name: str) -> tuple:
-        """通过申万三级行业分类查找同行公司
+        """通过申万三级行业分类查找同行公司（使用index_member_all一次查询）
 
         Returns:
             (peer_codes, sw_l3_name)
         """
         peer_codes = [self.stock_code]
         sw_l3_name = ''
+        self._sw_industry_info = {}
 
         try:
-            # 1. 获取SW一级分类，匹配stock_basic的industry字段
-            sw_l1 = self.pro.index_classify(src='SW2021', level='L1')
-            if sw_l1 is None or sw_l1.empty:
+            # 一次查询获取所有SW2021行业成分（is_new='Y'仅当前成分）
+            all_members = self.pro.index_member_all(is_new='Y')
+            if all_members is None or all_members.empty:
                 return peer_codes, ''
 
-            # 匹配一级分类（stock_basic的industry对应SW一级）
-            l1_match = sw_l1[sw_l1['industry_name'].str.contains(industry_name, na=False)]
-            if l1_match.empty:
-                # 尝试模糊匹配
-                for _, row in sw_l1.iterrows():
-                    if industry_name in row['industry_name'] or row['industry_name'] in industry_name:
-                        l1_match = sw_l1[sw_l1['index_code'] == row['index_code']]
-                        break
-
-            if l1_match.empty:
+            # 找到目标公司所属的SW三级行业
+            target = all_members[all_members['ts_code'] == self.stock_code]
+            if target.empty:
                 return peer_codes, ''
 
-            # 2. 获取SW二级分类（一级的子分类）
-            l1_codes = l1_match['index_code'].tolist()
-            sw_l2 = self.pro.index_classify(src='SW2021', level='L2')
-            if sw_l2 is None or sw_l2.empty:
-                return peer_codes, ''
+            row = target.iloc[0]
+            l3_code = row['l3_code']
+            sw_l3_name = row['l3_name']
 
-            l2_under_l1 = sw_l2[sw_l2['parent_code'].isin(l1_codes)]
-            if l2_under_l1.empty:
-                return peer_codes, ''
+            # 保存完整行业信息供后续使用
+            self._sw_industry_info = {
+                'l1_name': row['l1_name'],
+                'l2_name': row['l2_name'],
+                'l3_name': sw_l3_name,
+                'l3_code': l3_code,
+            }
 
-            # 3. 获取SW三级分类（二级的子分类）
-            l2_codes = l2_under_l1['index_code'].tolist()
-            sw_l3 = self.pro.index_classify(src='SW2021', level='L3')
-            if sw_l3 is None or sw_l3.empty:
-                return peer_codes, ''
+            # 获取同三级行业的所有公司
+            peers = all_members[all_members['l3_code'] == l3_code]
+            peer_codes = peers['ts_code'].tolist()
 
-            l3_under_l2 = sw_l3[sw_l3['parent_code'].isin(l2_codes)]
-            if l3_under_l2.empty:
-                return peer_codes, ''
-
-            # 4. 遍历三级分类，找到包含目标公司的那个
-            for _, row in l3_under_l2.iterrows():
-                try:
-                    members = self.pro.index_member(index_code=row['index_code'])
-                    if members is not None and not members.empty:
-                        # index_member返回con_code字段
-                        member_codes = members['con_code'].tolist() if 'con_code' in members.columns else []
-                        if not member_codes and 'ts_code' in members.columns:
-                            member_codes = members['ts_code'].tolist()
-
-                        if self.stock_code in member_codes:
-                            peer_codes = list(set(member_codes))  # 去重
-                            sw_l3_name = row.get('industry_name', '')
-                            print(f"申万三级行业匹配: {sw_l3_name} ({row['index_code']})，同行 {len(peer_codes)} 家")
-                            break
-                except Exception:
-                    continue
+            print(f"申万三级行业匹配: {row['l1_name']} > {row['l2_name']} > {sw_l3_name} ({l3_code})，同行 {len(peer_codes)} 家")
 
         except Exception as e:
             print(f"申万三级行业分类查找出错: {e}")
 
         return peer_codes, sw_l3_name
+
+    def _fetch_research_reports(self) -> dict:
+        """从东方财富获取行业研报数据"""
+        try:
+            fetcher_config = self.config.get('report_fetcher', {})
+            if not fetcher_config:
+                print("  未配置report_fetcher，跳过研报获取")
+                return {}
+
+            from utils.report_fetcher import ReportFetcher
+            fetcher = ReportFetcher(fetcher_config)
+
+            # 优先使用index_member_all查到的SW行业名
+            sw_info = getattr(self, '_sw_industry_info', {})
+            sw_l1_name = sw_info.get('l1_name', '')
+            sw_l2_name = sw_info.get('l2_name', '')
+            sw_l3_name = sw_info.get('l3_name', '')
+
+            if not sw_l1_name:
+                try:
+                    company_info = self.pro.stock_basic(
+                        ts_code=self.stock_code, fields='ts_code,industry')
+                    if company_info is not None and len(company_info) > 0:
+                        sw_l1_name = company_info.iloc[0].get('industry', '')
+                except Exception:
+                    pass
+
+            # 用L1行业名搜行业研报，L2/L3名作为补充关键词
+            search_keywords = [kw for kw in [sw_l1_name, sw_l2_name, sw_l3_name] if kw]
+            industry_name = sw_l1_name
+
+            result = fetcher.fetch_reports_for_chapter(
+                stock_code=self.stock_code,
+                industry_name=industry_name,
+                sw_l1_name=', '.join(search_keywords),
+            )
+
+            n_reports = len(result.get('reports', []))
+            report_text_len = len(result.get('report_text', ''))
+            n_errors = len(result.get('download_errors', []))
+            print(f"  获取研报 {n_reports} 篇，LLM参考文本 {report_text_len} 字"
+                  + (f"，正文提取失败 {n_errors} 篇" if n_errors else ""))
+            return result
+
+        except Exception as e:
+            print(f"  获取行业研报数据时出错: {e}")
+            return {}
 
     def load_all_data(self) -> Dict[str, Any]:
         """加载所有需要的数据
@@ -209,6 +230,10 @@ class DingZengRiskReportGenerator:
         # 2. 初始化行业分析器（依赖公司行业信息）
         print("[2/15] 初始化行业分析器...")
         self._init_industry_analyzer()
+
+        # 2.5 获取行业研报数据（东方财富）
+        print("[2.5/15] 获取行业研报数据...")
+        data['research_reports'] = self._fetch_research_reports()
 
         # 3. 获取财务指标数据
         print("[3/15] 获取财务指标数据...")
