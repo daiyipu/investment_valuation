@@ -57,3 +57,5 @@ price_maintenance_risk_analysis/reports/images/*.jpg
 !price_maintenance_risk_analysis/reports/images/.gitkeep
 *.bak
 enterprise_analysis/wanma_report/config.yaml
+enterprise_analysis/wanma_report/output/*.docx
+!enterprise_analysis/wanma_report/output/.gitkeep

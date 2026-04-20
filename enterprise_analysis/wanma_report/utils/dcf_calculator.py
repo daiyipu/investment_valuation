@@ -330,9 +330,9 @@ class DCFCalculator:
         """计算净债务
 
         使用Tushare标准英文字段名:
-        - st_loan: 短期借款
+        - st_borr: 短期借款
         - lt_borr: 长期借款
-        - non_cur_liab_within_1y: 一年内到期的非流动负债
+        - non_cur_liab_due_1y: 一年内到期的非流动负债
         - money_cap: 货币资金
         """
         balance_sheet = financial_statements.get('balance_sheet', pd.DataFrame())
@@ -346,24 +346,24 @@ class DCFCalculator:
         else:
             latest = balance_sheet.iloc[-1]
 
-        st_loan = latest.get('st_loan', 0)
-        if pd.isna(st_loan):
-            st_loan = 0
+        st_borr = latest.get('st_borr', 0)
+        if pd.isna(st_borr):
+            st_borr = 0
 
         lt_borr = latest.get('lt_borr', 0)
         if pd.isna(lt_borr):
             lt_borr = 0
 
-        non_cur_liab_within_1y = latest.get('non_cur_liab_within_1y', 0)
-        if pd.isna(non_cur_liab_within_1y):
-            non_cur_liab_within_1y = 0
+        non_cur_liab_due_1y = latest.get('non_cur_liab_due_1y', 0)
+        if pd.isna(non_cur_liab_due_1y):
+            non_cur_liab_due_1y = 0
 
         money_cap = latest.get('money_cap', 0)
         if pd.isna(money_cap):
             money_cap = 0
 
         # Tushare资产负债表数据单位为元，转换为万元
-        debt = (float(st_loan) + float(lt_borr) + float(non_cur_liab_within_1y)) / 10000
+        debt = (float(st_borr) + float(lt_borr) + float(non_cur_liab_due_1y)) / 10000
         cash = float(money_cap) / 10000
 
         net_debt = debt - cash

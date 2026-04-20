@@ -574,17 +574,17 @@ class FinancialScoringEngine:
             oper_cost = self._safe_float(ic.get('oper_cost'))
             if oper_cost is None:
                 return None
-            invty = self._safe_float(bs.get('invty'))
-            if invty is None or invty == 0:
+            inventories = self._safe_float(bs.get('inventories'))
+            if inventories is None or inventories == 0:
                 return None
-            return oper_cost / invty
+            return oper_cost / inventories
 
         if field == 'ar_turn':
             # 应收账款周转率 = 营业收入 / 平均应收账款
             if ic is None or bs is None:
                 return None
             revenue = self._safe_float(ic.get('total_revenue')) or self._safe_float(ic.get('revenue'))
-            ar = self._safe_float(bs.get('account_rece'))
+            ar = self._safe_float(bs.get('accounts_receiv'))
             if revenue is None or ar is None or ar == 0:
                 return None
             return revenue / ar
@@ -669,11 +669,11 @@ class FinancialScoringEngine:
             if bs is None:
                 return None
             cur_assets = self._safe_float(bs.get('total_cur_assets'))
-            invty = self._safe_float(bs.get('invty')) or 0
+            inventories = self._safe_float(bs.get('inventories')) or 0
             cur_liab = self._safe_float(bs.get('total_cur_liab'))
             if cur_assets is None or cur_liab is None or cur_liab == 0:
                 return None
-            return (cur_assets - invty) / cur_liab
+            return (cur_assets - inventories) / cur_liab
 
         if field == 'cash_to_liqdebt':
             # 现金与流动负债比率 = 货币资金 / 流动负债
@@ -690,8 +690,8 @@ class FinancialScoringEngine:
             if bs is None:
                 return None
             money_cap = self._safe_float(bs.get('money_cap'))
-            st_loan = self._safe_float(bs.get('st_loan')) or 0
-            non_cur_1y = self._safe_float(bs.get('non_cur_liab_within_1y')) or 0
+            st_loan = self._safe_float(bs.get('st_borr')) or 0
+            non_cur_1y = self._safe_float(bs.get('non_cur_liab_due_1y')) or 0
             denom = st_loan + non_cur_1y
             if money_cap is None or denom == 0:
                 return None
@@ -711,10 +711,10 @@ class FinancialScoringEngine:
             # 带息债务/全部投入资本 = 有息负债 / (有息负债 + 股东权益)
             if bs is None:
                 return None
-            st_loan = self._safe_float(bs.get('st_loan')) or 0
+            st_loan = self._safe_float(bs.get('st_borr')) or 0
             lt_borr = self._safe_float(bs.get('lt_borr')) or 0
-            bonds = self._safe_float(bs.get('bonds_payable')) or 0
-            non_cur_1y = self._safe_float(bs.get('non_cur_liab_within_1y')) or 0
+            bonds = self._safe_float(bs.get('bond_payable')) or 0
+            non_cur_1y = self._safe_float(bs.get('non_cur_liab_due_1y')) or 0
             interest_debt = st_loan + lt_borr + bonds + non_cur_1y
             equity = self._safe_float(bs.get('total_hldr_eqy_exc_min_int'))
             if equity is None:

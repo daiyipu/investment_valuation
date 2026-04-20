@@ -222,6 +222,10 @@ class DingZengRiskReportGenerator:
         print("[5/15] 获取行业对比数据...")
         data['industry_data'] = self._get_industry_comparison()
 
+        # 5.5 获取同行财务报表数据（用于第五章占比分析和行业百分位）
+        print("[5.5/15] 获取同行财务报表数据...")
+        data['peer_statements'] = self._get_peer_financial_statements()
+
         # 将行业数据和财务报表传递给评分引擎
         self.scoring_engine.set_industry_data(data['industry_data'])
         self.scoring_engine.set_financial_statements(data['financial_statements'])
@@ -445,6 +449,80 @@ class DingZengRiskReportGenerator:
 
         return statements
 
+    def _get_peer_financial_statements(self) -> Dict[str, pd.DataFrame]:
+        """获取同行公司的三大财务报表原始数据（用于第五章占比分析的行业百分位计算）"""
+        peer_statements = {
+            'peer_balance_sheet': pd.DataFrame(),
+            'peer_income_statement': pd.DataFrame(),
+            'peer_cashflow': pd.DataFrame(),
+        }
+
+        if self.industry_analyzer is None:
+            return peer_statements
+
+        industry_codes = self.industry_analyzer.industry_codes
+        peer_codes = [c for c in industry_codes if c != self.stock_code]
+        if not peer_codes:
+            return peer_statements
+
+        end_date = datetime.now().strftime('%Y%m%d')
+        start_year = int(datetime.now().strftime('%Y')) - 5
+        start_date = f"{start_year}0101"
+
+        import time
+
+        for api_name, result_key in [
+            ('balancesheet', 'peer_balance_sheet'),
+            ('income', 'peer_income_statement'),
+            ('cashflow', 'peer_cashflow'),
+        ]:
+            df_list = []
+            api_func = getattr(self.pro, api_name)
+            fields_str = 'ts_code,end_date,' + self._get_statement_fields(api_name)
+
+            for code in peer_codes:
+                try:
+                    df = api_func(ts_code=code, start_date=start_date, end_date=end_date, fields=fields_str)
+                    if df is not None and not df.empty:
+                        # 只保留年报
+                        df = df[df['end_date'].astype(str).str.contains('1231', na=False)]
+                        if not df.empty:
+                            df_list.append(df)
+                except Exception:
+                    pass
+                time.sleep(0.3)
+
+            if df_list:
+                cleaned = [d.dropna(axis=1, how='all') for d in df_list if not d.empty]
+                if cleaned:
+                    peer_statements[result_key] = pd.concat(cleaned, ignore_index=True)
+
+        print(f"  同行报表数据获取完成: BS {len(peer_statements['peer_balance_sheet'])}条, "
+              f"IS {len(peer_statements['peer_income_statement'])}条, "
+              f"CF {len(peer_statements['peer_cashflow'])}条")
+        return peer_statements
+
+    @staticmethod
+    def _get_statement_fields(api_name: str) -> str:
+        """获取报表API需要拉取的字段列表（Tushare实际字段名）"""
+        fields_map = {
+            'balancesheet': 'money_cap,notes_receiv,accounts_receiv,prepayment,oth_receiv,inventories,oth_cur_assets,'
+                            'total_cur_assets,lt_eqt_invest,invest_real_estate,fix_assets,cip,intan_assets,goodwill,'
+                            'lt_amor_exp,defer_tax_assets,oth_nca,total_nca,total_assets,'
+                            'st_borr,notes_payable,acct_payable,adv_receipts,payroll_payable,taxes_payable,'
+                            'int_payable,oth_payable,non_cur_liab_due_1y,oth_cur_liab,total_cur_liab,'
+                            'lt_borr,bond_payable,lease_liab,total_ncl,total_liab,'
+                            'cap_rese,surplus_rese,undistr_porfit,total_hldr_eqy_exc_min_int,minority_int',
+            'income': 'total_revenue,total_cogs,revenue,biz_tax_surchg,sell_exp,admin_exp,fin_exp,'
+                      'assets_impair_loss,rd_exp,operate_profit,total_profit,income_tax,n_income,'
+                      'n_income_attr_p,basic_eps',
+            'cashflow': 'c_fr_sale_sg,recp_tax_rends,n_cashflow_act,'
+                        'c_pay_acq_const_fiolta,n_cashflow_inv_act,'
+                        'c_recp_borrow,c_prepay_amt_borr,c_pay_dist_dpcp_int_exp,n_cash_flows_fnc_act,'
+                        'c_cash_equ_end_period',
+        }
+        return fields_map.get(api_name, '')
+
     def _get_industry_comparison(self) -> pd.DataFrame:
         """获取行业对比数据"""
         if self.industry_analyzer is None:
@@ -465,12 +543,15 @@ class DingZengRiskReportGenerator:
                 )
                 if df is not None and len(df) > 0:
                     df = df[df['end_date'].str.contains('1231', na=False)]
-                    df_list.append(df)
+                    if not df.empty:
+                        df_list.append(df)
             except Exception as e:
                 print(f"获取 {code} 财务指标时出错: {e}")
 
         if df_list:
-            return pd.concat(df_list, ignore_index=True)
+            cleaned = [d.dropna(axis=1, how='all') for d in df_list if not d.empty]
+            if cleaned:
+                return pd.concat(cleaned, ignore_index=True)
         return pd.DataFrame()
 
     def _calculate_financial_score(self, financial_data: pd.DataFrame = None) -> Dict[str, Any]:
