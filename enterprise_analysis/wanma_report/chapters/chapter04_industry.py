@@ -5,7 +5,7 @@
 基于东方财富研报 + LLM生成的完整行业分析
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import pandas as pd
 import numpy as np
 
