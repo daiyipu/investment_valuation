@@ -427,13 +427,13 @@ def generate_chapter(context):
     returns_pnl_extreme = (final_prices_extreme - issue_price_extreme) / issue_price_extreme
     annualized_returns_extreme = (1 + returns_pnl_extreme) ** (12 / lockup_months) - 1
 
-    # 统计结果
-    mean_return_extreme = annualized_returns_extreme.mean() * 100
-    median_return_extreme = np.median(annualized_returns_extreme) * 100
+    # 统计结果（使用锁定期直接收益率，避免年化放大导致数值失真）
+    mean_return_extreme = returns_pnl_extreme.mean() * 100
+    median_return_extreme = np.median(returns_pnl_extreme) * 100
     profit_prob_extreme = (returns_pnl_extreme > 0).mean() * 100
-    var_95_extreme = np.percentile(annualized_returns_extreme, 5) * 100
-    var_99_extreme = np.percentile(annualized_returns_extreme, 1) * 100
-    worst_loss_extreme = np.min(annualized_returns_extreme) * 100
+    var_95_extreme = np.percentile(returns_pnl_extreme, 5) * 100
+    var_99_extreme = np.percentile(returns_pnl_extreme, 1) * 100
+    worst_loss_extreme = np.min(returns_pnl_extreme) * 100
 
     # 计算正常情景（使用正常发行价和正常参数）
     vol_normal = current_vol_120d
@@ -449,15 +449,14 @@ def generate_chapter(context):
 
     # 计算正常情景收益率
     returns_pnl_normal = (final_prices_normal - issue_price_normal) / issue_price_normal
-    annualized_returns_normal = (1 + returns_pnl_normal) ** (12 / lockup_months) - 1
 
-    # 统计正常情景结果
-    mean_return_normal = annualized_returns_normal.mean() * 100
-    median_return_normal = np.median(annualized_returns_normal) * 100
+    # 统计正常情景结果（使用锁定期直接收益率）
+    mean_return_normal = returns_pnl_normal.mean() * 100
+    median_return_normal = np.median(returns_pnl_normal) * 100
     profit_prob_normal = (returns_pnl_normal > 0).mean() * 100
-    var_95_normal = np.percentile(annualized_returns_normal, 5) * 100
-    var_99_normal = np.percentile(annualized_returns_normal, 1) * 100
-    worst_loss_normal = np.min(annualized_returns_normal) * 100
+    var_95_normal = np.percentile(returns_pnl_normal, 5) * 100
+    var_99_normal = np.percentile(returns_pnl_normal, 1) * 100
+    worst_loss_normal = np.min(returns_pnl_normal) * 100
 
     # 构建对比表格
     add_paragraph(document, '极端情景参数设置：')
@@ -476,7 +475,7 @@ def generate_chapter(context):
 
     extreme_results_headers = ['指标', '正常情景', '极端情景（三重打击）', '差异']
     extreme_results_data = [
-        ['预期年化收益', f'{mean_return_normal:+.2f}%', f'{mean_return_extreme:+.2f}%', f'{mean_return_extreme - mean_return_normal:+.2f}%'],
+        ['预期收益', f'{mean_return_normal:+.2f}%', f'{mean_return_extreme:+.2f}%', f'{mean_return_extreme - mean_return_normal:+.2f}%'],
         ['中位数收益', f'{median_return_normal:+.2f}%', f'{median_return_extreme:+.2f}%', f'{median_return_extreme - median_return_normal:+.2f}%'],
         ['盈利概率', f'{profit_prob_normal:.1f}%', f'{profit_prob_extreme:.1f}%', f'{profit_prob_extreme - profit_prob_normal:+.1f}%'],
         ['95% VaR', f'{var_95_normal:+.2f}%', f'{var_95_extreme:+.2f}%', f'{var_95_extreme - var_95_normal:+.2f}%'],
@@ -504,7 +503,7 @@ def generate_chapter(context):
 
     add_paragraph(document, '关键发现：')
     add_paragraph(document, f'• 在平价发行（发行价等于MA20价格{ma20_price:.2f}元）、高波动（×1.5）、负向漂移（{drift_extreme*100:+.2f}%）的三重打击下：')
-    add_paragraph(document, f'  - 预期年化收益率为{mean_return_extreme:+.2f}%')
+    add_paragraph(document, f'  - 预期收益率为{mean_return_extreme:+.2f}%')
     add_paragraph(document, f'  - 盈利概率为{profit_prob_extreme:.1f}%')
     add_paragraph(document, f'  - 95% VaR为{var_95_extreme:+.2f}%，表示95%置信度下最大损失为{abs(var_95_extreme):.2f}%')
     add_paragraph(document, f'  - 最差情况可能损失{abs(worst_loss_extreme):.2f}%')
@@ -538,7 +537,7 @@ def generate_chapter(context):
         ['7.2 经济面极端情况', f'{worst_scenario_name}（股价下跌{int(stress_scenarios[worst_scenario_name]["price_drop"]*100)}%）',
          f'{worst_loss_percent:+.2f}%', f'最大亏损{abs(worst_loss):.2f}万元',
          '高风险' if profit_scenarios <= total_scenarios * 0.4 else '中等风险' if profit_scenarios <= total_scenarios * 0.7 else '低风险'],
-        ['7.3 多重敏感性指标极端', '平价发行+高波动+负向漂移', f'{mean_return_extreme:+.2f}%',
+        ['7.3 多重敏感性指标极端', '平价发行+高波动+负向漂移', f'{worst_loss_extreme:+.2f}%',
          f'盈利概率{profit_prob_extreme:.1f}%',
          '极高风险' if profit_prob_extreme < 20 else '高风险' if profit_prob_extreme < 40 else '中等风险' if profit_prob_extreme < 60 else '低风险']
     ]
