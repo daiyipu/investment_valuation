@@ -34,6 +34,10 @@ class Chapter04Industry:
             elements.extend(self._generate_section_4_1(llm_content))
             elements.extend(self._generate_section_4_2(llm_content))
             elements.extend(self._generate_section_4_3(llm_content))
+            # 脚注
+            footnotes = llm_content.get('footnotes', {})
+            if footnotes:
+                elements.extend(self._generate_footnotes(footnotes))
         else:
             elements.extend(self._generate_fallback())
 
@@ -233,6 +237,16 @@ class Chapter04Industry:
                 'data': table_data,
             })
 
+        return elements
+
+    # ----------------------------------------------------------
+    # 脚注
+    # ----------------------------------------------------------
+
+    def _generate_footnotes(self, footnotes: dict) -> List[Dict]:
+        elements = [{'type': 'heading', 'content': '资料来源与参考', 'level': 2}]
+        for n, desc in sorted(footnotes.items(), key=lambda x: int(x[0])):
+            elements.append({'type': 'paragraph', 'content': f'[{n}] {desc}'})
         return elements
 
     # ----------------------------------------------------------
