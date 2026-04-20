@@ -74,14 +74,25 @@ class Chapter04Industry:
         company_info = self.data.get('company_info', {})
         company_name = company_info.get('name', self.project_info.get('name', ''))
         stock_code = self.project_info.get('stock_code', '')
-        industry_name = company_info.get('industry', '')
-        sw_l1_name = industry_name
+
+        # 使用SW三级行业信息（优先）或stock_basic的行业名
+        sw_info = self.data.get('sw_industry', {})
+        sw_l1_name = sw_info.get('l1_name', '')
+        sw_l2_name = sw_info.get('l2_name', '')
+        sw_l3_name = sw_info.get('l3_name', '')
+        # 构建完整行业标签：L1 > L2 > L3
+        if sw_l3_name:
+            industry_label = f'{sw_l1_name} > {sw_l2_name} > {sw_l3_name}'
+        elif sw_l1_name:
+            industry_label = sw_l1_name
+        else:
+            industry_label = company_info.get('industry', '')
 
         return writer.generate_industry_analysis(
             company_name=company_name,
             stock_code=stock_code,
-            industry_name=industry_name,
-            sw_l1_name=sw_l1_name,
+            industry_name=sw_l3_name or company_info.get('industry', ''),
+            sw_l1_name=industry_label,
             report_text=report_text,
             peer_data_summary=peer_summary,
         )

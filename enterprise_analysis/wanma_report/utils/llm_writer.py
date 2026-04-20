@@ -108,7 +108,9 @@ class LLMWriter:
 {peer_data_summary}
 """
 
-        return f"""请为{company_name}（{stock_code}）所属的{industry_label}行业撰写一份行业研究分析，用于企业基本面分析报告的第四章。
+        return f"""请为{company_name}（{stock_code}）撰写一份行业研究分析，用于企业基本面分析报告的第四章。
+
+重要：该公司属于申万行业分类 "{industry_label}"，请聚焦于该细分行业进行分析，不要泛泛而谈大一级行业。
 
 {research_section}
 {peer_section}
@@ -118,7 +120,7 @@ class LLMWriter:
 
 {{
   "section_4_1": {{
-    "intro": "行业介绍：包括行业定义、主要组成部分、发展阶段、在国民经济中的地位",
+    "intro": "行业介绍：聚焦{industry_name}细分行业的定义、主要组成部分、发展阶段、在国民经济中的地位。不要泛谈大类行业，要具体到该细分领域",
     "supply_chain": "产业链分析：上游原材料/零部件供应、中游制造/集成环节、下游应用领域及需求特点",
     "regulation": "行业监管与政策：主管单位、核心监管政策、近年重要产业政策及支持方向",
     "technology": "技术发展趋势：核心技术方向、行业技术迭代趋势、主要技术壁垒和进入门槛"
@@ -139,7 +141,7 @@ class LLMWriter:
 2. 如数据无法确认，请使用"据公开资料"或"据行业统计数据"
 3. 不要包含markdown格式（如**、#等），仅输出纯文本段落
 4. 必须输出合法JSON，不要在JSON前后添加其他文字
-5. 分析应紧扣{industry_label}行业特点，内容要有深度和数据支撑"""
+5. 分析应紧扣{industry_name}细分行业特点，内容要有深度和数据支撑"""
 
     def _parse_response(self, response_text: str) -> Optional[dict]:
         """解析LLM返回的JSON"""

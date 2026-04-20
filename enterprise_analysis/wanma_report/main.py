@@ -231,6 +231,9 @@ class DingZengRiskReportGenerator:
         print("[2/15] 初始化行业分析器...")
         self._init_industry_analyzer()
 
+        # 2.1 保存SW行业层级信息供各章节使用
+        data['sw_industry'] = getattr(self, '_sw_industry_info', {})
+
         # 2.5 获取行业研报数据（东方财富）
         print("[2.5/15] 获取行业研报数据...")
         data['research_reports'] = self._fetch_research_reports()
