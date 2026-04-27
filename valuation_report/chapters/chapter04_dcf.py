@@ -71,11 +71,24 @@ def generate_chapter(context):
     income_df = financial_statements.get('income', pd.DataFrame())
 
     current_price = daily_basic.get('close', 0)
-    if isinstance(current_price, str):
+    if isinstance(current_price, str) or current_price is None:
         current_price = 0
     total_share = daily_basic.get('total_share', 0)
-    if isinstance(total_share, str):
+    if isinstance(total_share, str) or total_share is None:
         total_share = 0
+    # Fallback: try to get total_shares from balancesheet if daily_basic missing
+    if not total_share:
+        if not bs_df.empty and 'total_hldr_eqy_inc_min_int' in bs_df.columns:
+            # Use total equity as approximation (yuan → wan shares needs price)
+            pass
+        # Try financial_indicators
+        fi = context.get('financial_indicators', pd.DataFrame())
+        if not fi.empty and 'total_share' in fi.columns:
+            ts_val = fi['total_share'].dropna()
+            if not ts_val.empty:
+                total_share = float(ts_val.iloc[0])
+    if not total_share:
+        print(f"  警告: 总股本数据缺失，每股价值计算将不可用")
 
     utils.add_title(document, '第四章 DCF绝对估值', level=1)
 

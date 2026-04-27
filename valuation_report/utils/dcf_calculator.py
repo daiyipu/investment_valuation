@@ -47,9 +47,16 @@ class DCFCalculator:
 
         fcf_list = []
         for _, row in annual.iterrows():
-            ocf = row.get('n_cashflow_act', 0) or 0
-            capex = row.get('c_pay_acq_const_fiolta', 0) or 0
-            inv_cf = row.get('n_cashflow_inv_act', 0) or 0
+            ocf = row.get('n_cashflow_act', 0)
+            capex = row.get('c_pay_acq_const_fiolta', 0)
+            inv_cf = row.get('n_cashflow_inv_act', 0)
+            # Handle NaN: convert to 0
+            if isinstance(ocf, float) and np.isnan(ocf):
+                ocf = 0
+            if capex is None or (isinstance(capex, float) and np.isnan(capex)):
+                capex = 0
+            if inv_cf is None or (isinstance(inv_cf, float) and np.isnan(inv_cf)):
+                inv_cf = 0
 
             if capex != 0:
                 fcf = (ocf - capex) / 10000
@@ -95,11 +102,18 @@ class DCFCalculator:
             return 0
 
         latest = balancesheet_df.iloc[0]
-        st_borr = float(latest.get('st_borr', 0) or 0)
-        lt_borr = float(latest.get('lt_borr', 0) or 0)
-        bonds = float(latest.get('bond_payable', 0) or 0)
-        current_ltd = float(latest.get('non_cur_liab_due_1y', 0) or 0)
-        cash = float(latest.get('money_cap', 0) or 0)
+
+        def _safe(row, key):
+            v = row.get(key, 0)
+            if v is None or (isinstance(v, float) and np.isnan(v)):
+                return 0.0
+            return float(v)
+
+        st_borr = _safe(latest, 'st_borr')
+        lt_borr = _safe(latest, 'lt_borr')
+        bonds = _safe(latest, 'bond_payable')
+        current_ltd = _safe(latest, 'non_cur_liab_due_1y')
+        cash = _safe(latest, 'money_cap')
 
         total_debt = (st_borr + lt_borr + bonds + current_ltd) / 10000
         cash_equiv = cash / 10000
@@ -110,11 +124,15 @@ class DCFCalculator:
         if balancesheet_df is None or balancesheet_df.empty:
             return 0.4
         latest = balancesheet_df.iloc[0]
-        total_liab = float(latest.get('total_liab', 0) or 0)
-        total_assets = float(latest.get('total_assets', 0) or 0)
-        if total_assets > 0:
-            return total_liab / total_assets
-        return 0.4
+        total_liab = latest.get('total_liab', 0)
+        total_assets = latest.get('total_assets', 0)
+        if total_liab is None or total_assets is None:
+            return 0.4
+        total_liab = float(total_liab)
+        total_assets = float(total_assets)
+        if np.isnan(total_liab) or np.isnan(total_assets) or total_assets <= 0:
+            return 0.4
+        return total_liab / total_assets
 
     def calculate_dcf_valuation(
         self,

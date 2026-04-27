@@ -231,19 +231,30 @@ def _load_sw_industry(pro, stock_code):
         if df.empty:
             return sw_industry, peer_codes
         latest = df.iloc[0]
+        l1_code = latest.get('l1_code', '')
+        l2_code = latest.get('l2_code', '')
         l3_code = latest.get('l3_code', '')
         sw_industry = {
             'l1_name': latest.get('l1_name', ''),
-            'l1_code': latest.get('l1_code', ''),
+            'l1_code': l1_code,
             'l2_name': latest.get('l2_name', ''),
-            'l2_code': latest.get('l2_code', ''),
+            'l2_code': l2_code,
             'l3_name': latest.get('l3_name', ''),
             'l3_code': l3_code,
         }
-        if l3_code:
-            df_peers = pro.index_member_all(l3_code=l3_code)
+        # Try L3 first, fallback to L2 then L1 if too few peers
+        for level_name, level_code in [('三级', l3_code), ('二级', l2_code), ('一级', l1_code)]:
+            if not level_code:
+                continue
+            df_peers = pro.index_member_all(l3_code=level_code)
             if df_peers is not None and not df_peers.empty:
                 peer_codes = [c for c in df_peers['ts_code'].unique().tolist() if c != stock_code]
+            if len(peer_codes) >= 5:
+                break
+            if peer_codes and level_name != '一级':
+                print(f"  SW{level_name}同行仅{len(peer_codes)}家，尝试更宽行业分类")
+        if len(peer_codes) < 5 and peer_codes:
+            print(f"  注意: 同行仅{len(peer_codes)}家，统计意义有限")
     except Exception as e:
         print(f"  加载SW行业失败: {e}")
     return sw_industry, peer_codes
