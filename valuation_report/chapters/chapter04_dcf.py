@@ -297,20 +297,47 @@ def generate_chapter(context):
                 ])
             utils.add_table_data(document, proj_headers, proj_data)
 
-        # ---- Method 3: Indirect (EV - Net Debt) ----
+        # ---- Method 3: APV (Adjusted Present Value) ----
         utils.add_paragraph(document, '')
-        utils.add_paragraph(document, '方法三：间接法（企业价值-净债务）', bold=True)
+        utils.add_paragraph(document, '方法三：APV（调整现值法）', bold=True)
 
         equity_3 = dcf_result.get('method3_equity_value', 0)
         net_debt = dcf_result.get('net_debt', 0)
+        unlevered_value = dcf_result.get('method3_unlevered_value', 0)
+        pv_tax_shield = dcf_result.get('method3_pv_tax_shield', 0)
+        apv_firm_value = dcf_result.get('method3_apv_firm_value', 0)
+        unlevered_beta = dcf_result.get('method3_unlevered_beta', 0)
+        unlevered_ke = dcf_result.get('method3_unlevered_ke', 0)
 
-        indirect_headers = ['项目', '金额(万元)']
-        indirect_data = [
-            ['企业价值(EV)', f'{ev_1:,.2f}'],
+        utils.add_paragraph(
+            document,
+            f'APV法将企业价值分解为无杠杆企业价值与税盾现值之和。'
+            f'无杠杆Beta={unlevered_beta:.4f}，无杠杆股权成本={unlevered_ke:.4f}。'
+        )
+
+        apv_headers = ['项目', '金额(万元)']
+        apv_data = [
+            ['无杠杆企业价值', f'{unlevered_value:,.2f}'],
+            ['加：税盾现值', f'{pv_tax_shield:,.2f}'],
+            ['企业价值(APV)', f'{apv_firm_value:,.2f}'],
             ['减：净债务', f'{net_debt:,.2f}'],
             ['股权价值', f'{equity_3:,.2f}'],
         ]
-        utils.add_table_data(document, indirect_headers, indirect_data)
+        utils.add_table_data(document, apv_headers, apv_data)
+
+        # Show APV projected FCF details (discounted at unlevered Ke)
+        cf_list_3 = dcf_result.get('method3_cf_list', [])
+        if cf_list_3:
+            proj_headers = ['年份', 'FCF(万元)', '折现因子(Ku)', '现值(万元)']
+            proj_data = []
+            for cf in cf_list_3:
+                proj_data.append([
+                    f'第{cf["year"]}年',
+                    f'{cf["fcf"]:,.2f}',
+                    f'{cf["discount_factor"]:.4f}',
+                    f'{cf["pv"]:,.2f}',
+                ])
+            utils.add_table_data(document, proj_headers, proj_data)
 
         # ==================== 4.4 每股价值汇总表 ====================
         utils.add_title(document, '4.4 每股价值汇总', level=2)

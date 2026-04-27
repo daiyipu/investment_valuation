@@ -38,10 +38,10 @@ class Chapter07RiskSummary:
             'level': 1
         })
 
-        # 2.1 风险评级
+        # 7.1 财务状况评级
         elements.append({
             'type': 'heading',
-            'content': '2.1 风险评级',
+            'content': '7.1 财务状况评级',
             'level': 2
         })
 
@@ -98,13 +98,13 @@ class Chapter07RiskSummary:
 
         # 风险评级表格
         risk_rating = [
-            {'维度': '综合财务评分', '评级': f"{total_score:.2f}分 ({grade})", '风险等级': self._score_to_risk_level(total_score)},
-            {'维度': '估值风险', '评级': val_risk_rating, '风险等级': val_risk_level},
+            {'维度': '综合财务评分', '评级': f"{total_score:.2f}分 ({grade})"},
+            {'维度': '估值风险', '评级': val_risk_rating},
         ]
 
         elements.append({
             'type': 'table',
-            'headers': ['维度', '评级', '风险等级'],
+            'headers': ['维度', '评级'],
             'data': risk_rating
         })
 
@@ -198,13 +198,12 @@ class Chapter07RiskSummary:
                 risk_points.append({
                     '风险类型': dim_name,
                     '风险描述': f"{dim_name}评分{score:.2f}分，低于行业平均水平",
-                    '风险等级': risk_level
                 })
 
         if risk_points:
             elements.append({
                 'type': 'table',
-                'headers': ['风险类型', '风险描述', '风险等级'],
+                'headers': ['风险类型', '风险描述'],
                 'data': risk_points
             })
         else:

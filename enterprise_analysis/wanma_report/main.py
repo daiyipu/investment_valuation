@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-定增项目企业基本面分析报告 - 主程序
+定增项目市场风险分析报告 - 主程序
 从Tushare获取数据生成企业基本面分析报告
 
 使用方法：
@@ -27,7 +27,7 @@ from utils.industry_analyzer import IndustryAnalyzer
 
 
 class DingZengRiskReportGenerator:
-    """定增项目企业基本面分析报告生成器"""
+    """定增项目市场风险分析报告生成器"""
 
     def __init__(self, stock_code: str, stock_name: str = None, config_path: str = None):
         """初始化报告生成器
@@ -716,7 +716,7 @@ class DingZengRiskReportGenerator:
             output_dir = os.path.join(os.path.dirname(__file__), self.config['report']['output_dir'])
             os.makedirs(output_dir, exist_ok=True)
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            output_path = os.path.join(output_dir, f"{company_name}定增项目企业基本面分析报告_{timestamp}.docx")
+            output_path = os.path.join(output_dir, f"{company_name}定增项目市场风险分析报告_{timestamp}.docx")
 
         self._generate_word_document(chapters, output_path, company_name)
 
@@ -732,7 +732,7 @@ class DingZengRiskReportGenerator:
         doc = Document()
 
         # 设置文档标题
-        title_text = f"{company_name}定增项目企业基本面分析报告"
+        title_text = f"{company_name}定增项目市场风险分析报告"
         title = doc.add_heading(title_text, level=0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
@@ -795,7 +795,7 @@ class DingZengRiskReportGenerator:
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(
-        description='定增项目企业基本面分析报告生成器',
+        description='定增项目市场风险分析报告生成器',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
@@ -819,7 +819,7 @@ def main():
     args = parser.parse_args()
 
     print("=" * 60)
-    print("定增项目企业基本面分析报告生成程序")
+    print("定增项目市场风险分析报告生成程序")
     print("=" * 60)
     print(f"股票代码: {args.stock}")
     print(f"企业名称: {args.name or '(自动获取)'}")

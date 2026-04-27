@@ -223,8 +223,7 @@ def generate_heatmap(data_matrix, row_labels, col_labels, save_path, title='', c
     """生成热力图"""
     fig, ax = plt.subplots(figsize=(12, 8))
     df = pd.DataFrame(data_matrix, index=row_labels, columns=col_labels)
-    sns.heatmap(df, annot=True, fmt=fmt, cmap='RdYlGn', center=center, ax=ax,
-                cbar_kws={'label': '每股价值(元)'})
+    sns.heatmap(df, annot=True, fmt=fmt, cmap='RdYlGn', center=center, ax=ax)
     ax.set_title(title, fontproperties=font_prop, fontsize=14, fontweight='bold', pad=15)
     for label in ax.get_xticklabels():
         label.set_fontproperties(font_prop)
@@ -232,8 +231,11 @@ def generate_heatmap(data_matrix, row_labels, col_labels, save_path, title='', c
     for label in ax.get_yticklabels():
         label.set_fontproperties(font_prop)
         label.set_fontsize(10)
-    cbar = ax.collections[0].colorbar
-    cbar.ax.yaxis.set_tick_params(right=False)
+    if ax.collections:
+        cbar = ax.collections[0].colorbar
+        cbar.ax.yaxis.set_tick_params(right=False)
+        for label in cbar.ax.get_yticklabels():
+            label.set_fontproperties(font_prop)
     plt.tight_layout()
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
     plt.close()

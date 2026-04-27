@@ -82,9 +82,9 @@ def generate_chapter(context):
                 raise ValueError("未获取到目标公司数据（请检查网络或交易日历）")
 
             current_metrics_val = {
-                'pe': df_target.iloc[0]['pe_ttm'],
-                'pb': df_target.iloc[0]['pb'],
-                'ps': df_target.iloc[0]['ps_ttm']
+                'pe': float(df_target.iloc[0]['pe_ttm']) if pd.notna(df_target.iloc[0]['pe_ttm']) else None,
+                'pb': float(df_target.iloc[0]['pb']) if pd.notna(df_target.iloc[0]['pb']) else None,
+                'ps': float(df_target.iloc[0]['ps_ttm']) if pd.notna(df_target.iloc[0]['ps_ttm']) else None
             }
             print(f" 获取相对估值数据成功，交易日期: {trade_date}")
 
@@ -272,35 +272,43 @@ def generate_chapter(context):
     }
 
     # 估值指标对比表
+    def _fmt_val(v, suffix='倍'):
+        return f"{v:.2f}{suffix}" if v else 'N/A'
+
+    def _fmt_dev(val, ref):
+        if val and ref and ref != 0:
+            return f"{(val - ref) / ref * 100:+.1f}%"
+        return 'N/A'
+
     valuation_headers = ['指标', '光弘科技', '行业平均', '中位数', 'Q1(25分位)', 'Q3(75分位)', '最小值', '最大值', '偏离度']
     valuation_data = [
         ['PE (TTM)',
-         f"{current_metrics_val['pe']:.2f}倍",
-         f"{industry_stats_val['pe']['mean']:.2f}倍",
-         f"{industry_stats_val['pe']['median']:.2f}倍",
-         f"{industry_stats_val['pe']['q1']:.2f}倍",
-         f"{industry_stats_val['pe']['q3']:.2f}倍",
-         f"{industry_stats_val['pe']['min']:.2f}倍",
-         f"{industry_stats_val['pe']['max']:.2f}倍",
-         f"{(current_metrics_val['pe']-industry_stats_val['pe']['mean'])/industry_stats_val['pe']['mean']*100:+.1f}%"],
+         _fmt_val(current_metrics_val['pe']),
+         _fmt_val(industry_stats_val['pe']['mean']),
+         _fmt_val(industry_stats_val['pe']['median']),
+         _fmt_val(industry_stats_val['pe']['q1']),
+         _fmt_val(industry_stats_val['pe']['q3']),
+         _fmt_val(industry_stats_val['pe']['min']),
+         _fmt_val(industry_stats_val['pe']['max']),
+         _fmt_dev(current_metrics_val['pe'], industry_stats_val['pe']['mean'])],
         ['PB',
-         f"{current_metrics_val['pb']:.2f}倍",
-         f"{industry_stats_val['pb']['mean']:.2f}倍",
-         f"{industry_stats_val['pb']['median']:.2f}倍",
-         f"{industry_stats_val['pb']['q1']:.2f}倍",
-         f"{industry_stats_val['pb']['q3']:.2f}倍",
-         f"{industry_stats_val['pb']['min']:.2f}倍",
-         f"{industry_stats_val['pb']['max']:.2f}倍",
-         f"{(current_metrics_val['pb']-industry_stats_val['pb']['mean'])/industry_stats_val['pb']['mean']*100:+.1f}%"],
+         _fmt_val(current_metrics_val['pb']),
+         _fmt_val(industry_stats_val['pb']['mean']),
+         _fmt_val(industry_stats_val['pb']['median']),
+         _fmt_val(industry_stats_val['pb']['q1']),
+         _fmt_val(industry_stats_val['pb']['q3']),
+         _fmt_val(industry_stats_val['pb']['min']),
+         _fmt_val(industry_stats_val['pb']['max']),
+         _fmt_dev(current_metrics_val['pb'], industry_stats_val['pb']['mean'])],
         ['PS (TTM)',
-         f"{current_metrics_val['ps']:.2f}倍",
-         f"{industry_stats_val['ps']['mean']:.2f}倍",
-         f"{industry_stats_val['ps']['median']:.2f}倍",
-         f"{industry_stats_val['ps']['q1']:.2f}倍",
-         f"{industry_stats_val['ps']['q3']:.2f}倍",
-         f"{industry_stats_val['ps']['min']:.2f}倍",
-         f"{industry_stats_val['ps']['max']:.2f}倍",
-         f"{(current_metrics_val['ps']-industry_stats_val['ps']['mean'])/industry_stats_val['ps']['mean']*100:+.1f}%"]
+         _fmt_val(current_metrics_val['ps']),
+         _fmt_val(industry_stats_val['ps']['mean']),
+         _fmt_val(industry_stats_val['ps']['median']),
+         _fmt_val(industry_stats_val['ps']['q1']),
+         _fmt_val(industry_stats_val['ps']['q3']),
+         _fmt_val(industry_stats_val['ps']['min']),
+         _fmt_val(industry_stats_val['ps']['max']),
+         _fmt_dev(current_metrics_val['ps'], industry_stats_val['ps']['mean'])]
     ]
     add_table_data(document, valuation_headers, valuation_data)
 
@@ -373,19 +381,19 @@ def generate_chapter(context):
         sw_index_headers = ['指标', '申万行业指数', '光弘科技', '差异', '说明']
         sw_index_data = [
             ['PE (TTM)',
-             f"{sw_index_pe:.2f}倍",
-             f"{current_metrics_val['pe']:.2f}倍",
-             f"{(current_metrics_val['pe']-sw_index_pe)/sw_index_pe*100:+.1f}%",
-             '行业指数PE反映行业整体估值水平' if current_metrics_val['pe'] > sw_index_pe else '个股PE低于行业指数，相对低估'],
+             _fmt_val(sw_index_pe),
+             _fmt_val(current_metrics_val['pe']),
+             _fmt_dev(current_metrics_val['pe'], sw_index_pe),
+             '行业指数PE反映行业整体估值水平' if current_metrics_val['pe'] and current_metrics_val['pe'] > sw_index_pe else '个股PE低于行业指数，相对低估'],
             ['PB',
-             f"{sw_index_pb:.2f}倍" if sw_index_pb else "N/A",
-             f"{current_metrics_val['pb']:.2f}倍",
-             f"{(current_metrics_val['pb']-sw_index_pb)/sw_index_pb*100:+.1f}%" if sw_index_pb else "N/A",
+             _fmt_val(sw_index_pb),
+             _fmt_val(current_metrics_val['pb']),
+             _fmt_dev(current_metrics_val['pb'], sw_index_pb),
              '市净率反映行业整体账面价值溢价'],
             ['PS (TTM)',
-             f"{sw_index_ps:.2f}倍" if sw_index_ps else "N/A",
-             f"{current_metrics_val['ps']:.2f}倍",
-             f"{(current_metrics_val['ps']-sw_index_ps)/sw_index_ps*100:+.1f}%" if sw_index_ps else "N/A",
+             _fmt_val(sw_index_ps),
+             _fmt_val(current_metrics_val['ps']),
+             _fmt_dev(current_metrics_val['ps'], sw_index_ps),
              '市销率反映行业整体营收能力']
         ]
         add_table_data(document, sw_index_headers, sw_index_data)
@@ -400,12 +408,13 @@ def generate_chapter(context):
 
         # 对比分析
         add_paragraph(document, ' 对比分析：', bold=True)
-        if abs(current_metrics_val['pe'] - sw_index_pe) / sw_index_pe < 0.1:
-            add_paragraph(document, f' 个股PE({current_metrics_val["pe"]:.2f}倍)与申万行业指数PE({sw_index_pe:.2f}倍)基本一致，估值合理')
-        elif current_metrics_val['pe'] < sw_index_pe:
-            add_paragraph(document, f' 个股PE({current_metrics_val["pe"]:.2f}倍)低于申万行业指数PE({sw_index_pe:.2f}倍)，相对行业指数低估')
-        else:
-            add_paragraph(document, f' 个股PE({current_metrics_val["pe"]:.2f}倍)高于申万行业指数PE({sw_index_pe:.2f}倍)，相对行业指数高估')
+        if current_metrics_val['pe'] and sw_index_pe and sw_index_pe > 0:
+            if abs(current_metrics_val['pe'] - sw_index_pe) / sw_index_pe < 0.1:
+                add_paragraph(document, f' 个股PE({_fmt_val(current_metrics_val["pe"])})与申万行业指数PE({_fmt_val(sw_index_pe)})基本一致，估值合理')
+            elif current_metrics_val['pe'] < sw_index_pe:
+                add_paragraph(document, f' 个股PE({_fmt_val(current_metrics_val["pe"])})低于申万行业指数PE({_fmt_val(sw_index_pe)})，相对行业指数低估')
+            else:
+                add_paragraph(document, f' 个股PE({_fmt_val(current_metrics_val["pe"])})高于申万行业指数PE({_fmt_val(sw_index_pe)})，相对行业指数高估')
     else:
         add_paragraph(document, f' 申万行业指数"{target_industry_l3}"的估值数据暂时无法获取')
 
@@ -414,56 +423,64 @@ def generate_chapter(context):
     add_paragraph(document, '')
 
     # 计算PE在行业中的分位数位置
-    pe_position = (peer_companies_val['pe'] < current_metrics_val['pe']).sum() / len(peer_companies_val) * 100
-    pb_position = (peer_companies_val['pb'] < current_metrics_val['pb']).sum() / len(peer_companies_val) * 100
-    ps_position = (peer_companies_val['ps'] < current_metrics_val['ps']).sum() / len(peer_companies_val) * 100
+    n_peers = max(len(peer_companies_val), 1)
+    pe_position = (peer_companies_val['pe'] < current_metrics_val['pe']).sum() / n_peers * 100 if current_metrics_val['pe'] else 0
+    pb_position = (peer_companies_val['pb'] < current_metrics_val['pb']).sum() / n_peers * 100 if current_metrics_val['pb'] else 0
+    ps_position = (peer_companies_val['ps'] < current_metrics_val['ps']).sum() / n_peers * 100 if current_metrics_val['ps'] else 0
 
     # 2.2.1 与同行公司对比
     add_title(document, '2.2.1 与同行公司对比', level=3)
     add_paragraph(document, '')
 
-    add_paragraph(document, f"• PE偏离度: {(current_metrics_val['pe']-industry_avg_val['pe'])/industry_avg_val['pe']*100:+.1f}%，位于行业{pe_position:.1f}%分位")
-    add_paragraph(document, f"• PB偏离度: {(current_metrics_val['pb']-industry_avg_val['pb'])/industry_avg_val['pb']*100:+.1f}%，位于行业{pb_position:.1f}%分位")
-    add_paragraph(document, f"• PS偏离度: {(current_metrics_val['ps']-industry_avg_val['ps'])/industry_avg_val['ps']*100:+.1f}%，位于行业{ps_position:.1f}%分位")
+    add_paragraph(document, f"• PE偏离度: {_fmt_dev(current_metrics_val['pe'], industry_avg_val['pe'])}，位于行业{pe_position:.1f}%分位")
+    add_paragraph(document, f"• PB偏离度: {_fmt_dev(current_metrics_val['pb'], industry_avg_val['pb'])}，位于行业{pb_position:.1f}%分位")
+    add_paragraph(document, f"• PS偏离度: {_fmt_dev(current_metrics_val['ps'], industry_avg_val['ps'])}，位于行业{ps_position:.1f}%分位")
 
     add_paragraph(document, '')
 
     # PE分位数分析
-    if current_metrics_val['pe'] > industry_stats_val['pe']['q3']:
-        add_paragraph(document, f' PE({current_metrics_val["pe"]:.2f}倍)高于行业Q3({industry_stats_val["pe"]["q3"]:.2f}倍)，处于行业高位，估值偏高')
-    elif current_metrics_val['pe'] < industry_stats_val['pe']['q1']:
-        add_paragraph(document, f' PE({current_metrics_val["pe"]:.2f}倍)低于行业Q1({industry_stats_val["pe"]["q1"]:.2f}倍)，处于行业低位，估值偏低')
-    else:
-        add_paragraph(document, f'ℹ️ PE({current_metrics_val["pe"]:.2f}倍)介于行业Q1({industry_stats_val["pe"]["q1"]:.2f}倍)和Q3({industry_stats_val["pe"]["q3"]:.2f}倍)之间，估值合理')
+    cur_pe = current_metrics_val['pe']
+    if cur_pe is not None and industry_stats_val['pe']['q3'] is not None:
+        if cur_pe > industry_stats_val['pe']['q3']:
+            add_paragraph(document, f' PE({_fmt_val(cur_pe)})高于行业Q3({_fmt_val(industry_stats_val["pe"]["q3"])})，处于行业高位，估值偏高')
+        elif cur_pe < industry_stats_val['pe']['q1']:
+            add_paragraph(document, f' PE({_fmt_val(cur_pe)})低于行业Q1({_fmt_val(industry_stats_val["pe"]["q1"])})，处于行业低位，估值偏低')
+        else:
+            add_paragraph(document, f' PE({_fmt_val(cur_pe)})介于行业Q1({_fmt_val(industry_stats_val["pe"]["q1"])})和Q3({_fmt_val(industry_stats_val["pe"]["q3"])})之间，估值合理')
+    elif cur_pe is not None:
+        add_paragraph(document, f' PE({_fmt_val(cur_pe)})，行业分位数据不完整，无法进行分位分析')
 
     # PB分位数分析
-    if current_metrics_val['pb'] > industry_stats_val['pb']['q3']:
-        add_paragraph(document, f' PB({current_metrics_val["pb"]:.2f}倍)高于行业Q3({industry_stats_val["pb"]["q3"]:.2f}倍)，市净率偏高')
-    elif current_metrics_val['pb'] < industry_stats_val['pb']['q1']:
-        add_paragraph(document, f' PB({current_metrics_val["pb"]:.2f}倍)低于行业Q1({industry_stats_val["pb"]["q1"]:.2f}倍)，市净率偏低')
+    cur_pb = current_metrics_val['pb']
+    if cur_pb is not None and industry_stats_val['pb']['q3'] is not None:
+        if cur_pb > industry_stats_val['pb']['q3']:
+            add_paragraph(document, f' PB({_fmt_val(cur_pb)})高于行业Q3({_fmt_val(industry_stats_val["pb"]["q3"])})，市净率偏高')
+        elif cur_pb < industry_stats_val['pb']['q1']:
+            add_paragraph(document, f' PB({_fmt_val(cur_pb)})低于行业Q1({_fmt_val(industry_stats_val["pb"]["q1"])})，市净率偏低')
 
     # PS分位数分析
-    if current_metrics_val['ps'] > industry_stats_val['ps']['q3']:
-        add_paragraph(document, f' PS({current_metrics_val["ps"]:.2f}倍)高于行业Q3({industry_stats_val["ps"]["q3"]:.2f}倍)，市销率偏高')
-    elif current_metrics_val['ps'] < industry_stats_val['ps']['q1']:
-        add_paragraph(document, f' PS({current_metrics_val["ps"]:.2f}倍)低于行业Q1({industry_stats_val["ps"]["q1"]:.2f}倍)，市销率偏低')
+    cur_ps = current_metrics_val['ps']
+    if cur_ps is not None and industry_stats_val['ps']['q3'] is not None:
+        if cur_ps > industry_stats_val['ps']['q3']:
+            add_paragraph(document, f' PS({_fmt_val(cur_ps)})高于行业Q3({_fmt_val(industry_stats_val["ps"]["q3"])})，市销率偏高')
+        elif cur_ps < industry_stats_val['ps']['q1']:
+            add_paragraph(document, f' PS({_fmt_val(cur_ps)})低于行业Q1({_fmt_val(industry_stats_val["ps"]["q1"])})，市销率偏低')
 
     # 2.2.2 与申万行业指数对比
-    if sw_index_pe is not None:
+    if sw_index_pe is not None and cur_pe is not None:
         add_paragraph(document, '')
         add_title(document, '2.2.2 与申万行业指数对比', level=3)
         add_paragraph(document, '')
 
         # 计算与申万行业指数的偏离度
-        pe_dev_sw = (current_metrics_val['pe'] - sw_index_pe) / sw_index_pe * 100
-        pb_dev_sw = (current_metrics_val['pb'] - sw_index_pb) / sw_index_pb * 100 if sw_index_pb else None
-        ps_dev_sw = (current_metrics_val['ps'] - sw_index_ps) / sw_index_ps * 100 if sw_index_ps else None
-
-        add_paragraph(document, f"• PE偏离度: {pe_dev_sw:+.1f}%（标的{current_metrics_val['pe']:.2f}倍 vs 申万{sw_index_pe:.2f}倍）")
-        if pb_dev_sw is not None:
-            add_paragraph(document, f"• PB偏离度: {pb_dev_sw:+.1f}%（标的{current_metrics_val['pb']:.2f}倍 vs 申万{sw_index_pb:.2f}倍）")
-        if ps_dev_sw is not None:
-            add_paragraph(document, f"• PS偏离度: {ps_dev_sw:+.1f}%（标的{current_metrics_val['ps']:.2f}倍 vs 申万{sw_index_ps:.2f}倍）")
+        pe_dev_sw = _fmt_dev(cur_pe, sw_index_pe)
+        add_paragraph(document, f"• PE偏离度: {pe_dev_sw}（标的{_fmt_val(cur_pe)} vs 申万{_fmt_val(sw_index_pe)}）")
+        if cur_pb is not None and sw_index_pb:
+            pb_dev_sw = _fmt_dev(cur_pb, sw_index_pb)
+            add_paragraph(document, f"• PB偏离度: {pb_dev_sw}（标的{_fmt_val(cur_pb)} vs 申万{_fmt_val(sw_index_pb)}）")
+        if cur_ps is not None and sw_index_ps:
+            ps_dev_sw = _fmt_dev(cur_ps, sw_index_ps)
+            add_paragraph(document, f"• PS偏离度: {ps_dev_sw}（标的{_fmt_val(cur_ps)} vs 申万{_fmt_val(sw_index_ps)}）")
 
         add_paragraph(document, '')
 

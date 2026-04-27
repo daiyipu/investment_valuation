@@ -1,5 +1,5 @@
 #!/bin/bash
-# 定增项目企业基本面风险分析报告生成脚本
+# 定增项目市场风险分析报告生成脚本
 # 使用方法：./gen_report.sh <股票代码> [企业名称] [输出文件名]
 
 set -e
@@ -7,7 +7,7 @@ set -e
 # 检查参数
 if [ $# -lt 1 ]; then
     echo "===================================="
-    echo "定增项目企业基本面风险分析报告生成器"
+    echo "定增项目市场风险分析报告生成器"
     echo "===================================="
     echo ""
     echo "使用方法："
@@ -25,7 +25,7 @@ if [ $# -lt 1 ]; then
     echo ""
     echo "说明："
     echo "  - 企业名称可选，不填则自动从Tushare获取"
-    echo "  - 如不指定输出文件名，将自动生成：{企业名称}_定增项目企业基本面风险分析报告_{时间戳}.docx"
+    echo "  - 如不指定输出文件名，将自动生成：{企业名称}_定增项目市场风险分析报告_{时间戳}.docx"
     echo ""
     exit 1
 fi
@@ -46,9 +46,9 @@ mkdir -p "$OUTPUT_DIR"
 # 如果未指定输出文件名，自动生成
 if [ -z "$OUTPUT_FILE" ]; then
     if [ -n "$STOCK_NAME" ]; then
-        OUTPUT_FILE="${STOCK_NAME}_定增项目企业基本面风险分析报告_${TIMESTAMP}.docx"
+        OUTPUT_FILE="${STOCK_NAME}_定增项目市场风险分析报告_${TIMESTAMP}.docx"
     else
-        OUTPUT_FILE="${STOCK_CODE}_定增项目企业基本面风险分析报告_${TIMESTAMP}.docx"
+        OUTPUT_FILE="${STOCK_CODE}_定增项目市场风险分析报告_${TIMESTAMP}.docx"
     fi
 fi
 
@@ -59,7 +59,7 @@ OUTPUT_PATH="${OUTPUT_DIR}/${OUTPUT_FILE}"
 cd "$(dirname "$0")/wanma_report"
 
 echo "===================================="
-echo "定增项目企业基本面风险分析报告生成器"
+echo "定增项目市场风险分析报告生成器"
 echo "===================================="
 echo ""
 echo "股票代码：$STOCK_CODE"

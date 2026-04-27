@@ -319,7 +319,9 @@ def _load_historical_valuation(pro, stock_code, years=3):
             current_date = (pd.Timestamp(current_date) + timedelta(days=200)).strftime('%Y%m%d')
             time.sleep(0.3)
         if all_data:
-            return pd.concat(all_data, ignore_index=True).sort_values('trade_date').reset_index(drop=True)
+            valid = [df for df in all_data if not df.empty and not df.isna().all(axis=None)]
+            if valid:
+                return pd.concat(valid, ignore_index=True).sort_values('trade_date').reset_index(drop=True)
     except Exception as e:
         print(f"  加载历史估值失败: {e}")
     return pd.DataFrame()
@@ -421,4 +423,16 @@ if __name__ == '__main__':
     parser.add_argument('--chapter', type=int, default=None, help='仅生成指定章节（调试用）')
     args = parser.parse_args()
 
-    generate_report(args.stock, args.name, args.chapter)
+    stock_code = args.stock.strip().upper()
+    # Auto-correct suffix: 6xx→.SH, 0xx/3xx→.SZ
+    if '.' not in stock_code:
+        stock_code = stock_code + ('.SH' if stock_code.startswith('6') else '.SZ')
+    else:
+        pure = stock_code.split('.')[0]
+        expected = '.SH' if pure.startswith('6') else '.SZ'
+        if not stock_code.endswith(expected):
+            corrected = pure + expected
+            print(f"注意: 股票代码后缀已自动修正 {stock_code} → {corrected}")
+            stock_code = corrected
+
+    generate_report(stock_code, args.name, args.chapter)

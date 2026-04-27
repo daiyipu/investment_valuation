@@ -163,56 +163,101 @@ def generate_chapter(context):
 
     # 计算回归情景
     current_price_rel = project_params['current_price']
+    pe_q1 = None
+    return_pe_stress = 0
 
-    # 修正：使用当前价格和当前PE反推EPS，确保与PE计算口径一致
-    # PE = 股价 / EPS → EPS = 股价 / PE
-    eps_rel = current_price_rel / current_metrics_val['pe']
-
-    # 获取行业PE分位数数据
-    pe_q1 = industry_stats_val['pe']['q1']  # 25分位（下四分位数）
-
-    # 计算PE回归到行业Q1的极端情景
-    target_price_q1 = eps_rel * pe_q1
-    return_q1 = (target_price_q1 - current_price_rel) / current_price_rel * 100
-
-    # 构建压力测试表格
-    scenario_headers_stress = ['情景', '当前PE', '回归后PE', '当前价格(元)', '目标价格(元)', '预期收益率(%)']
-    scenario_data_stress = [
-        ['当前估值', f"{current_metrics_val['pe']:.2f}", f"{current_metrics_val['pe']:.2f}",
-         f"{current_price_rel:.2f}", f"{current_price_rel:.2f}", "0.00"],
-        [f'PE→行业Q1({pe_q1:.2f}倍)', f"{current_metrics_val['pe']:.2f}", f"{pe_q1:.2f}",
-         f"{current_price_rel:.2f}", f"{target_price_q1:.2f}", f"{return_q1:+.2f}"],
-    ]
-
-    add_table_data(document, scenario_headers_stress, scenario_data_stress)
-
-    add_paragraph(document, '')
-    add_paragraph(document, 'PE回归压力测试分析：', bold=True)
-    # 分析当前PE在行业中的位置
-    current_pe = current_metrics_val['pe']
-    pe_position = (peer_companies_val['pe'] < current_pe).sum() / len(peer_companies_val) * 100
-
-    add_paragraph(document, f'• 当前PE({current_pe:.2f}倍)位于行业{pe_position:.1f}%分位')
-    add_paragraph(document, f'• 行业Q1 PE({pe_q1:.2f}倍)为25分位数，代表行业较低估值水平')
-    add_paragraph(document, f'• 如果PE回归到行业Q1，目标价格为{target_price_q1:.2f}元，预期收益{return_q1:+.2f}%')
-    # 风险提示
-    add_paragraph(document, '风险评估：', bold=True)
-    if return_q1 > 0:
-        add_paragraph(document, f' 即使在PE回归到行业Q1的极端情况下，预期收益仍为正({return_q1:+.2f}%)，估值安全边际较高')
-    elif return_q1 > -10:
-        add_paragraph(document, f' 在PE回归到行业Q1的极端情况下，预期收益为负({return_q1:+.2f}%)，存在一定估值回调风险，但风险可控')
+    if current_metrics_val['pe'] is None:
+        add_paragraph(document, '当前PE数据缺失（可能为非交易日或数据未更新），无法进行PE回归压力测试。')
+        add_paragraph(document, '将以PB倍数回归作为替代压力测试指标。')
+        # PB回归替代
+        if current_metrics_val['pb'] and current_metrics_val['pb'] > 0 and industry_stats_val['pb']['q1'] > 0:
+            pb_q1 = industry_stats_val['pb']['q1']
+            bps = current_price_rel / current_metrics_val['pb']
+            target_price_q1 = bps * pb_q1
+            return_q1 = (target_price_q1 - current_price_rel) / current_price_rel * 100
+            scenario_headers_stress = ['情景', '当前PB', '回归后PB', '当前价格(元)', '目标价格(元)', '预期收益率(%)']
+            scenario_data_stress = [
+                ['当前估值', f"{current_metrics_val['pb']:.2f}", f"{current_metrics_val['pb']:.2f}",
+                 f"{current_price_rel:.2f}", f"{current_price_rel:.2f}", "0.00"],
+                [f'PB→行业Q1({pb_q1:.2f}倍)', f"{current_metrics_val['pb']:.2f}", f"{pb_q1:.2f}",
+                 f"{current_price_rel:.2f}", f"{target_price_q1:.2f}", f"{return_q1:+.2f}"],
+            ]
+            add_table_data(document, scenario_headers_stress, scenario_data_stress)
+            add_paragraph(document, f'• 如果PB回归到行业Q1({pb_q1:.2f}倍)，目标价格为{target_price_q1:.2f}元，预期收益{return_q1:+.2f}%')
+            return_pe_stress = return_q1
+        else:
+            add_paragraph(document, 'PB数据同样不可用，跳过估值回归压力测试。')
+    elif current_metrics_val['pe'] < 0:
+        pe_val = current_metrics_val['pe']
+        add_paragraph(document, f'当前PE为{pe_val:.2f}倍（负值），公司处于亏损状态，EPS为负。')
+        add_paragraph(document, '负PE的PE回归分析在经济学意义上不适用（负EPS×行业正PE=负目标价）。')
+        add_paragraph(document, '将以PB倍数回归作为替代压力测试指标。')
+        if current_metrics_val['pb'] and current_metrics_val['pb'] > 0 and industry_stats_val['pb']['q1'] > 0:
+            pb_q1 = industry_stats_val['pb']['q1']
+            bps = current_price_rel / current_metrics_val['pb']
+            target_price_q1 = bps * pb_q1
+            return_q1 = (target_price_q1 - current_price_rel) / current_price_rel * 100
+            scenario_headers_stress = ['情景', '当前PB', '回归后PB', '当前价格(元)', '目标价格(元)', '预期收益率(%)']
+            scenario_data_stress = [
+                ['当前估值', f"{current_metrics_val['pb']:.2f}", f"{current_metrics_val['pb']:.2f}",
+                 f"{current_price_rel:.2f}", f"{current_price_rel:.2f}", "0.00"],
+                [f'PB→行业Q1({pb_q1:.2f}倍)', f"{current_metrics_val['pb']:.2f}", f"{pb_q1:.2f}",
+                 f"{current_price_rel:.2f}", f"{target_price_q1:.2f}", f"{return_q1:+.2f}"],
+            ]
+            add_table_data(document, scenario_headers_stress, scenario_data_stress)
+            add_paragraph(document, f'• 如果PB回归到行业Q1({pb_q1:.2f}倍)，目标价格为{target_price_q1:.2f}元，预期收益{return_q1:+.2f}%')
+            return_pe_stress = return_q1
+        else:
+            add_paragraph(document, 'PB数据同样不可用，跳过估值回归压力测试。')
     else:
-        add_paragraph(document, f' 在PE回归到行业Q1的极端情况下，预期收益大幅为负({return_q1:+.2f}%)，估值回调风险较高，需谨慎投资')
-    # 计算定增收益影响
-    issue_price = project_params['issue_price']
-    return_pe_stress = (target_price_q1 - issue_price) / issue_price * 100
-    add_paragraph(document, '对定增收益的影响：')
-    add_paragraph(document, f'• 发行价：{issue_price:.2f}元')
-    add_paragraph(document, f'• PE回归Q1后的定增收益率：{return_pe_stress:+.2f}%')
-    if return_pe_stress < 0:
-        add_paragraph(document, f'•  估值回归将导致定增亏损{abs(return_pe_stress):.2f}%')
-    else:
-        add_paragraph(document, f'•  估值回归后定增仍能保持盈利')
+        # PE = 股价 / EPS → EPS = 股价 / PE
+        eps_rel = current_price_rel / current_metrics_val['pe']
+
+        # 获取行业PE分位数数据
+        pe_q1 = industry_stats_val['pe']['q1']  # 25分位（下四分位数）
+
+        # 计算PE回归到行业Q1的极端情景
+        target_price_q1 = eps_rel * pe_q1
+        return_q1 = (target_price_q1 - current_price_rel) / current_price_rel * 100
+
+        # 构建压力测试表格
+        scenario_headers_stress = ['情景', '当前PE', '回归后PE', '当前价格(元)', '目标价格(元)', '预期收益率(%)']
+        scenario_data_stress = [
+            ['当前估值', f"{current_metrics_val['pe']:.2f}", f"{current_metrics_val['pe']:.2f}",
+             f"{current_price_rel:.2f}", f"{current_price_rel:.2f}", "0.00"],
+            [f'PE→行业Q1({pe_q1:.2f}倍)', f"{current_metrics_val['pe']:.2f}", f"{pe_q1:.2f}",
+             f"{current_price_rel:.2f}", f"{target_price_q1:.2f}", f"{return_q1:+.2f}"],
+        ]
+
+        add_table_data(document, scenario_headers_stress, scenario_data_stress)
+
+        add_paragraph(document, '')
+        add_paragraph(document, 'PE回归压力测试分析：', bold=True)
+        # 分析当前PE在行业中的位置
+        current_pe = current_metrics_val['pe']
+        pe_position = (peer_companies_val['pe'] < current_pe).sum() / len(peer_companies_val) * 100
+
+        add_paragraph(document, f'• 当前PE({current_pe:.2f}倍)位于行业{pe_position:.1f}%分位')
+        add_paragraph(document, f'• 行业Q1 PE({pe_q1:.2f}倍)为25分位数，代表行业较低估值水平')
+        add_paragraph(document, f'• 如果PE回归到行业Q1，目标价格为{target_price_q1:.2f}元，预期收益{return_q1:+.2f}%')
+        # 风险提示
+        add_paragraph(document, '风险评估：', bold=True)
+        if return_q1 > 0:
+            add_paragraph(document, f' 即使在PE回归到行业Q1的极端情况下，预期收益仍为正({return_q1:+.2f}%)，估值安全边际较高')
+        elif return_q1 > -10:
+            add_paragraph(document, f' 在PE回归到行业Q1的极端情况下，预期收益为负({return_q1:+.2f}%)，存在一定估值回调风险，但风险可控')
+        else:
+            add_paragraph(document, f' 在PE回归到行业Q1的极端情况下，预期收益大幅为负({return_q1:+.2f}%)，估值回调风险较高，需谨慎投资')
+        # 计算定增收益影响
+        issue_price = project_params['issue_price']
+        return_pe_stress = (target_price_q1 - issue_price) / issue_price * 100
+        add_paragraph(document, '对定增收益的影响：')
+        add_paragraph(document, f'• 发行价：{issue_price:.2f}元')
+        add_paragraph(document, f'• PE回归Q1后的定增收益率：{return_pe_stress:+.2f}%')
+        if return_pe_stress < 0:
+            add_paragraph(document, f'•  估值回归将导致定增亏损{abs(return_pe_stress):.2f}%')
+        else:
+            add_paragraph(document, f'•  估值回归后定增仍能保持盈利')
 
     # ==================== 7.2 经济面极端情况压力测试 ====================
     add_paragraph(document, '')
@@ -531,7 +576,9 @@ def generate_chapter(context):
     # 创建综合汇总表
     summary_headers = ['压力测试类型', '测试情景', '最差结果', '风险评估', '风险等级']
     summary_data = [
-        ['7.1 PE回归压力测试', f'PE回归至行业Q1({pe_q1:.2f}倍)', f'{return_pe_stress:+.2f}%',
+        ['7.1 估值回归压力测试',
+         f'PE回归至行业Q1({pe_q1:.2f}倍)' if pe_q1 else 'PB回归至行业Q1（PE不可用）',
+         f'{return_pe_stress:+.2f}%',
          '估值回归风险' if return_pe_stress < 0 else '估值安全边际充足',
          '高风险' if return_pe_stress <= -10 else '中等风险' if return_pe_stress <= 0 else '低风险'],
         ['7.2 经济面极端情况', f'{worst_scenario_name}（股价下跌{int(stress_scenarios[worst_scenario_name]["price_drop"]*100)}%）',

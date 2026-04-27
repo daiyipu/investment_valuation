@@ -224,6 +224,9 @@ def generate_chapter(context):
             debt_vals = financial_indicators['debt_to_assets'].dropna()
             if not debt_vals.empty:
                 debt_ratio = float(debt_vals.iloc[0])
+                # Tushare fina_indicator返回百分比值(0-100)，需转为小数(0-1)
+                if debt_ratio > 1:
+                    debt_ratio = debt_ratio / 100
 
     # 从资产负债表获取
     if debt_ratio == 0:
@@ -248,13 +251,13 @@ def generate_chapter(context):
         roe_score = 20
 
     # 负债率得分 (越低越好)
-    if debt_ratio <= 30:
+    if debt_ratio <= 0.30:
         debt_score = 90
-    elif debt_ratio <= 50:
+    elif debt_ratio <= 0.50:
         debt_score = 75
-    elif debt_ratio <= 65:
+    elif debt_ratio <= 0.65:
         debt_score = 55
-    elif debt_ratio <= 80:
+    elif debt_ratio <= 0.80:
         debt_score = 35
     else:
         debt_score = 15

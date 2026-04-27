@@ -1549,13 +1549,14 @@ def generate_var_chart(var_95, var_99, cvar_95, save_path):
 def generate_relative_valuation_charts_split(current_metrics, industry_avg, peer_companies_data, save_dir):
     """生成相对估值分析图表 - 拆分版本（单独大图）"""
     chart_paths = []
+    _n = lambda v: v if v is not None else 0
 
     # 图1: 估值指标对比（单独大图）
     fig, ax = plt.subplots(figsize=(14, 8))
 
     metrics = ['PE', 'PS', 'PB']
-    current_vals = [current_metrics['pe'], current_metrics['ps'], current_metrics['pb']]
-    industry_vals = [industry_avg['pe'], industry_avg['ps'], industry_avg['pb']]
+    current_vals = [_n(current_metrics['pe']), _n(current_metrics['ps']), _n(current_metrics['pb'])]
+    industry_vals = [_n(industry_avg['pe']), _n(industry_avg['ps']), _n(industry_avg['pb'])]
 
     x = np.arange(len(metrics))
     width = 0.35
@@ -1574,8 +1575,9 @@ def generate_relative_valuation_charts_split(current_metrics, industry_avg, peer
     for bars in [bars1, bars2]:
         for bar in bars:
             height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width()/2., height,
-                    f'{height:.1f}', ha='center', va='bottom', fontsize=12, fontproperties=font_prop)
+            if height and height != 0:
+                ax.text(bar.get_x() + bar.get_width()/2., height,
+                        f'{height:.1f}', ha='center', va='bottom', fontsize=12, fontproperties=font_prop)
 
     plt.tight_layout()
 
@@ -1589,14 +1591,15 @@ def generate_relative_valuation_charts_split(current_metrics, industry_avg, peer
 
     peer_names = list(peer_companies_data['name'])
     peer_pes = list(peer_companies_data['pe'])
-    peer_pes.append(industry_avg['pe'])
+    peer_pes.append(_n(industry_avg['pe']))
     peer_names.append('行业平均')
-    peer_pes.append(current_metrics['pe'])
+    peer_pes.append(_n(current_metrics['pe']))
     peer_names.append('光弘科技')
 
     colors_pe = ['#95a5a6'] * len(peer_companies_data) + ['#e74c3c', '#3498db']
     bars = ax.bar(range(len(peer_names)), peer_pes, color=colors_pe, alpha=0.7)
-    ax.axhline(y=industry_avg['pe'], color='red', linestyle='--', alpha=0.5)
+    if _n(industry_avg['pe']):
+        ax.axhline(y=_n(industry_avg['pe']), color='red', linestyle='--', alpha=0.5)
     ax.set_xlabel('公司', fontproperties=font_prop, fontsize=14)
     ax.set_ylabel('PE (倍)', fontproperties=font_prop, fontsize=14)
     ax.set_title('PE倍数对比', fontproperties=font_prop, fontsize=16, fontweight='bold')
@@ -1615,11 +1618,12 @@ def generate_relative_valuation_charts_split(current_metrics, industry_avg, peer
     fig, ax = plt.subplots(figsize=(14, 8))
 
     peer_pbs = list(peer_companies_data['pb'])
-    peer_pbs.append(industry_avg['pb'])
-    peer_pbs.append(current_metrics['pb'])
+    peer_pbs.append(_n(industry_avg['pb']))
+    peer_pbs.append(_n(current_metrics['pb']))
 
     bars = ax.bar(range(len(peer_names)), peer_pbs, color=colors_pe, alpha=0.7)
-    ax.axhline(y=industry_avg['pb'], color='red', linestyle='--', alpha=0.5)
+    if _n(industry_avg['pb']):
+        ax.axhline(y=_n(industry_avg['pb']), color='red', linestyle='--', alpha=0.5)
     ax.set_xlabel('公司', fontproperties=font_prop, fontsize=14)
     ax.set_ylabel('PB (倍)', fontproperties=font_prop, fontsize=14)
     ax.set_title('PB倍数对比', fontproperties=font_prop, fontsize=16, fontweight='bold')
@@ -1638,11 +1642,12 @@ def generate_relative_valuation_charts_split(current_metrics, industry_avg, peer
     fig, ax = plt.subplots(figsize=(14, 8))
 
     peer_pss = list(peer_companies_data['ps'])
-    peer_pss.append(industry_avg['ps'])
-    peer_pss.append(current_metrics['ps'])
+    peer_pss.append(_n(industry_avg['ps']))
+    peer_pss.append(_n(current_metrics['ps']))
 
     bars = ax.bar(range(len(peer_names)), peer_pss, color=colors_pe, alpha=0.7)
-    ax.axhline(y=industry_avg['ps'], color='red', linestyle='--', alpha=0.5)
+    if _n(industry_avg['ps']):
+        ax.axhline(y=_n(industry_avg['ps']), color='red', linestyle='--', alpha=0.5)
     ax.set_xlabel('公司', fontproperties=font_prop, fontsize=14)
     ax.set_ylabel('PS (倍)', fontproperties=font_prop, fontsize=14)
     ax.set_title('PS倍数对比', fontproperties=font_prop, fontsize=16, fontweight='bold')
@@ -1669,26 +1674,26 @@ def generate_relative_valuation_charts_split(current_metrics, industry_avg, peer
     bps = net_assets / total_shares
 
     scenarios_data = []
-    scenarios_data.append(['当前估值', current_metrics['pe'], current_metrics['pb'], current_metrics['ps'], current_price, 0])
-    target_price_pe = eps * industry_avg['pe']
-    return_pe = (target_price_pe - current_price) / current_price * 100
-    scenarios_data.append(['PE→行业平均', industry_avg['pe'], current_metrics['pb'], current_metrics['ps'], target_price_pe, return_pe])
-    target_price_pb = bps * industry_avg['pb']
-    return_pb = (target_price_pb - current_price) / current_price * 100
-    scenarios_data.append(['PB→行业平均', current_metrics['pe'], industry_avg['pb'], current_metrics['ps'], target_price_pb, return_pb])
+    scenarios_data.append(['当前估值', _n(current_metrics['pe']), _n(current_metrics['pb']), _n(current_metrics['ps']), current_price, 0])
+    target_price_pe = eps * _n(industry_avg['pe']) if _n(industry_avg['pe']) else 0
+    return_pe = (target_price_pe - current_price) / current_price * 100 if target_price_pe else 0
+    scenarios_data.append(['PE→行业平均', _n(industry_avg['pe']), _n(current_metrics['pb']), _n(current_metrics['ps']), target_price_pe, return_pe])
+    target_price_pb = bps * _n(industry_avg['pb']) if _n(industry_avg['pb']) else 0
+    return_pb = (target_price_pb - current_price) / current_price * 100 if target_price_pb else 0
+    scenarios_data.append(['PB→行业平均', _n(current_metrics['pe']), _n(industry_avg['pb']), _n(current_metrics['ps']), target_price_pb, return_pb])
     target_price_avg = (target_price_pe + target_price_pb) / 2
     return_avg = (target_price_avg - current_price) / current_price * 100
-    scenarios_data.append(['全面回归', industry_avg['pe'], industry_avg['pb'], industry_avg['ps'], target_price_avg, return_avg])
+    scenarios_data.append(['全面回归', _n(industry_avg['pe']), _n(industry_avg['pb']), _n(industry_avg['ps']), target_price_avg, return_avg])
     min_pe = peer_companies_data['pe'].min()
     min_pb = peer_companies_data['pb'].min()
     target_price_pessimistic = (eps * min_pe + bps * min_pb) / 2
     return_pessimistic = (target_price_pessimistic - current_price) / current_price * 100
-    scenarios_data.append(['行业最低估值', min_pe, min_pb, industry_avg['ps'], target_price_pessimistic, return_pessimistic])
+    scenarios_data.append(['行业最低估值', min_pe, min_pb, _n(industry_avg['ps']), target_price_pessimistic, return_pessimistic])
     max_pe = peer_companies_data['pe'].max()
     max_pb = peer_companies_data['pb'].max()
     target_price_optimistic = (eps * max_pe + bps * max_pb) / 2
     return_optimistic = (target_price_optimistic - current_price) / current_price * 100
-    scenarios_data.append(['行业最高估值', max_pe, max_pb, industry_avg['ps'], target_price_optimistic, return_optimistic])
+    scenarios_data.append(['行业最高估值', max_pe, max_pb, _n(industry_avg['ps']), target_price_optimistic, return_optimistic])
 
     df_scenarios = pd.DataFrame(scenarios_data, columns=['情景', 'PE', 'PB', 'PS', '目标价格(元)', '预期收益率(%)'])
 

@@ -3,7 +3,7 @@
 """
 Unified DCF Calculator for A-Share Valuation.
 
-Three methods: FCFF (enterprise), FCFE (equity), Indirect (EV - net debt).
+Three methods: FCFF (WACC-based), FCFE (direct equity), APV (Adjusted Present Value).
 Terminal value via Gordon Growth Model. Growth rate clamped to [-10%, +20%].
 
 Usage:
@@ -218,8 +218,44 @@ class DCFCalculator:
                 'pv': fcfe * df,
             })
 
-        # ---- Method 3: Indirect (EV - Net Debt) ----
-        equity_3 = ev_1 - net_debt
+        # ---- Method 3: APV (Adjusted Present Value) ----
+        # Unlevered beta: Bu = Bl / (1 + (1-t) * D/E)
+        d_over_e = debt_ratio / equity_ratio if equity_ratio > 0 else 0
+        unlevered_beta = p['beta'] / (1 + (1 - p['tax_rate']) * d_over_e)
+        unlevered_beta = float(np.clip(unlevered_beta, 0.2, 2.5))
+        ku = p['risk_free_rate'] + unlevered_beta * p['market_risk_premium']
+
+        # Unlevered firm value: PV of FCFF discounted at Ku
+        pv_forecasts_3 = sum(fcf / (1 + ku) ** t for t, fcf in enumerate(projected_fcfs, 1))
+        terminal_fcf_3 = projected_fcfs[-1] * (1 + terminal_g)
+        tv_3 = terminal_fcf_3 / (ku - terminal_g) if ku > terminal_g else 0
+        pv_tv_3 = tv_3 / (1 + ku) ** n_years
+        unlevered_value = pv_forecasts_3 + pv_tv_3
+
+        # PV of tax shield: sum of (tax_rate * Kd * debt_i) discounted
+        # Assume debt grows with FCF, so debt_i scales with projected FCF
+        total_debt_wan = net_debt + (bs_df.iloc[0].get('money_cap', 0) or 0) / 10000 if bs_df is not None and not bs_df.empty else net_debt
+        if total_debt_wan < 0:
+            total_debt_wan = 0
+        pv_tax_shield = 0
+        debt_base = total_debt_wan * debt_ratio if total_debt_wan > 0 else last_fcf * debt_ratio / max(wacc, 0.01)
+        for t in range(1, n_years + 1):
+            tax_shield_t = p['tax_rate'] * p['kd'] * debt_base
+            pv_tax_shield += tax_shield_t / (1 + p['kd']) ** t
+            debt_base *= (1 + growth_rate)
+
+        apv_firm_value = unlevered_value + pv_tax_shield
+        equity_3 = apv_firm_value - net_debt
+
+        cf_list_3 = []
+        for i, fcf in enumerate(projected_fcfs):
+            df = 1 / (1 + ku) ** (i + 1)
+            cf_list_3.append({
+                'year': i + 1,
+                'fcf': fcf,
+                'discount_factor': df,
+                'pv': fcf * df,
+            })
 
         return {
             # Input parameters
@@ -251,8 +287,17 @@ class DCFCalculator:
             'method2_pv_terminal': pv_tv_2,
             'method2_cf_list': cf_list_2,
 
-            # Method 3: Indirect
+            # Method 3: APV
             'method3_equity_value': equity_3,
+            'method3_apv_firm_value': apv_firm_value,
+            'method3_unlevered_value': unlevered_value,
+            'method3_pv_tax_shield': pv_tax_shield,
+            'method3_pv_forecasts': pv_forecasts_3,
+            'method3_terminal_value': tv_3,
+            'method3_pv_terminal': pv_tv_3,
+            'method3_unlevered_beta': unlevered_beta,
+            'method3_unlevered_ke': ku,
+            'method3_cf_list': cf_list_3,
             'net_debt': net_debt,
 
             # Capital structure
@@ -308,14 +353,14 @@ class DCFCalculator:
                 'margin_pct': margin,
             })
 
-        # Method 3: Indirect
+        # Method 3: APV
         if dcf_result.get('method3_equity_value'):
             equity = dcf_result['method3_equity_value']
             per_share = equity / total_shares
             margin = ((per_share / current_price) - 1) * 100 if current_price > 0 else 0
             rows.append({
-                'method': 'Indirect (EV-NetDebt)',
-                'enterprise_value': dcf_result.get('method1_ev', ''),
+                'method': 'APV (调整现值法)',
+                'enterprise_value': dcf_result.get('method3_apv_firm_value', ''),
                 'equity_value': equity,
                 'per_share': per_share,
                 'margin_pct': margin,

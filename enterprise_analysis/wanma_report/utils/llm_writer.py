@@ -173,18 +173,34 @@ class LLMWriter:
 
     def _parse_response(self, response_text: str) -> Optional[dict]:
         """解析LLM返回的JSON"""
+        # 1. Direct parse
         try:
             return json.loads(response_text)
         except json.JSONDecodeError:
             pass
 
-        m = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+        # 2. Strip markdown code fences (```json ... ```)
+        stripped = response_text.strip()
+        if stripped.startswith('```'):
+            first_nl = stripped.find('\n')
+            if first_nl >= 0:
+                inner = stripped[first_nl + 1:]
+                if inner.rstrip().endswith('```'):
+                    inner = inner.rstrip()[:-3]
+                try:
+                    return json.loads(inner.strip())
+                except json.JSONDecodeError:
+                    pass
+
+        # 3. Greedy regex for nested JSON inside code fence
+        m = re.search(r'```(?:json)?\s*(\{.*\})\s*```', response_text, re.DOTALL)
         if m:
             try:
                 return json.loads(m.group(1))
             except json.JSONDecodeError:
                 pass
 
+        # 4. Extract first { to last }
         start = response_text.find('{')
         end = response_text.rfind('}')
         if start >= 0 and end > start:
