@@ -242,17 +242,49 @@ def _load_sw_industry(pro, stock_code):
             'l3_name': latest.get('l3_name', ''),
             'l3_code': l3_code,
         }
-        # Try L3 first, fallback to L2 then L1 if too few peers
-        for level_name, level_code in [('三级', l3_code), ('二级', l2_code), ('一级', l1_code)]:
-            if not level_code:
-                continue
-            df_peers = pro.index_member_all(l3_code=level_code)
+
+        # Step 1: Try L3 via index_member_all
+        if l3_code:
+            df_peers = pro.index_member_all(l3_code=l3_code)
             if df_peers is not None and not df_peers.empty:
                 peer_codes = [c for c in df_peers['ts_code'].unique().tolist() if c != stock_code]
+
+        # Step 2: If L3 too few, try sibling L3 industries (same parent L2)
+        if len(peer_codes) < 5 and l2_code:
+            print(f"  SW三级同行仅{len(peer_codes)}家，尝试同级兄弟行业")
+            df_l3_list = pro.index_classify(level='L3', src='SW2021')
+            if df_l3_list is not None and not df_l3_list.empty:
+                # Find all L3 under the same L2 parent
+                siblings = df_l3_list[df_l3_list['parent_code'] == l2_code]
+                for _, sib in siblings.iterrows():
+                    sib_code = sib['index_code']
+                    if sib_code == l3_code:
+                        continue
+                    try:
+                        sib_members = pro.index_member(index_code=sib_code, is_new='Y')
+                        if sib_members is not None and not sib_members.empty:
+                            for code in sib_members['con_code'].unique().tolist():
+                                if code != stock_code and code not in peer_codes:
+                                    peer_codes.append(code)
+                        time.sleep(0.2)
+                    except Exception:
+                        pass
             if len(peer_codes) >= 5:
-                break
-            if peer_codes and level_name != '一级':
-                print(f"  SW{level_name}同行仅{len(peer_codes)}家，尝试更宽行业分类")
+                print(f"  合并兄弟行业后同行{len(peer_codes)}家")
+
+        # Step 3: If still too few, try L2 via index_member
+        if len(peer_codes) < 5 and l2_code:
+            print(f"  尝试SW二级行业成员")
+            try:
+                l2_members = pro.index_member(index_code=l2_code, is_new='Y')
+                if l2_members is not None and not l2_members.empty:
+                    for code in l2_members['con_code'].unique().tolist():
+                        if code != stock_code and code not in peer_codes:
+                            peer_codes.append(code)
+                print(f"  扩展到L2后同行{len(peer_codes)}家")
+            except Exception:
+                pass
+
         if len(peer_codes) < 5 and peer_codes:
             print(f"  注意: 同行仅{len(peer_codes)}家，统计意义有限")
     except Exception as e:
