@@ -137,6 +137,52 @@ def generate_chapter(context):
             ['当前价', f'{current_price:.2f}'],
         ]
         add_table_data(document, headers, data)
+
+        # GBM模拟路径图
+        mc_chart_path = os.path.join(IMAGES_DIR, '07_mc_simulation_paths.png')
+        try:
+            generate_mc_simulation_chart(
+                mc_paths, mc_chart_path,
+                title=f'{stock_name} 蒙特卡洛模拟（120日, {n_simulations:,}次）',
+            )
+            if os.path.exists(mc_chart_path):
+                add_paragraph(document, '')
+                add_paragraph(document, f'图表7.1 {stock_name} GBM模拟路径图（120日, {n_simulations:,}次）')
+                add_image(document, mc_chart_path)
+        except Exception as e:
+            print(f"  生成MC路径图失败: {e}")
+
+        # 期末价格分布直方图
+        try:
+            fig, ax = plt.subplots(figsize=(10, 5))
+            ax.hist(final_prices, bins=80, alpha=0.7, color='steelblue', edgecolor='white', density=True)
+            ax.axvline(x=current_price, color='red', linestyle='--', linewidth=2,
+                       label=f'当前价 {current_price:.2f}')
+            ax.axvline(x=mean_price, color='orange', linestyle='--', linewidth=2,
+                       label=f'均值 {mean_price:.2f}')
+            ax.axvline(x=p5, color='green', linestyle=':', linewidth=1.5,
+                       label=f'5%分位 {p5:.2f}')
+            ax.axvline(x=p95, color='green', linestyle=':', linewidth=1.5,
+                       label=f'95%分位 {p95:.2f}')
+            ax.set_xlabel('模拟期末价格(元)', fontproperties=font_prop, fontsize=12)
+            ax.set_ylabel('概率密度', fontproperties=font_prop, fontsize=12)
+            ax.set_title(f'{stock_name} 120日GBM模拟价格分布', fontproperties=font_prop, fontsize=14, fontweight='bold')
+            ax.legend(prop=font_prop, fontsize=10)
+            ax.grid(True, alpha=0.3)
+            for label in ax.get_xticklabels():
+                label.set_fontproperties(font_prop)
+            for label in ax.get_yticklabels():
+                label.set_fontproperties(font_prop)
+            plt.tight_layout()
+            dist_path = os.path.join(IMAGES_DIR, '07_mc_price_distribution.png')
+            plt.savefig(dist_path, dpi=150, bbox_inches='tight')
+            plt.close()
+            if os.path.exists(dist_path):
+                add_paragraph(document, '')
+                add_paragraph(document, '图表7.2 120日GBM模拟期末价格分布')
+                add_image(document, dist_path)
+        except Exception as e:
+            print(f"  生成价格分布图失败: {e}")
     else:
         add_paragraph(document, '当前价格不可用，跳过GBM模拟。')
 
@@ -279,53 +325,49 @@ def generate_chapter(context):
         add_paragraph(document, '当前价格不可用，跳过多时间窗口模拟。')
 
     # ------------------------------------------------------------------
-    # 7.5  MC路径图
+    # 7.5  MC路径图（已移至7.1节，此处仅补充多窗口对比图）
     # ------------------------------------------------------------------
-    add_title(document, '7.5 蒙特卡洛模拟路径图', level=2)
+    add_title(document, '7.5 多窗口模拟对比', level=2)
+    add_paragraph(document, (
+        '对比不同时间窗口下蒙特卡洛模拟的期末价格分布差异。'
+    ))
 
-    mc_chart_path = os.path.join(IMAGES_DIR, '07_mc_simulation_paths.png')
-
-    if mc_paths is not None:
+    if current_price and current_price > 0 and multi_window_results:
         try:
-            generate_mc_simulation_chart(
-                mc_paths, mc_chart_path,
-                title=f'{stock_name} 蒙特卡洛模拟（120日, {n_simulations:,}次）',
-            )
-            if os.path.exists(mc_chart_path):
-                add_paragraph(document, '图表7.1 蒙特卡洛模拟路径图（120日）')
-                add_image(document, mc_chart_path)
-        except Exception as e:
-            print(f"  生成MC路径图失败: {e}")
+            fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+            axes_flat = axes.flatten()
+            window_labels = {20: '20日(月度)', 60: '60日(季度)', 120: '120日(半年)', 250: '250日(年度)'}
 
-        # 额外绘制价格分布直方图
-        try:
-            fig, ax = plt.subplots(figsize=(10, 5))
-            ax.hist(final_prices, bins=80, alpha=0.7, color='steelblue', edgecolor='white', density=True)
-            ax.axvline(x=current_price, color='red', linestyle='--', linewidth=2,
-                       label=f'当前价 {current_price:.2f}')
-            ax.axvline(x=np.mean(final_prices), color='orange', linestyle='--', linewidth=2,
-                       label=f'均值 {np.mean(final_prices):.2f}')
-            ax.set_xlabel('模拟期末价格(元)', fontproperties=font_prop, fontsize=12)
-            ax.set_ylabel('概率密度', fontproperties=font_prop, fontsize=12)
-            ax.set_title(f'{stock_name} 120日模拟价格分布', fontproperties=font_prop, fontsize=14, fontweight='bold')
-            ax.legend(prop=font_prop, fontsize=10)
-            ax.grid(True, alpha=0.3)
-            for label in ax.get_xticklabels():
-                label.set_fontproperties(font_prop)
-            for label in ax.get_yticklabels():
-                label.set_fontproperties(font_prop)
+            for idx, n_days in enumerate(time_windows[:4]):
+                ax = axes_flat[idx]
+                mw = multi_window_results.get(n_days)
+                if mw and mw.get('final_prices') is not None:
+                    fp = mw['final_prices']
+                    ax.hist(fp, bins=60, alpha=0.7, color='steelblue', edgecolor='white', density=True)
+                    ax.axvline(x=current_price, color='red', linestyle='--', linewidth=1.5)
+                    label = window_labels.get(n_days, f'{n_days}日')
+                    ax.set_title(label, fontproperties=font_prop, fontsize=12, fontweight='bold')
+                    ax.set_xlabel('期末价格(元)', fontproperties=font_prop, fontsize=10)
+                    ax.set_ylabel('概率密度', fontproperties=font_prop, fontsize=10)
+                    ax.grid(True, alpha=0.3)
+                    for lbl in ax.get_xticklabels():
+                        lbl.set_fontproperties(font_prop)
+                    for lbl in ax.get_yticklabels():
+                        lbl.set_fontproperties(font_prop)
+
+            plt.suptitle(f'{stock_name} 多时间窗口MC模拟价格分布对比',
+                         fontproperties=font_prop, fontsize=14, fontweight='bold')
             plt.tight_layout()
-            dist_path = os.path.join(IMAGES_DIR, '07_mc_price_distribution.png')
-            plt.savefig(dist_path, dpi=150, bbox_inches='tight')
+            multi_path = os.path.join(IMAGES_DIR, '07_mc_multi_window.png')
+            plt.savefig(multi_path, dpi=150, bbox_inches='tight')
             plt.close()
-            if os.path.exists(dist_path):
-                add_paragraph(document, '图表7.2 120日模拟价格分布')
-                add_image(document, dist_path)
+            if os.path.exists(multi_path):
+                add_paragraph(document, f'图表7.3 {stock_name} 多窗口MC模拟价格分布对比')
+                add_image(document, multi_path)
         except Exception as e:
-            print(f"  生成价格分布图失败: {e}")
-
+            print(f"  生成多窗口对比图失败: {e}")
     else:
-        add_paragraph(document, '模拟路径数据不可用，跳过路径图生成。')
+        add_paragraph(document, '模拟数据不完整，跳过多窗口对比图。')
 
     # ------------------------------------------------------------------
     # 7.6  溢价分布模拟
@@ -380,7 +422,7 @@ def generate_chapter(context):
             plt.savefig(premium_path, dpi=150, bbox_inches='tight')
             plt.close()
             if os.path.exists(premium_path):
-                add_paragraph(document, '图表7.3 120日溢价概率分布图')
+                add_paragraph(document, '图表7.4 120日溢价概率分布图')
                 add_image(document, premium_path)
         except Exception as e:
             print(f"  生成溢价分布图失败: {e}")

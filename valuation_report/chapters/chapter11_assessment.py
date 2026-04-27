@@ -198,7 +198,8 @@ def generate_chapter(context):
     labels = {}
 
     # 1. 估值风险 (基于PE百分位)
-    pe_percentile = float(relative_valuation.get('pe_percentile', 50)) if relative_valuation else 50
+    _pe_raw = relative_valuation.get('pe_percentile', 50) if relative_valuation else 50
+    pe_percentile = float(_pe_raw) if _pe_raw is not None else 50
     if pe_percentile <= 20:
         scores['valuation'] = 90
     elif pe_percentile <= 40:
