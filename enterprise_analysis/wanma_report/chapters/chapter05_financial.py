@@ -174,7 +174,10 @@ class Chapter05Financial:
                     row[self._period_label(period)] = self._format_wan(val)
                 rows.append(row)
             # 空行分隔
-            rows.append({'科目': ''} | {self._period_label(p): '' for p in periods})
+            separator = {'科目': ''}
+            for p in periods:
+                separator[self._period_label(p)] = ''
+            rows.append(separator)
 
         # 移除最后一个空行
         if rows and rows[-1].get('科目', '') == '':

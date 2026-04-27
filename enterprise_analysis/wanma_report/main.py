@@ -777,13 +777,18 @@ class DingZengRiskReportGenerator:
         for i, header in enumerate(headers if headers else data[0].keys()):
             header_cells[i].text = str(header)
 
+        num_cols = len(headers) if headers else len(data[0])
         for row_idx, row_data in enumerate(data):
             row_cells = table.rows[row_idx + 1].cells
             if isinstance(row_data, dict):
                 for col_idx, value in enumerate(row_data.values()):
+                    if col_idx >= num_cols:
+                        break
                     row_cells[col_idx].text = str(value) if value is not None else ''
             else:
                 for col_idx, value in enumerate(row_data):
+                    if col_idx >= num_cols:
+                        break
                     row_cells[col_idx].text = str(value) if value is not None else ''
 
 

@@ -1,0 +1,39 @@
+# 上市公司估值分析报告配置
+
+tushare:
+  token: ""  # 从环境变量 TUSHARE_TOKEN 读取
+
+wacc:
+  risk_free_rate: 0.0185       # 十年期国债收益率
+  market_return: 0.08          # 沪深300预期收益率
+  market_risk_premium: 0.0615  # Rm - Rf
+  debt_premium: 0.50           # Kd = Rf × (1 + premium)
+  tax_rate: 0.25
+  beta_window: 500             # Beta计算窗口(交易日)
+  fallback_beta: 1.0
+
+dcf:
+  forecast_years: 10           # FCF预测年数
+  terminal_growth: 0.03        # 永续增长率
+  max_growth: 0.20             # 增长率上限
+  min_growth: -0.10            # 增长率下限
+
+report:
+  max_reports: 8               # 研报最大数量
+  max_text_per_report: 8000    # 单篇研报最大字符数
+  max_total_text: 40000        # 研报总文本上限
+  pdf_timeout: 30              # PDF下载超时(秒)
+  date_range_months: 24        # 研报日期范围(月)
+
+monte_carlo:
+  n_simulations: 10000         # 蒙特卡洛模拟次数
+  time_windows: [20, 60, 120, 250]  # 时间窗口(交易日)
+
+var:
+  confidence_levels: [0.90, 0.95, 0.99]  # VaR置信区间
+
+sensitivity:
+  wacc_range: [0.06, 0.15]    # WACC敏感性范围
+  wacc_steps: 9                # WACC步数
+  growth_range: [-0.05, 0.20] # 增长率敏感性范围
+  growth_steps: 9              # 增长率步数
