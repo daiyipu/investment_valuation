@@ -139,9 +139,7 @@ EOF
         fi
     fi
 
-    echo "配置完成后，重新运行脚本："
-    echo "  $0 $STOCK_CODE <企业名称> [输出文件名]"
-    exit 0
+    echo "使用默认配置继续生成报告..."
 fi
 
 echo "配置文件已找到：$CONFIG_FILE"
