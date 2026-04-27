@@ -99,9 +99,13 @@ def generate_report(stock_code, stock_name='', target_chapter=None):
         print(f"  公司: {company_info.get('name', stock_name)} 行业: {company_info.get('industry', 'N/A')}")
 
     print("[2/8] 查询SW行业分类与同行...")
-    sw_industry, peer_codes = _load_sw_industry(pro, stock_code)
+    sw_industry, peer_codes, peer_levels = _load_sw_industry(pro, stock_code)
     if sw_industry:
-        print(f"  SW三级: {sw_industry.get('l3_name', 'N/A')} 同行: {len(peer_codes)}家")
+        l3_count = sum(1 for v in peer_levels.values() if v.startswith('L3('))
+        sibling_count = sum(1 for v in peer_levels.values() if v.startswith('L3兄弟'))
+        l2_count = sum(1 for v in peer_levels.values() if v.startswith('L2('))
+        detail = f"L3直接{l3_count}家" + (f" + L3兄弟{sibling_count}家" if sibling_count else "") + (f" + L2{l2_count}家" if l2_count else "")
+        print(f"  SW三级: {sw_industry.get('l3_name', 'N/A')} 同行: {len(peer_codes)}家 ({detail})")
 
     print("[3/8] 获取行情数据...")
     price_data = _load_price_data(pro, stock_code)
@@ -121,7 +125,7 @@ def generate_report(stock_code, stock_name='', target_chapter=None):
     print(f"  数据点: {len(historical_valuation)}个交易日")
 
     print("[6/8] 获取同行估值数据...")
-    peer_valuation = _load_peer_valuation(pro, peer_codes, daily_basic)
+    peer_valuation = _load_peer_valuation(pro, peer_codes, daily_basic, peer_levels)
     print(f"  有效同行: {len(peer_valuation)}家")
 
     print("[7/8] 计算WACC...")
@@ -151,6 +155,7 @@ def generate_report(stock_code, stock_name='', target_chapter=None):
         'company_info': company_info,
         'sw_industry': sw_industry,
         'peer_codes': peer_codes,
+        'peer_levels': peer_levels,
         'price_data': price_data,
         'daily_basic': daily_basic,
         'market_indices': market_indices,
@@ -223,23 +228,25 @@ def _load_company_info(pro, stock_code):
 def _load_sw_industry(pro, stock_code):
     sw_industry = {}
     peer_codes = []
+    peer_levels = {}  # ts_code -> 'L3' | 'L3兄弟' | 'L2'
     try:
         df = pro.index_member_all(ts_code=stock_code)
         if df is None or df.empty:
-            return sw_industry, peer_codes
+            return sw_industry, peer_codes, peer_levels
         df = df[df['ts_code'] == stock_code].sort_values('in_date', ascending=False)
         if df.empty:
-            return sw_industry, peer_codes
+            return sw_industry, peer_codes, peer_levels
         latest = df.iloc[0]
         l1_code = latest.get('l1_code', '')
         l2_code = latest.get('l2_code', '')
         l3_code = latest.get('l3_code', '')
+        l3_name = latest.get('l3_name', '')
         sw_industry = {
             'l1_name': latest.get('l1_name', ''),
             'l1_code': l1_code,
             'l2_name': latest.get('l2_name', ''),
             'l2_code': l2_code,
-            'l3_name': latest.get('l3_name', ''),
+            'l3_name': l3_name,
             'l3_code': l3_code,
         }
 
@@ -247,17 +254,20 @@ def _load_sw_industry(pro, stock_code):
         if l3_code:
             df_peers = pro.index_member_all(l3_code=l3_code)
             if df_peers is not None and not df_peers.empty:
-                peer_codes = [c for c in df_peers['ts_code'].unique().tolist() if c != stock_code]
+                for c in df_peers['ts_code'].unique().tolist():
+                    if c != stock_code:
+                        peer_codes.append(c)
+                        peer_levels[c] = f'L3({l3_name})'
 
         # Step 2: If L3 too few, try sibling L3 industries (same parent L2)
         if len(peer_codes) < 5 and l2_code:
             print(f"  SW三级同行仅{len(peer_codes)}家，尝试同级兄弟行业")
             df_l3_list = pro.index_classify(level='L3', src='SW2021')
             if df_l3_list is not None and not df_l3_list.empty:
-                # Find all L3 under the same L2 parent
                 siblings = df_l3_list[df_l3_list['parent_code'] == l2_code]
                 for _, sib in siblings.iterrows():
                     sib_code = sib['index_code']
+                    sib_name = sib.get('industry_name', sib_code)
                     if sib_code == l3_code:
                         continue
                     try:
@@ -266,6 +276,7 @@ def _load_sw_industry(pro, stock_code):
                             for code in sib_members['con_code'].unique().tolist():
                                 if code != stock_code and code not in peer_codes:
                                     peer_codes.append(code)
+                                    peer_levels[code] = f'L3兄弟({sib_name})'
                         time.sleep(0.2)
                     except Exception:
                         pass
@@ -273,6 +284,7 @@ def _load_sw_industry(pro, stock_code):
                 print(f"  合并兄弟行业后同行{len(peer_codes)}家")
 
         # Step 3: If still too few, try L2 via index_member
+        l2_name = sw_industry.get('l2_name', l2_code)
         if len(peer_codes) < 5 and l2_code:
             print(f"  尝试SW二级行业成员")
             try:
@@ -281,6 +293,7 @@ def _load_sw_industry(pro, stock_code):
                     for code in l2_members['con_code'].unique().tolist():
                         if code != stock_code and code not in peer_codes:
                             peer_codes.append(code)
+                            peer_levels[code] = f'L2({l2_name})'
                 print(f"  扩展到L2后同行{len(peer_codes)}家")
             except Exception:
                 pass
@@ -289,7 +302,7 @@ def _load_sw_industry(pro, stock_code):
             print(f"  注意: 同行仅{len(peer_codes)}家，统计意义有限")
     except Exception as e:
         print(f"  加载SW行业失败: {e}")
-    return sw_industry, peer_codes
+    return sw_industry, peer_codes, peer_levels
 
 
 def _load_price_data(pro, stock_code, months=3):
@@ -370,7 +383,7 @@ def _load_historical_valuation(pro, stock_code, years=3):
     return pd.DataFrame()
 
 
-def _load_peer_valuation(pro, peer_codes, daily_basic):
+def _load_peer_valuation(pro, peer_codes, daily_basic, peer_levels=None):
     if not peer_codes:
         return pd.DataFrame()
     trade_date = daily_basic.get('trade_date', '')
@@ -386,6 +399,7 @@ def _load_peer_valuation(pro, peer_codes, daily_basic):
                 name = df_basic.iloc[0]['name'] if not df_basic.empty else code
                 row = df.iloc[0].to_dict()
                 row['name'] = name
+                row['peer_level'] = (peer_levels or {}).get(code, '')
                 results.append(row)
             time.sleep(0.2)
         except Exception:

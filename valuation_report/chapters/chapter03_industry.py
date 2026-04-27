@@ -56,9 +56,20 @@ def generate_chapter(context):
     # ==================== 3.2 同行PE/PB/PS对比表 ====================
     utils.add_title(document, '3.2 同行估值对比', level=2)
 
+    has_peer_level = 'peer_level' in peer_valuation.columns if not peer_valuation.empty else False
+
+    if has_peer_level:
+        level_summary = peer_valuation['peer_level'].value_counts()
+        level_desc = '、'.join([f'{k} {v}家' for k, v in level_summary.items()])
+        utils.add_paragraph(document, f'同行来源：{level_desc}')
+        utils.add_paragraph(document, (
+            '说明：L3表示申万三级行业直接同行，L3兄弟表示同一二级行业下的其他三级子行业，'
+            'L2表示二级行业全量成员。不同来源的同行业可比性存在差异，仅供参考。'
+        ))
+
     if not peer_valuation.empty:
         # Prepare peer comparison table
-        peer_headers = ['公司', 'PE(TTM)', 'PB', 'PS(TTM)', '总市值(万元)']
+        peer_headers = ['公司', '行业级别', 'PE(TTM)', 'PB', 'PS(TTM)', '总市值(万元)']
 
         # Add current stock as the first row
         current_pe = daily_basic.get('pe_ttm', '')
@@ -69,6 +80,7 @@ def generate_chapter(context):
         peer_data = []
         peer_data.append([
             f'{stock_name}(标的)',
+            f'L3({sw_industry.get("l3_name", "")})' if sw_industry.get('l3_name') else '-',
             f'{current_pe:.2f}' if isinstance(current_pe, (int, float)) and current_pe else str(current_pe),
             f'{current_pb:.2f}' if isinstance(current_pb, (int, float)) and current_pb else str(current_pb),
             f'{current_ps:.2f}' if isinstance(current_ps, (int, float)) and current_ps else str(current_ps),
@@ -84,9 +96,11 @@ def generate_chapter(context):
             pb = row.get('pb', None)
             ps = row.get('ps_ttm', None)
             mv = row.get('total_mv', None)
+            level = row.get('peer_level', '')
 
             peer_data.append([
                 str(name),
+                str(level) if level else '-',
                 f'{pe:.2f}' if pd.notna(pe) and isinstance(pe, (int, float)) else '-',
                 f'{pb:.2f}' if pd.notna(pb) and isinstance(pb, (int, float)) else '-',
                 f'{ps:.2f}' if pd.notna(ps) and isinstance(ps, (int, float)) else '-',

@@ -246,17 +246,23 @@ def generate_chapter(context):
         # 同行明细表
         if 'name' in pv.columns and 'pe_ttm' in pv.columns:
             pv_sorted = pv.sort_values('pe_ttm', ascending=True)
-            peer_headers = ['公司名称', '股票代码', 'PE(TTM)', 'PB', 'PS(TTM)', '市值(万元)']
+            has_level = 'peer_level' in pv_sorted.columns
+            peer_headers = ['公司名称', '股票代码', '行业级别', 'PE(TTM)', 'PB', 'PS(TTM)', '市值(万元)'] if has_level else ['公司名称', '股票代码', 'PE(TTM)', 'PB', 'PS(TTM)', '市值(万元)']
             peer_rows = []
             for _, row in pv_sorted.head(30).iterrows():
-                peer_rows.append([
+                base = [
                     str(row.get('name', '')),
                     str(row.get('ts_code', '')),
+                ]
+                if has_level:
+                    base.append(str(row.get('peer_level', '') or ''))
+                base.extend([
                     f"{row.get('pe_ttm', 0):.2f}" if pd.notna(row.get('pe_ttm')) else '',
                     f"{row.get('pb', 0):.2f}" if pd.notna(row.get('pb')) else '',
                     f"{row.get('ps_ttm', 0):.2f}" if pd.notna(row.get('ps_ttm')) else '',
                     f"{row.get('total_mv', 0):.0f}" if pd.notna(row.get('total_mv')) else '',
                 ])
+                peer_rows.append(base)
             if peer_rows:
                 add_paragraph(document, '')
                 add_paragraph(document, '同行估值明细（按PE排序）:')
