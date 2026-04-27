@@ -26,15 +26,15 @@ from module_utils import (
 
 
 def _get_base_fcf(context):
-    """从 context 中提取基础 FCF（自由现金流）。
+    """从 context 中提取基础 FCF（自由现金流，单位：万元）。
 
     优先从 results['dcf_result'] 获取；若不存在，则从 financial_statements
     近3年经营现金流-资本开支取均值。
     """
     results = context.get('results', {})
     dcf = results.get('dcf_result', {})
-    if dcf and dcf.get('base_fcf') is not None:
-        return float(dcf['base_fcf'])
+    if dcf and dcf.get('last_fcf') is not None:
+        return float(dcf['last_fcf'])
 
     fs = context.get('financial_statements', {})
     cashflow = fs.get('cashflow', pd.DataFrame())
@@ -42,7 +42,7 @@ def _get_base_fcf(context):
         return None
 
     try:
-        # 经营活动现金流量净额 - 资本支出
+        # 经营活动现金流量净额 - 资本支出，Tushare单位为元，转为万元
         ocf_col = 'n_cashflow_act' if 'n_cashflow_act' in cashflow.columns else None
         capex_col = 'c_pay_acq_const_fiolta' if 'c_pay_acq_const_fiolta' in cashflow.columns else None
         if ocf_col and capex_col:
@@ -50,7 +50,7 @@ def _get_base_fcf(context):
             capex = cashflow[capex_col].abs().dropna()
             min_len = min(len(ocf), len(capex), 3)
             if min_len > 0:
-                fcf_vals = ocf.iloc[:min_len].values - capex.iloc[:min_len].values
+                fcf_vals = (ocf.iloc[:min_len].values - capex.iloc[:min_len].values) / 10000
                 return float(np.mean(fcf_vals))
     except Exception:
         pass

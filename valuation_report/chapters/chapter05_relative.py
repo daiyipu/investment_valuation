@@ -371,6 +371,21 @@ def generate_chapter(context):
     else:
         add_paragraph(document, '由于历史PE数据不足，无法进行估值水平判定。')
 
+    # 计算相对估值目标价
+    target_price = 0
+    current_pe_val = float(daily_basic.get('pe_ttm', 0) or 0)
+    current_pb_val = float(daily_basic.get('pb', 0) or 0)
+    current_price_val = float(daily_basic.get('close', 0) or 0)
+    target_prices = []
+    if pe_stats.get('p50') and current_pe_val > 0 and current_price_val > 0:
+        target_prices.append(current_price_val * pe_stats['p50'] / current_pe_val)
+    if pb_stats.get('p50') and current_pb_val > 0 and current_price_val > 0:
+        target_prices.append(current_price_val * pb_stats['p50'] / current_pb_val)
+    if not target_prices and industry_pe_stats.get('median') and current_pe_val > 0 and current_price_val > 0:
+        target_prices.append(current_price_val * industry_pe_stats['median'] / current_pe_val)
+    if target_prices:
+        target_price = float(np.mean(target_prices))
+
     add_section_break(document)
 
     # ==================== 保存结果 ====================
@@ -382,6 +397,7 @@ def generate_chapter(context):
         'pb_stats': pb_stats,
         'industry_pe_stats': industry_pe_stats,
         'industry_pb_stats': industry_pb_stats,
+        'target_price': target_price,
     }
 
     return context

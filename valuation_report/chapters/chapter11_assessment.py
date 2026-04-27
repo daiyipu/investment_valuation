@@ -96,9 +96,9 @@ def generate_chapter(context):
 
     # dcf_summary可能是list（chapter04输出）或dict
     if isinstance(dcf_summary, list) and dcf_summary:
-        dcf_per_share = float(dcf_summary[0].get('per_share_value', 0)) if isinstance(dcf_summary[0], dict) else 0
+        dcf_per_share = float(dcf_summary[0].get('per_share', 0)) if isinstance(dcf_summary[0], dict) else 0
     elif isinstance(dcf_summary, dict):
-        dcf_per_share = float(dcf_summary.get('per_share_value', 0))
+        dcf_per_share = float(dcf_summary.get('per_share', 0))
     else:
         dcf_per_share = float(results.get('dcf_avg_per_share', 0))
     relative_per_share = float(relative_valuation.get('target_price', 0)) if relative_valuation else 0
