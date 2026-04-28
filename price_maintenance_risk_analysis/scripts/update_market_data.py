@@ -1257,7 +1257,15 @@ class TushareFinancialData:
         在中国会计准则下，利息支出归入经营活动现金流出，因此需加回税后利息。
         或者：FCF = NOPAT + 折旧摊销 - 资本支出 - 营运资本增加
         """
-        tax_rate = 0.15
+        # 计算实际有效税率：所得税费用 / 利润总额
+        df['effective_tax_rate'] = 0.25  # 默认25%
+        if 'income_tax_exp' in df.columns and 'total_profit' in df.columns:
+            tax_exp = df['income_tax_exp'].fillna(0)
+            total_profit = df['total_profit'].fillna(0)
+            # 只在利润总额为正时计算有效税率
+            valid = (total_profit > 0) & (tax_exp >= 0)
+            df.loc[valid, 'effective_tax_rate'] = (tax_exp[valid] / total_profit[valid]).clip(0, 0.5)
+        tax_rate = df['effective_tax_rate']
 
         # 方法1：优先使用现金流量表数据（最准确）
         if 'n_cashflow_act' in df.columns:
@@ -1288,9 +1296,9 @@ class TushareFinancialData:
             df['interest_exp'] = interest_exp
             df['after_tax_interest'] = after_tax_interest
 
-            # 同时计算NOPAT用于对比分析
+            # NOPAT = 营业利润 × (1 - 有效税率)
             if 'operate_profit' in df.columns:
-                df['nopat'] = df['operate_profit'] * (1 - tax_rate)
+                df['nopat'] = df['operate_profit'].fillna(0) * (1 - tax_rate)
             else:
                 df['nopat'] = df['n_income_attr_p'].fillna(0)
 
@@ -1304,10 +1312,9 @@ class TushareFinancialData:
 
         else:
             # 方法2：如果没有现金流数据，使用损益表和资产负债表估算
-            # NOPAT (税后营业利润)
+            # NOPAT (税后营业利润) - 使用有效税率
             if 'operate_profit' in df.columns:
-                tax_rate = 0.15
-                df['nopat'] = df['operate_profit'] * (1 - tax_rate)
+                df['nopat'] = df['operate_profit'].fillna(0) * (1 - tax_rate)
             else:
                 df['nopat'] = df['n_income_attr_p'].fillna(0)
 
