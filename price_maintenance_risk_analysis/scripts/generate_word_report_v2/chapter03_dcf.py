@@ -359,20 +359,23 @@ def generate_chapter(context):
     add_paragraph(document, '估值计算过程（示例）：')
 
     # 添加FCF计算方法说明
-    add_title(document, '3.3.1 自由现金流（FCF）计算方法', level=3)
-    add_paragraph(document, '自由现金流（Free Cash Flow, FCF）代表公司在支付了所有运营费用、资本支出后，可分配给股东和债权人的现金。')
+    add_title(document, '3.3.1 自由现金流（FCFF）计算方法', level=3)
+    add_paragraph(document, '公司自由现金流（Free Cash Flow to Firm, FCFF）代表公司在支付了所有运营费用和资本支出后，可分配给全体资本提供者（股东和债权人）的现金。')
     add_paragraph(document, '')
-    add_paragraph(document, '本报告采用现金流量表法计算FCF：')
-    add_paragraph(document, 'FCF = 经营活动现金流 - 资本支出')
+    add_paragraph(document, '本报告采用现金流量表法计算FCFF：')
+    add_paragraph(document, 'FCFF = 经营活动现金流 + 利息支出×(1-T) - 资本支出')
     add_paragraph(document, '')
     add_paragraph(document, '其中：')
-    add_paragraph(document, '• 经营活动现金流：来自现金流量表，反映公司主营业务的现金生成能力')
-    add_paragraph(document, '• 资本支出：直接使用投资活动现金流，反映购建固定资产、无形资产和其他长期资产支付的现金')
+    add_paragraph(document, '• 经营活动现金流（OCF）：来自现金流量表，反映公司主营业务的现金生成能力')
+    add_paragraph(document, '• 利息支出×(1-T)：税后利息加回。在中国会计准则下，利息支出归入经营活动现金流出，但FCFF衡量的是全体出资人可获得的现金流，因此需将利息（扣除税盾后）加回')
+    add_paragraph(document, '• 资本支出（CapEx）：购建固定资产、无形资产和其他长期资产支付的现金')
+    add_paragraph(document, '• T：企业所得税率')
     add_paragraph(document, '')
     add_paragraph(document, '该方法的优势：')
     add_paragraph(document, '1. 直接使用现金流量表数据，避免复杂的营运资本计算')
     add_paragraph(document, '2. 经营活动现金流已自动考虑了营运资本变化')
-    add_paragraph(document, '3. 更真实地反映公司的现金生成能力')
+    add_paragraph(document, '3. 加回税后利息确保FCFF不受资本结构影响，反映公司整体创造现金的能力')
+    add_paragraph(document, '4. 更真实地反映公司的现金生成能力')
 
     # 添加历史FCF数据分析
     if 'historical_fcf_data' in project_params and project_params['historical_fcf_data']:
