@@ -262,25 +262,44 @@ def generate_chapter(context):
         print(f"   正值FCF年数: {len(positive_fcf_data)}")
 
         if len(positive_fcf_data) >= 2:
-            # 使用最早和最新的正FCF年计算CAGR
-            first_year_data = positive_fcf_data[0]
-            last_year_data = positive_fcf_data[-1]
+            # 优先用近3年正FCF计算滑动平均增长率
+            recent_positive = positive_fcf_data[-3:] if len(positive_fcf_data) >= 3 else positive_fcf_data[-2:]
 
-            first_fcf_val = first_year_data['fcf']
-            last_fcf_val = last_year_data['fcf']
-            years_count = last_year_data['year'] - first_year_data['year']
+            # 逐年计算增长率，取平均
+            growth_rates = []
+            for i in range(1, len(recent_positive)):
+                prev = recent_positive[i-1]['fcf']
+                curr = recent_positive[i]['fcf']
+                if prev > 0:
+                    growth_rates.append((curr - prev) / prev)
 
-            # CAGR = (最终值 / 初始值)^(1/年数) - 1
-            fcf_cagr = (last_fcf_val / first_fcf_val) ** (1 / years_count) - 1
-
-            # 限制增长率在合理范围（-5%到30%）
-            fcf_cagr = max(-0.05, min(0.30, fcf_cagr))
-
-            print(f"    FCF历史CAGR: {fcf_cagr*100:.2f}%（从{first_year_data['year']}年{first_fcf_val:.2f}亿到{last_year_data['year']}年{last_fcf_val:.2f}亿，{years_count}年）")
-            print(f"    将使用FCF的CAGR作为增长率基准")
+            if growth_rates:
+                fcf_cagr = np.mean(growth_rates)
+                fcf_cagr = float(np.clip(fcf_cagr, -0.05, 0.30))
+                years_desc = f"近{len(recent_positive)}年正值FCF"
+                print(f"    FCF近{len(recent_positive)}年滑动平均增长率: {fcf_cagr*100:.2f}%")
+                for i in range(1, len(recent_positive)):
+                    prev = recent_positive[i-1]
+                    curr = recent_positive[i]
+                    print(f"      {prev['year']}年{prev['fcf']:.2f}亿 → {curr['year']}年{curr['fcf']:.2f}亿")
+                print(f"    将使用滑动平均增长率作为基准")
+            else:
+                # 回退到CAGR
+                first_year_data = positive_fcf_data[0]
+                last_year_data = positive_fcf_data[-1]
+                first_fcf_val = first_year_data['fcf']
+                last_fcf_val = last_year_data['fcf']
+                years_count = last_year_data['year'] - first_year_data['year']
+                if years_count > 0 and first_fcf_val > 0:
+                    fcf_cagr = (last_fcf_val / first_fcf_val) ** (1 / years_count) - 1
+                    fcf_cagr = float(np.clip(fcf_cagr, -0.05, 0.30))
+                    years_desc = f"历史{years_count}年CAGR"
+                    print(f"    FCF历史CAGR: {fcf_cagr*100:.2f}%（从{first_year_data['year']}年到{last_year_data['year']}年）")
+                else:
+                    fcf_cagr = None
         else:
             fcf_cagr = None
-            print(f"    正值FCF年数少于2年，无法计算FCF的CAGR")
+            print(f"    正值FCF年数少于2年，无法计算增长率")
             if net_income_cagr is not None:
                 print(f"   ℹ️  将使用净利润的CAGR作为备选: {net_income_cagr*100:.2f}%")
 
