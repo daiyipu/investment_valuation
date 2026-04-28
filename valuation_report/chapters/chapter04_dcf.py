@@ -138,13 +138,31 @@ def generate_chapter(context):
         utils.add_paragraph(document, '暂无WACC计算结果。')
 
     # ==================== 4.2 历史FCF分析 ====================
-    utils.add_title(document, '4.2 历史自由现金流(FCF)分析', level=2)
+    utils.add_title(document, '4.2 历史自由现金流(FCFF)分析', level=2)
+    utils.add_paragraph(document,
+        'FCFF（公司自由现金流）= 经营活动现金流 + 利息支出×(1-T) - 资本支出。'
+        '在中国会计准则下，利息支出归入经营活动现金流出，因此需加回税后利息以得到归属全部资本提供者的自由现金流。')
+
+    income_df = financial_statements.get('income', pd.DataFrame())
+    # Build interest lookup: year -> interest expense
+    interest_by_year = {}
+    if income_df is not None and not income_df.empty and 'end_date' in income_df.columns:
+        inc_annual = income_df[income_df['end_date'].astype(str).str.contains('1231', na=False)].copy()
+        inc_annual = inc_annual.drop_duplicates(subset='end_date', keep='last')
+        for _, inc_row in inc_annual.iterrows():
+            yr = str(inc_row['end_date'])[:4]
+            int_exp = inc_row.get('fin_exp_int_exp', 0)
+            if int_exp is None or (isinstance(int_exp, float) and np.isnan(int_exp)):
+                int_exp = 0
+            interest_by_year[yr] = float(int_exp)
+
+    tax_rate = wacc_result.get('parameters', {}).get('tax_rate', 0.25) if wacc_result else 0.25
 
     fcf_records = []
     if not cashflow_df.empty:
         periods = _get_annual_periods(cashflow_df, 5)
         if periods:
-            fcf_headers = ['年度', '经营现金流(万元)', '资本支出(万元)', 'FCF(万元)', '计算方法']
+            fcf_headers = ['年度', '经营现金流(万元)', '利息支出(万元)', '税后利息(万元)', '资本支出(万元)', 'FCFF(万元)']
             fcf_data = []
 
             for p in periods:
@@ -157,32 +175,35 @@ def generate_chapter(context):
                 capex = _safe_val(r, 'c_pay_acq_const_fiolta')
                 inv_cf = _safe_val(r, 'n_cashflow_inv_act') or 0
 
+                # After-tax interest add-back
+                int_exp = interest_by_year.get(year, 0)
+                after_tax_int = int_exp * (1 - tax_rate)
+
                 if capex is not None and capex != 0:
-                    fcf = ocf - capex
-                    method = 'OCF-CapEx'
+                    fcf = ocf + after_tax_int - capex
                 elif inv_cf != 0:
                     capex = abs(inv_cf)
-                    fcf = ocf - capex
-                    method = 'OCF-|InvCF|'
+                    fcf = ocf + after_tax_int - capex
                 else:
                     capex = 0
-                    fcf = ocf * 0.7
-                    method = 'OCF×0.7'
+                    fcf = (ocf + after_tax_int) * 0.7
 
                 fcf_records.append({
                     'year': year,
                     'ocf': ocf / 10000,
                     'capex': capex / 10000 if capex else 0,
                     'fcf': fcf / 10000,
-                    'method': method,
+                    'interest_exp': int_exp / 10000,
+                    'after_tax_int': after_tax_int / 10000,
                 })
 
                 fcf_data.append([
                     year,
                     f'{ocf / 10000:,.2f}',
+                    f'{int_exp / 10000:,.2f}' if int_exp else '-',
+                    f'{after_tax_int / 10000:,.2f}' if after_tax_int else '-',
                     f'{capex / 10000:,.2f}' if capex else '-',
                     f'{fcf / 10000:,.2f}',
-                    method,
                 ])
 
             if fcf_data:

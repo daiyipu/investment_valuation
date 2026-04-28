@@ -28,13 +28,17 @@ class DCFCalculator:
     def __init__(self):
         self.fcf_data = []
 
-    def _prepare_fcf_data(self, cashflow_df: pd.DataFrame) -> list:
-        """Extract historical FCF from cashflow statement.
+    def _prepare_fcf_data(self, cashflow_df: pd.DataFrame, income_df: pd.DataFrame = None, tax_rate: float = 0.25) -> list:
+        """Extract historical FCFF from cashflow and income statements.
 
-        Priority:
-        1. FCF = OCF - CapEx (n_cashflow_act - c_pay_acq_const_fiolta)
-        2. FCF = OCF + Investing CF (n_cashflow_act + n_cashflow_inv_act)
-        3. FCF = OCF × 0.7
+        FCFF = OCF + Interest×(1-T) - CapEx
+        Under Chinese GAAP, interest expense is classified as operating cash outflow,
+        so we add back after-tax interest to get unlevered free cash flow to the firm.
+
+        Fallback priority (when CapEx missing):
+        1. FCFF = OCF + Interest×(1-T) - CapEx
+        2. FCFF = OCF + Interest×(1-T) + Investing CF
+        3. FCFF = OCF × 0.7
 
         Tushare data unit: yuan → converted to wan yuan (÷10000).
         """
@@ -45,12 +49,27 @@ class DCFCalculator:
         annual = annual.sort_values('end_date')
         annual = annual.drop_duplicates(subset='end_date', keep='last')
 
+        # Build interest lookup from income statement: year -> interest expense (yuan)
+        interest_by_year = {}
+        if income_df is not None and not income_df.empty:
+            inc_annual = income_df[income_df['end_date'].astype(str).str.contains('1231', na=False)].copy()
+            inc_annual = inc_annual.drop_duplicates(subset='end_date', keep='last')
+            for _, inc_row in inc_annual.iterrows():
+                year = str(inc_row['end_date'])[:4]
+                # fin_exp_int_exp = 利息支出（利息费用-利息收入前的净额）
+                int_exp = inc_row.get('fin_exp_int_exp', 0)
+                if int_exp is None or (isinstance(int_exp, float) and np.isnan(int_exp)):
+                    int_exp = 0
+                interest_by_year[year] = float(int_exp)
+
         fcf_list = []
         for _, row in annual.iterrows():
             ocf = row.get('n_cashflow_act', 0)
             capex = row.get('c_pay_acq_const_fiolta', 0)
             inv_cf = row.get('n_cashflow_inv_act', 0)
-            # Handle NaN: convert to 0
+            year = str(row['end_date'])[:4]
+
+            # Handle NaN
             if isinstance(ocf, float) and np.isnan(ocf):
                 ocf = 0
             if capex is None or (isinstance(capex, float) and np.isnan(capex)):
@@ -58,17 +77,25 @@ class DCFCalculator:
             if inv_cf is None or (isinstance(inv_cf, float) and np.isnan(inv_cf)):
                 inv_cf = 0
 
+            # After-tax interest add-back
+            int_exp = interest_by_year.get(year, 0)
+            after_tax_int = int_exp * (1 - tax_rate)
+
             if capex != 0:
-                fcf = (ocf - capex) / 10000
+                fcf = (ocf + after_tax_int - capex) / 10000
             elif inv_cf != 0:
-                fcf = (ocf + inv_cf) / 10000
+                fcf = (ocf + after_tax_int + inv_cf) / 10000
             else:
-                fcf = ocf * 0.7 / 10000
+                fcf = (ocf + after_tax_int) * 0.7 / 10000
 
             fcf_list.append({
-                'year': str(row['end_date'])[:4],
+                'year': year,
                 'fcf': fcf,
-                'method': 'OCF-CapEx' if capex != 0 else ('OCF+InvCF' if inv_cf != 0 else 'OCF×0.7'),
+                'method': 'FCFF(OCF+Int(1-T)-CapEx)' if capex != 0 else ('FCFF(OCF+Int(1-T)+InvCF)' if inv_cf != 0 else 'OCF×0.7'),
+                'ocf': float(ocf) / 10000,
+                'capex': float(abs(capex)) / 10000,
+                'interest_exp': int_exp / 10000,
+                'after_tax_int': after_tax_int / 10000,
             })
 
         self.fcf_data = fcf_list
@@ -171,7 +198,7 @@ class DCFCalculator:
         income_df = financial_statements.get('income')
 
         # 1. Prepare FCF data
-        fcf_list = self._prepare_fcf_data(cashflow_df)
+        fcf_list = self._prepare_fcf_data(cashflow_df, income_df, p.get('tax_rate', 0.25))
         if not fcf_list:
             return {'error': 'No FCF data available'}
 

@@ -1092,7 +1092,7 @@ class TushareFinancialData:
                 start_date=start_date,
                 end_date=end_date,
                 fields='ts_code,end_date,end_type,update_flag,ann_date,revenue,operate_profit,total_profit,n_income_attr_p,'
-                       'income_tax_exp,fin_exp,int_exp'
+                       'income_tax_exp,fin_exp,int_exp,fin_exp_int_exp'
             )
 
             # 获取资产负债表数据
@@ -1245,32 +1245,43 @@ class TushareFinancialData:
         """
         计算自由现金流（内部方法）
 
-        使用简化方法：FCF ≈ 经营活动现金流 - 资本支出
-        或者：FCF = 净利润 + 折旧摊销 - 资本支出 - 营运资本增加
+        FCFF = 经营活动现金流 + 利息支出×(1-T) - 资本支出
+        在中国会计准则下，利息支出归入经营活动现金流出，因此需加回税后利息。
+        或者：FCF = NOPAT + 折旧摊销 - 资本支出 - 营运资本增加
         """
+        tax_rate = 0.15
+
         # 方法1：优先使用现金流量表数据（最准确）
         if 'n_cashflow_act' in df.columns:
             # 经营活动现金流
             df['ocf'] = df['n_cashflow_act'].fillna(0)
 
             # 资本支出：购建固定资产、无形资产和其他长期资产支付的现金
-            # 使用Tushare的c_pay_acq_const_fiolta字段（精确的资本支出科目）
-            # 注意：Tushare返回的c_pay_acq_const_fiolta已经是正数（流出金额），直接使用
             if 'c_pay_acq_const_fiolta' in df.columns:
-                df['capex'] = df['c_pay_acq_const_fiolta'].fillna(0)  # 直接使用原始值，不需要取负
+                df['capex'] = df['c_pay_acq_const_fiolta'].fillna(0)
             else:
-                # 如果字段不存在，尝试使用投资活动现金流作为备选
                 if 'n_cash_flows_inv_act' in df.columns:
-                    df['capex'] = df['n_cash_flows_inv_act'].fillna(0)  # 直接使用原始值
+                    df['capex'] = df['n_cash_flows_inv_act'].fillna(0)
                 else:
                     df['capex'] = 0
 
-            # FCF = 经营活动现金流 - 资本支出
-            df['fcf'] = df['ocf'] - df['capex']
+            # 利息支出：从利润表获取 fin_exp_int_exp（利息费用-利息支出）
+            # 在中国准则下利息支出归入经营活动，需加回税后利息
+            if 'fin_exp_int_exp' in df.columns:
+                interest_exp = df['fin_exp_int_exp'].fillna(0)
+            elif 'int_exp' in df.columns:
+                interest_exp = df['int_exp'].fillna(0)
+            else:
+                interest_exp = 0
+            after_tax_interest = interest_exp * (1 - tax_rate)
+
+            # FCFF = OCF + 利息×(1-T) - CapEx
+            df['fcf'] = df['ocf'] + after_tax_interest - df['capex']
+            df['interest_exp'] = interest_exp
+            df['after_tax_interest'] = after_tax_interest
 
             # 同时计算NOPAT用于对比分析
             if 'operate_profit' in df.columns:
-                tax_rate = 0.15
                 df['nopat'] = df['operate_profit'] * (1 - tax_rate)
             else:
                 df['nopat'] = df['n_income_attr_p'].fillna(0)
