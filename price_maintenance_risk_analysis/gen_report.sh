@@ -26,7 +26,7 @@ if [ $# -lt 2 ]; then
     echo "说明："
     echo "  - 企业名称建议使用2-8个汉字，避免特殊字符"
     echo "  - 报价日格式：YYYYMMDD（如20260407），可选，默认使用当前日期"
-    echo "  - 如不指定输出文件名，将自动生成：{企业名称}_定增风险分析报告_{时间戳}.docx"
+    echo "  - 如不指定输出文件名，将自动生成：{企业名称}_定增市场风险分析报告_{时间戳}.docx"
     echo ""
     exit 1
 fi
@@ -58,7 +58,7 @@ TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 
 # 如果未指定输出文件名，自动生成带时间戳的文件名
 if [ -z "$OUTPUT_FILE" ]; then
-    OUTPUT_FILE="${STOCK_NAME}_定增风险分析报告_${TIMESTAMP}.docx"
+    OUTPUT_FILE="${STOCK_NAME}_定增市场风险分析报告_${TIMESTAMP}.docx"
 fi
 
 # 切换到脚本目录

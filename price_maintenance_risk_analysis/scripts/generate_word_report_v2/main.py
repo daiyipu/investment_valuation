@@ -732,7 +732,7 @@ def _load_industry_data(stock_code, auto_generate=True):
 def save_report(document, stock_code, stock_name):
     """保存报告到文件"""
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    filename = f"{stock_name}_{stock_code}_定增风险分析报告_{timestamp}.docx"
+    filename = f"{stock_name}_{stock_code}_定增市场风险分析报告_{timestamp}.docx"
     output_path = os.path.join(OUTPUTS_DIR, filename)
 
     document.save(output_path)

@@ -186,9 +186,9 @@ def setup_document_header(document, stock_name, stock_code=None):
     formatted_date = current_date.strftime('%Y年%m月%d日')
 
     if stock_code:
-        header_title = f"{stock_name}({stock_code})定增风险分析报告 | {formatted_date}"
+        header_title = f"{stock_name}({stock_code})定增市场风险分析报告 | {formatted_date}"
     else:
-        header_title = f"{stock_name}定增风险分析报告 | {formatted_date}"
+        header_title = f"{stock_name}定增市场风险分析报告 | {formatted_date}"
 
     # 设置统一页眉
     header = target_section.header
@@ -263,9 +263,9 @@ def setup_odd_even_headers(document, stock_name, stock_code=None):
         formatted_date = current_date.strftime('%Y年%m月%d日')
 
         if stock_code:
-            odd_header_title = f"{stock_name}({stock_code})定增风险分析报告 | {formatted_date}"
+            odd_header_title = f"{stock_name}({stock_code})定增市场风险分析报告 | {formatted_date}"
         else:
-            odd_header_title = f"{stock_name}定增风险分析报告 | {formatted_date}"
+            odd_header_title = f"{stock_name}定增市场风险分析报告 | {formatted_date}"
 
         # 设置奇数页页眉
         odd_header = target_section.headers[1]  # 奇数页页眉

@@ -84,7 +84,7 @@ def generate_chapter(context):
     current_date = datetime.now().strftime('%Y年%m月%d日')
 
     # ==================== 报告封面 ====================
-    add_title(document, '定增项目风险分析报告', level=0)
+    add_title(document, '定增项目市场风险分析报告', level=0)
     add_paragraph(document, '')
 
     # 报告基本信息
