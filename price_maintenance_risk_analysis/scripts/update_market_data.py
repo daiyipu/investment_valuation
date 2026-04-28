@@ -1258,12 +1258,12 @@ class TushareFinancialData:
         或者：FCF = NOPAT + 折旧摊销 - 资本支出 - 营运资本增加
         """
         # 计算实际有效税率：所得税费用 / 利润总额
-        df['effective_tax_rate'] = 0.25  # 默认25%
+        df['effective_tax_rate'] = 0.0
         if 'income_tax_exp' in df.columns and 'total_profit' in df.columns:
             tax_exp = df['income_tax_exp'].fillna(0)
             total_profit = df['total_profit'].fillna(0)
-            # 只在利润总额为正时计算有效税率
-            valid = (total_profit > 0) & (tax_exp >= 0)
+            # 利润总额为正且有所得税时，计算有效税率；否则税率为0
+            valid = (total_profit > 0) & (tax_exp > 0)
             df.loc[valid, 'effective_tax_rate'] = (tax_exp[valid] / total_profit[valid]).clip(0, 0.5)
         tax_rate = df['effective_tax_rate']
 
