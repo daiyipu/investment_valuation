@@ -20,13 +20,21 @@ except ImportError:
     sys.exit(1)
 
 
+def _init_tushare_pro():
+    """Initialize tushare pro_api with token from env or config."""
+    token = os.environ.get('TUSHARE_TOKEN', '')
+    if token:
+        ts.set_token(token)
+    return ts.pro_api()
+
+
 def fetch_latest_data(stock_code='300735.SZ', days=500):
     """
     获取最新的历史数据（使用当前日期回溯）
     """
     print(f"📡 正在获取 {stock_code} 的最新历史数据...")
 
-    pro = ts.pro_api()
+    pro = _init_tushare_pro()
 
     # 计算日期范围（使用当前日期）
     end_date = datetime.now().strftime('%Y%m%d')
@@ -272,7 +280,7 @@ def fetch_market_turnover_data(target_days=1200):
     """
     try:
         import tushare as ts
-        pro = ts.pro_api()
+        pro = _init_tushare_pro()
 
         print(f"\n📡 正在获取市场换手率数据...")
 
@@ -1382,8 +1390,7 @@ def get_stock_industry_classification(stock_code):
         包含行业信息和行业指数代码的字典
     """
     try:
-        pro = ts.pro_api()
-
+        pro = _init_tushare_pro()
         # 获取申万三级行业分类（与第二章相对估值一致）
         df_industry = pro.index_member_all(ts_code=stock_code)
 
@@ -1460,8 +1467,7 @@ def fetch_industry_index_data(index_code, days=500):
         DataFrame或None
     """
     try:
-        pro = ts.pro_api()
-
+        pro = _init_tushare_pro()
         # 计算日期范围
         end_date = datetime.now().strftime('%Y%m%d')
         start_date = (datetime.now() - timedelta(days=days*2)).strftime('%Y%m%d')
