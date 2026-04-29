@@ -408,8 +408,7 @@ def generate_chapter(context):
 
         fcf_history_headers = ['年份', '营业收入（亿）', 'NOPAT（亿）', 'FCF（亿）', 'FCF/营收']
         fcf_history_data = []
-        total_fcf_to_revenue = 0
-        valid_years = 0
+        fcf_ratios = []
 
         for year_data in recent_fcf:
             year = year_data['year']
@@ -419,7 +418,9 @@ def generate_chapter(context):
 
             if revenue > 0:
                 fcf_ratio = (fcf / revenue) * 100
-                total_fcf_to_revenue += fcf_ratio
+                # 收集合理范围内的FCF/营收比率（排除极端异常值）
+                if -100 <= fcf_ratio <= 100:
+                    fcf_ratios.append(fcf_ratio)
                 valid_years += 1
             else:
                 fcf_ratio = 0
@@ -435,9 +436,10 @@ def generate_chapter(context):
         add_table_data(document, fcf_history_headers, fcf_history_data)
 
         add_paragraph(document, '')
-        if valid_years > 0:
-            avg_fcf_ratio = total_fcf_to_revenue / valid_years
-            add_paragraph(document, f'历史平均FCF/营收比率：{avg_fcf_ratio:.1f}%')
+        if fcf_ratios:
+            median_fcf_ratio = float(np.median(fcf_ratios))
+            avg_fcf_ratio = float(np.mean(fcf_ratios))
+            add_paragraph(document, f'FCF/营收比率（排除极端值后）：中位数{median_fcf_ratio:.1f}%，均值{avg_fcf_ratio:.1f}%（已排除|比率|>100%的异常年份）')
             add_paragraph(document, '该指标反映公司每100元营业收入能产生多少自由现金流。')
 
         # FCF趋势分析
