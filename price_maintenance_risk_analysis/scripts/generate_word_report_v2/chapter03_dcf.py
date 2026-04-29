@@ -242,19 +242,23 @@ def generate_chapter(context):
             print(f"{year_data['year']:<6} {year_data['revenue']:>10.2f}     "
                   f"{year_data['nopat']:>10.2f}     {year_data['fcf']:>10.2f}")
 
-        # 使用最新一年的真实FCF作为基准
-        latest_fcf = historical_fcf['data'][-1]['fcf'] * 100000000  # 转回元
+        # 使用近3年FCFF平均值作为预测基准（更稳健，避免单年波动）
+        recent_3_fcf = historical_fcf['data'][-3:] if len(historical_fcf['data']) >= 3 else historical_fcf['data'][-1:]
+        recent_3_fcf_values = [d['fcf'] for d in recent_3_fcf]
+        avg_fcf_3y = sum(recent_3_fcf_values) / len(recent_3_fcf_values)
+        base_fcf = avg_fcf_3y * 100000000  # 转回元
 
-        # 检查FCF是否为正
-        print(f"\n   最新FCF: {latest_fcf/100000000:.2f} 亿元")
-        if latest_fcf > 0:
-            base_fcf = latest_fcf
+        latest_fcf = historical_fcf['data'][-1]['fcf'] * 100000000
+
+        print(f"\n   近3年FCFF: {', '.join([f'{v:.2f}亿' for v in recent_3_fcf_values])}")
+        print(f"   近3年均值: {avg_fcf_3y:.2f} 亿元")
+        if base_fcf > 0:
             using_net_income_as_fcf = False
-            print(f"    使用最新FCF作为基准")
+            print(f"    使用近3年FCFF均值作为预测基准")
         else:
-            base_fcf = net_income  # 使用净利润作为基准
+            base_fcf = net_income
             using_net_income_as_fcf = True
-            print(f"    最新FCF为负，使用净利润作为基准")
+            print(f"    近3年FCFF均值为负，使用净利润作为基准")
 
         # 计算历史FCF复合增长率（CAGR）- 优先使用
         # 只计算正FCF年份
@@ -329,9 +333,9 @@ def generate_chapter(context):
 
     # 显示基准FCF（用于估值计算）
     if using_net_income_as_fcf:
-        dcf_process_data.append(['基准FCF（用于计算）', f'{base_fcf/100000000:.2f} 亿元（使用净利润）'])
+        dcf_process_data.append(['基准FCF（近3年均值）', f'{base_fcf/100000000:.2f} 亿元（使用净利润）'])
     else:
-        dcf_process_data.append(['基准FCF（用于计算）', f'{base_fcf/100000000:.2f} 亿元'])
+        dcf_process_data.append(['基准FCF（近3年均值）', f'{base_fcf/100000000:.2f} 亿元'])
 
     # 继续添加其他财务数据
     dcf_process_data.extend([
