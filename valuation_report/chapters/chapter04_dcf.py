@@ -235,7 +235,7 @@ def generate_chapter(context):
         'kd': wacc_result.get('kd_pretax', wacc_result.get('risk_free_rate', 0.0185) * 1.5),
         'tax_rate': wacc_result.get('tax_rate', 0.25),
         'terminal_growth_rate': 0.025,
-        'forecast_years': 10,
+        'forecast_years': 5,
     }
 
     calculator = DCFCalculator()

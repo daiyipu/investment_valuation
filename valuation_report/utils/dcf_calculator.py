@@ -12,7 +12,7 @@ Usage:
     calc = DCFCalculator()
     result = calc.calculate_dcf_valuation(
         financial_statements={'cashflow': cf_df, 'balancesheet': bs_df, 'income': inc_df},
-        params={'risk_free_rate': 0.0185, 'forecast_years': 10},
+        params={'risk_free_rate': 0.0185, 'forecast_years': 5},
     )
     summary = calc.generate_valuation_summary(result, current_price=25.0, total_shares=100000)
 """
@@ -188,7 +188,7 @@ class DCFCalculator:
             'kd': 0.05,
             'tax_rate': 0.25,
             'terminal_growth_rate': 0.025,
-            'forecast_years': 10,
+            'forecast_years': 5,
         }
         if params:
             p.update(params)
