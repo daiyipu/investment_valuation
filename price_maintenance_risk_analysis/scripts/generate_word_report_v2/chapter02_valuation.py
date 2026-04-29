@@ -473,33 +473,38 @@ def generate_chapter(context):
         add_paragraph(document, '')
 
         # 计算与申万行业指数的偏离度
+        pe_dev_sw_val = (cur_pe - sw_index_pe) / sw_index_pe * 100 if sw_index_pe else None
         pe_dev_sw = _fmt_dev(cur_pe, sw_index_pe)
         add_paragraph(document, f"• PE偏离度: {pe_dev_sw}（标的{_fmt_val(cur_pe)} vs 申万{_fmt_val(sw_index_pe)}）")
+        pb_dev_sw_val = None
         if cur_pb is not None and sw_index_pb:
+            pb_dev_sw_val = (cur_pb - sw_index_pb) / sw_index_pb * 100 if sw_index_pb else None
             pb_dev_sw = _fmt_dev(cur_pb, sw_index_pb)
             add_paragraph(document, f"• PB偏离度: {pb_dev_sw}（标的{_fmt_val(cur_pb)} vs 申万{_fmt_val(sw_index_pb)}）")
+        ps_dev_sw_val = None
         if cur_ps is not None and sw_index_ps:
+            ps_dev_sw_val = (cur_ps - sw_index_ps) / sw_index_ps * 100 if sw_index_ps else None
             ps_dev_sw = _fmt_dev(cur_ps, sw_index_ps)
             add_paragraph(document, f"• PS偏离度: {ps_dev_sw}（标的{_fmt_val(cur_ps)} vs 申万{_fmt_val(sw_index_ps)}）")
 
         add_paragraph(document, '')
 
         # PE申万指数对比分析
-        if abs(pe_dev_sw) < 10:
-            add_paragraph(document, f' PE({current_metrics_val["pe"]:.2f}倍)与申万行业指数PE({sw_index_pe:.2f}倍)基本一致，偏离度{pe_dev_sw:+.1f}%')
-        elif pe_dev_sw > 0:
-            add_paragraph(document, f' PE({current_metrics_val["pe"]:.2f}倍)高于申万行业指数PE({sw_index_pe:.2f}倍)，溢价{pe_dev_sw:+.1f}%')
-        else:
-            add_paragraph(document, f' PE({current_metrics_val["pe"]:.2f}倍)低于申万行业指数PE({sw_index_pe:.2f}倍)，折价{pe_dev_sw:+.1f}%')
+        if pe_dev_sw_val is not None and abs(pe_dev_sw_val) < 10:
+            add_paragraph(document, f' PE({current_metrics_val["pe"]:.2f}倍)与申万行业指数PE({sw_index_pe:.2f}倍)基本一致，偏离度{pe_dev_sw_val:+.1f}%')
+        elif pe_dev_sw_val is not None and pe_dev_sw_val > 0:
+            add_paragraph(document, f' PE({current_metrics_val["pe"]:.2f}倍)高于申万行业指数PE({sw_index_pe:.2f}倍)，溢价{pe_dev_sw_val:+.1f}%')
+        elif pe_dev_sw_val is not None:
+            add_paragraph(document, f' PE({current_metrics_val["pe"]:.2f}倍)低于申万行业指数PE({sw_index_pe:.2f}倍)，折价{pe_dev_sw_val:+.1f}%')
 
         # PB申万指数对比分析
-        if pb_dev_sw is not None:
-            if abs(pb_dev_sw) < 10:
+        if pb_dev_sw_val is not None:
+            if abs(pb_dev_sw_val) < 10:
                 add_paragraph(document, f' PB({current_metrics_val["pb"]:.2f}倍)与申万行业指数PB({sw_index_pb:.2f}倍)基本一致')
-            elif pb_dev_sw > 0:
-                add_paragraph(document, f' PB({current_metrics_val["pb"]:.2f}倍)高于申万行业指数PB({sw_index_pb:.2f}倍)，溢价{pb_dev_sw:+.1f}%')
+            elif pb_dev_sw_val > 0:
+                add_paragraph(document, f' PB({current_metrics_val["pb"]:.2f}倍)高于申万行业指数PB({sw_index_pb:.2f}倍)，溢价{pb_dev_sw_val:+.1f}%')
             else:
-                add_paragraph(document, f' PB({current_metrics_val["pb"]:.2f}倍)低于申万行业指数PB({sw_index_pb:.2f}倍)，折价{pb_dev_sw:+.1f}%')
+                add_paragraph(document, f' PB({current_metrics_val["pb"]:.2f}倍)低于申万行业指数PB({sw_index_pb:.2f}倍)，折价{pb_dev_sw_val:+.1f}%')
 
         add_paragraph(document, '')
         add_paragraph(document, '申万行业指数说明：')
