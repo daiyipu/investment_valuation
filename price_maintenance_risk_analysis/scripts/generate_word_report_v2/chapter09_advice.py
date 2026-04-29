@@ -1395,6 +1395,7 @@ def generate_chapter(context):
                 # 如果交集为空（下限>上限），则取并集
                 if intersection_min > intersection_max:
                     # 无交集，取并集作为备选方案
+                    all_qualified = [s for scenarios in qualified_by_category.values() for s in scenarios]
                     all_premiums = [s['premium_rate'] for s in all_qualified]
                     min_premium = min(all_premiums)
                     max_premium = max(all_premiums)

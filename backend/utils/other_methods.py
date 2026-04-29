@@ -456,12 +456,13 @@ if __name__ == "__main__":
     # 第一芝加哥法
     success_scenario = {'value': 200000}  # 20亿
     failure_scenario = {'value': 10000}   # 1亿（清算价值）
+    probability_of_success = 0.3
 
     chicago_result = OtherValuationMethods.first_chicago_method(
         early_company,
         success_scenario,
         failure_scenario,
-        probability_of_success=0.3
+        probability_of_success=probability_of_success
     )
     print(f"\n{chicago_result}")
     print(f"  成功情景: {success_scenario['value']/10000:.2f}亿元")

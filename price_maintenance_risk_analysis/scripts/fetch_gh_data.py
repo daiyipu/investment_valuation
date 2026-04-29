@@ -221,6 +221,38 @@ def get_real_placement_price(ts_code, pro):
         return None
 
 
+def get_ma20_from_market_data(ts_code):
+    """
+    从本地market_data.json文件中读取MA20价格
+
+    参数:
+        ts_code: 股票代码，如 '300735.SZ'
+
+    返回:
+        MA20价格，如果文件不存在或没有数据则返回None
+    """
+    import json
+    try:
+        # 构建market_data文件路径
+        code_prefix = ts_code.replace('.', '_')
+        # 相对于脚本所在目录的data目录
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        market_data_file = os.path.join(script_dir, '..', 'data', f'{code_prefix}_market_data.json')
+
+        if not os.path.exists(market_data_file):
+            return None
+
+        with open(market_data_file, 'r', encoding='utf-8') as f:
+            market_data = json.load(f)
+
+        ma_20 = market_data.get('ma_20')
+        if ma_20 is not None:
+            return float(ma_20)
+        return None
+    except Exception:
+        return None
+
+
 def calculate_ma20_price(ts_code, pro):
     """
     计算MA20价格（20日移动平均线）
