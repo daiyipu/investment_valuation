@@ -398,7 +398,6 @@ def generate_chapter(context):
                 # 收集合理范围内的FCF/营收比率（排除极端异常值）
                 if -100 <= fcf_ratio <= 100:
                     fcf_ratios.append(fcf_ratio)
-                valid_years += 1
             else:
                 fcf_ratio = 0
 
