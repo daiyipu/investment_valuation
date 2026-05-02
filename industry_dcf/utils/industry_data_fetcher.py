@@ -157,7 +157,7 @@ class IndustryDataFetcher:
         if not results:
             return pd.DataFrame()
 
-        return pd.concat(results, ignore_index=True)
+        return pd.concat([df for df in results if not df.empty], ignore_index=True)
 
     def _fetch_company_data(self, ts_code: str, start_date: str) -> Optional[dict]:
         """Fetch cashflow, income, balance sheet for one company."""
