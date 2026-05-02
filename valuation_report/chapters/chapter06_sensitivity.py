@@ -114,7 +114,7 @@ def generate_chapter(context):
     growth_max = sens_cfg.get('growth_range', [-0.05, 0.20])[1]
     growth_steps = sens_cfg.get('growth_steps', 9)
     terminal_growth = dcf_cfg.get('terminal_growth', 0.03)
-    n_years = dcf_cfg.get('forecast_years', 10)
+    n_years = context.get('results', {}).get('dcf_result', {}).get('forecast_years', dcf_cfg.get('forecast_years', 10))
 
     base_fcf = _get_base_fcf(context)
     total_shares = daily_basic.get('total_share', None)

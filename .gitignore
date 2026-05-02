@@ -59,3 +59,7 @@ price_maintenance_risk_analysis/reports/images/*.jpg
 enterprise_analysis/wanma_report/config.yaml
 enterprise_analysis/wanma_report/output/*.docx
 !enterprise_analysis/wanma_report/output/.gitkeep
+
+# 行业DCF缓存数据
+industry_dcf/data/*.json
+!industry_dcf/data/.gitkeep

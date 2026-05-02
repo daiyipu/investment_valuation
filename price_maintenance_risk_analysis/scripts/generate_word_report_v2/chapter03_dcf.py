@@ -42,6 +42,12 @@ from module_utils import (
     add_section_break
 )
 
+# Import industry-calibrated forecast years
+_ROOT_DIR = os.path.dirname(os.path.dirname(PROJECT_DIR))
+if _ROOT_DIR not in sys.path:
+    sys.path.insert(0, _ROOT_DIR)
+from industry_dcf.utils.industry_dcf_calculator import get_industry_forecast_years
+
 # 获取中文字体
 font_prop = get_font_prop()
 
@@ -87,6 +93,9 @@ def generate_chapter(context):
     add_paragraph(document, '4. 减去净债务，得到股权价值')
     add_paragraph(document, '5. 除以总股数，得到每股价值')
 
+    # 行业校准预测年数（默认5年，有pro时动态获取）
+    n_years = 5
+
     # 从placement_params中获取财务数据
     net_income = project_params.get('net_income', 253532329.85)  # 净利润
 
@@ -98,6 +107,7 @@ def generate_chapter(context):
             import tushare as ts
 
             pro = ts.pro_api(ts_token)
+            n_years = get_industry_forecast_years(stock_code, pro)
             trade_date = (datetime.now() - timedelta(days=1)).strftime('%Y%m%d')
 
             df_basic = pro.daily_basic(
@@ -595,7 +605,7 @@ def generate_chapter(context):
     fcfs = []
     fcf_sources = []  # 记录每个FCF的来源
     if actual_data_years > 0 and 'historical_fcf_data' in project_params:
-        # 使用最新历史FCF数据作为基准，正向预测未来5年
+        # 使用最新历史FCF数据作为基准，正向预测未来n年
         historical_fcf = project_params['historical_fcf_data']['data']
         latest_fcf = historical_fcf[-1]['fcf'] * 100000000  # 最新一年（2025年）FCF，转回元
         latest_year = historical_fcf[-1]['year']
@@ -625,7 +635,7 @@ def generate_chapter(context):
         # 注意：实际使用 fcf_growth_example（已在前面计算，优先使用FCF CAGR）
         # 这里不重新计算，保持与前面的一致性
 
-        add_paragraph(document, f' 使用最新历史数据（{latest_year}年FCF {latest_fcf/100000000:.2f}亿元）作为基准，正向预测未来3年和5年')
+        add_paragraph(document, f' 使用最新历史数据（{latest_year}年FCF {latest_fcf/100000000:.2f}亿元）作为基准，正向预测未来{n_years}年')
         add_paragraph(document, '')
         add_paragraph(document, f' 历史FCF增长率分析：')
 
@@ -642,8 +652,8 @@ def generate_chapter(context):
             add_paragraph(document, f'• 历史CAGR: {cagr_fcf_display*100:.2f}%（正FCF数据不足，使用默认增长率）')
         add_paragraph(document, f'• 采用预测增长率: {fcf_growth_example*100:.1f}%（基于近3年FCFF的CAGR）')
 
-        # 基于最新FCF，预测未来5年（用于5年期DCF）
-        for i in range(5):
+        # 基于最新FCF，预测未来n年（用于DCF）
+        for i in range(n_years):
             fcf_proj = latest_fcf * ((1 + fcf_growth_example) ** (i + 1))
             fcfs.append(fcf_proj)
             if i == 0:
@@ -652,8 +662,8 @@ def generate_chapter(context):
                 fcf_sources.append(f"预测（增长{fcf_growth_example*100:.1f}%）")
     else:
         # 全部使用预测
-        fcfs = [base_fcf * ((1 + fcf_growth_example) ** i) for i in range(1, 6)]
-        fcf_sources = [f"预测（增长{fcf_growth_example*100:.1f}%）" for _ in range(5)]
+        fcfs = [base_fcf * ((1 + fcf_growth_example) ** i) for i in range(1, n_years + 1)]
+        fcf_sources = [f"预测（增长{fcf_growth_example*100:.1f}%）" for _ in range(n_years)]
 
     # 添加逐年FCF预测和折现计算
     add_title(document, '3.3.4 逐年FCF预测与折现计算', level=3)
@@ -690,12 +700,12 @@ def generate_chapter(context):
 
     terminal_fcf = fcfs[-1] * (1 + growth_example)
     terminal_value = terminal_fcf / (wacc_example - growth_example)
-    pv_terminal = terminal_value / ((1 + wacc_example) ** 5)
+    pv_terminal = terminal_value / ((1 + wacc_example) ** n_years)
 
     add_paragraph(document, '终值代表预测期后公司持续经营的价值，采用永续增长模型计算：')
     add_paragraph(document, '')
     add_paragraph(document, '计算公式：')
-    add_paragraph(document, '终值 = 第5年末FCF × (1 + 永续增长率) / (WACC - 永续增长率)')
+    add_paragraph(document, f'终值 = 第{n_years}年末FCF × (1 + 永续增长率) / (WACC - 永续增长率)')
     add_paragraph(document, '')
     add_paragraph(document, '计算步骤：')
     add_paragraph(document, f'1. 第5年末FCF = {fcfs[-1]/100000000:.2f} 亿元')
@@ -823,14 +833,14 @@ def generate_dcf_valuation_heatmap(save_path, current_price, net_income, total_s
         row = []
         for w in wacc_range:
             # DCF计算：FCF按g增长，5年预测期
-            fcfs = [base_fcf * ((1 + g) ** i) for i in range(1, 6)]
+            fcfs = [base_fcf * ((1 + g) ** i) for i in range(1, n_years + 1)]
             pv_fcfs = sum([fcf / ((1 + w) ** (i+1)) for i, fcf in enumerate(fcfs)])
 
             # 终值：永续增长率设为3%
             terminal_growth = 0.03
             terminal_fcf = fcfs[-1] * (1 + terminal_growth)
             terminal_value = terminal_fcf / (w - terminal_growth) if w > terminal_growth else 0
-            pv_terminal = terminal_value / ((1 + w) ** 5)
+            pv_terminal = terminal_value / ((1 + w) ** n_years)
 
             enterprise_value = pv_fcfs + pv_terminal  # 亿元
             equity_value = enterprise_value - net_debt  # 减净债务（亿元）

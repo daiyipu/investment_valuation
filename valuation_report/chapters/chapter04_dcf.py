@@ -22,6 +22,7 @@ if _PROJECT_DIR not in sys.path:
     sys.path.insert(0, _PROJECT_DIR)
 
 from utils.dcf_calculator import DCFCalculator
+from industry_dcf.utils.industry_dcf_calculator import get_industry_forecast_years
 
 
 def _safe_val(row, field):
@@ -235,7 +236,7 @@ def generate_chapter(context):
         'kd': wacc_result.get('kd_pretax', wacc_result.get('risk_free_rate', 0.0185) * 1.5),
         'tax_rate': wacc_result.get('tax_rate', 0.25),
         'terminal_growth_rate': 0.025,
-        'forecast_years': 5,
+        'forecast_years': get_industry_forecast_years(stock_code, context.get('pro')),
     }
 
     calculator = DCFCalculator()

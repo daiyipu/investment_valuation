@@ -19,6 +19,7 @@ import pandas as pd
 import numpy as np
 
 from utils.dcf_calculator import DCFCalculator
+from industry_dcf.utils.industry_dcf_calculator import get_industry_forecast_years
 
 
 class Chapter06Valuation:
@@ -631,7 +632,7 @@ class Chapter06Valuation:
         wacc_range = [0.07, 0.08, 0.09, 0.10, 0.11, 0.12]
         growth_range = [0.02, 0.05, 0.08, 0.10, 0.15, 0.20]
         tg = dcf_result.get('terminal_growth_rate', 0.03)
-        forecast_years = 5
+        forecast_years = dcf_result.get('forecast_years', 5)
 
         matrix = []
         for g in growth_range:
@@ -825,9 +826,14 @@ class Chapter06Valuation:
             cashflow = financial_statements.get('cashflow', pd.DataFrame())
 
             if not cashflow.empty:
+                stock_code = self.project_info.get('stock_code', '')
+                pro = self.project_info.get('pro_api')
+                industry_years = get_industry_forecast_years(stock_code, pro) if pro and stock_code else 5
+
                 self._dcf_result = self.dcf_calculator.calculate_dcf_valuation(
                     financial_statements=financial_statements,
-                    financial_indicators=financial_indicators
+                    financial_indicators=financial_indicators,
+                    forecast_years=industry_years,
                 )
         return self._dcf_result
 

@@ -52,6 +52,11 @@ class DingZengRiskReportGenerator:
         self.ts_client = TushareClient(tushare_token)
         self.pro = self.ts_client.get_pro()
 
+        # Inject pro_api into project_info so chapters can access it
+        if not self._pro_api_injected:
+            self.project_info['pro_api'] = self.pro
+            self._pro_api_injected = True
+
         # 用传入参数覆盖config中的项目信息
         self.stock_code = stock_code
         self.stock_name = stock_name
@@ -61,6 +66,9 @@ class DingZengRiskReportGenerator:
             'report_date': datetime.now().strftime('%Y-%m-%d'),
             'version': 'v1.0',
         }
+
+        # pro_api will be added to project_info after Tushare initialization
+        self._pro_api_injected = False
 
         # 将项目信息写入config，以便各章节通过config.get('project')访问
         self.config['project'] = self.project_info
