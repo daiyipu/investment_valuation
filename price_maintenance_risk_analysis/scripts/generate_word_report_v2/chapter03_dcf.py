@@ -43,7 +43,7 @@ from module_utils import (
 )
 
 # Import industry-calibrated forecast years
-_ROOT_DIR = os.path.dirname(os.path.dirname(PROJECT_DIR))
+_ROOT_DIR = os.path.dirname(PROJECT_DIR)
 if _ROOT_DIR not in sys.path:
     sys.path.insert(0, _ROOT_DIR)
 from industry_dcf.utils.industry_dcf_calculator import get_industry_forecast_years
@@ -215,7 +215,7 @@ def generate_chapter(context):
     add_title(document, '3.2 估值敏感性分析', level=2)
 
     dcf_chart_path = os.path.join(IMAGES_DIR, '04_dcf_valuation_heatmap.png')
-    generate_dcf_valuation_heatmap(dcf_chart_path, project_params['current_price'], net_income, total_shares, net_debt)
+    generate_dcf_valuation_heatmap(dcf_chart_path, project_params['current_price'], net_income, total_shares, net_debt, n_years)
 
     add_paragraph(document, '图表 3: DCF估值敏感性分析矩阵')
     add_image(document, dcf_chart_path, width=Inches(6))
@@ -805,7 +805,7 @@ if __name__ == '__main__':
     # 测试代码
     print("第三章：DCF估值分析模块")
     print("本模块需要通过 generate_chapter(context) 函数调用")
-def generate_dcf_valuation_heatmap(save_path, current_price, net_income, total_shares, net_debt=20.0):
+def generate_dcf_valuation_heatmap(save_path, current_price, net_income, total_shares, net_debt=20.0, n_years=5):
     """生成DCF估值热力图
 
     参数:
@@ -814,6 +814,7 @@ def generate_dcf_valuation_heatmap(save_path, current_price, net_income, total_s
         net_income: 净利润（元）
         total_shares: 总股数
         net_debt: 净债务（亿元），默认20亿元
+        n_years: 预测年数，默认5年
     """
     fig, ax = plt.subplots(figsize=(14, 9))
 

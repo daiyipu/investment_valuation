@@ -180,13 +180,13 @@ def print_result(result: dict):
     print(f"\n📊 公司分析:")
     print(f"  公司FCFF/营收比:     {result.get('company_fcff_rev_ratio', 'N/A')}")
     print(f"  行业FCFF/营收中位数:  {result['industry_fcff_rev_ratio_median']:.4f}")
-    print(f"  调整系数 α:          {result['alpha']:.4f}")
+    print(f"  基准FCFF(万元):      {result['base_fcff']:,.0f}")
     print(f"  最新营收(万元):      {result['company_revenue_latest']:,.0f}")
-    print(f"  公司营收增长率:       {result.get('company_revenue_growth', 0):.2%}")
+    print(f"  公司FCFF增长率:       {result.get('company_fcff_growth', 0):.2%}")
 
     print(f"\n📈 增长参数:")
-    print(f"  行业增长率:          {result['industry_growth_rate']:.2%}")
-    print(f"  混合增长率:          {result['blended_growth_rate']:.2%}")
+    print(f"  行业FCFF增长率:      {result['industry_growth_rate']:.2%}")
+    print(f"  公司FCFF增长率:      {result['company_fcff_growth']:.2%}")
     print(f"  永续增长率:          {result['terminal_growth_rate']:.2%}")
     print(f"  预测年数:            {result['forecast_years']}年 (由行业PE+FCFF反推)")
 

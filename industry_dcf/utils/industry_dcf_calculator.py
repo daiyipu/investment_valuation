@@ -7,13 +7,13 @@ Uses Shenwan L3 industry median parameters as a stable baseline,
 then applies individual company adjustment coefficients.
 
 Core formula:
-    FCFF_t = Revenue_t × industry_median_fcff_rev_ratio × α
-    α = clamp(company_fcff_rev_ratio / industry_median, 0.3, 3.0)
+    FCFF_t = base_fcff × (1 + blended_growth_rate)^t
+    base_fcff = average of recent 3 years' FCFF
 
 Three-step process:
-    1. Calculate industry benchmark (median FCFF/revenue, growth, PE)
-    2. Compute individual company adjustment coefficient
-    3. Run DCF with blended parameters
+    1. Calculate industry benchmark (median FCFF growth, PE, forecast years)
+    2. Compute blended growth rate from industry + company FCFF growth
+    3. Project FCFF from base_fcff using growth rate, then discount
 """
 
 import sys
@@ -37,8 +37,6 @@ class IndustryDCFCalculator:
     ALPHA_MAX = 3.0
 
     DEFAULT_PARAMS = {
-        'forecast_years': 5,
-        'terminal_growth_rate': 0.025,
         'industry_weight': 0.7,
         'alpha_bounds': (0.3, 3.0),
         'risk_free_rate': 0.0185,
@@ -139,9 +137,10 @@ class IndustryDCFCalculator:
         fcff_g = np.array(all_fcff_growth_rates) if all_fcff_growth_rates else np.array([0.05])
         rev_g = np.array(all_rev_growth_rates) if all_rev_growth_rates else np.array([0.05])
 
-        fcff_rev_median = float(np.median(ratios))
+        fcff_rev_median = float(np.median(ratios[ratios > 0])) if (ratios > 0).any() else float(np.median(ratios))
         fcff_growth_median = float(np.median(fcff_g))
         rev_growth_median = float(np.median(rev_g))
+
         maturity = self._determine_industry_maturity(rev_growth_median, len(companies))
 
         # Industry PE: from daily_basic real market data
@@ -760,14 +759,59 @@ class IndustryDCFCalculator:
         inc_df = self._to_dataframe(company_financials.get('income'))
         bs_df = self._to_dataframe(company_financials.get('balance'))
 
-        # --- Company FCFF/Revenue ---
+        # --- Company FCFF ---
         company_fcff = self._calc_company_fcff(cf_df, inc_df, p['tax_rate'])
         company_rev = self._extract_annual_revenue(inc_df)
 
         if not company_fcff:
             return {'error': f'{ts_code} 无有效FCFF数据'}
 
-        # Company's own FCFF/Revenue ratio (latest 3 years average)
+        # Base FCFF selection (3 rules, in priority order):
+        #   ① Default: average of recent 3 years
+        #   ② Sanity check: company FCFF/Revenue should not deviate too much from industry
+        #   ③ If deviation too large: use the latest year that is within reasonable range
+        ind_ratio = industry_benchmark['fcff_rev_ratio']['median']
+        recent_fcff_data = []
+        for f in company_fcff[-3:]:
+            fcff = f['fcff']
+            if fcff == 0:
+                continue
+            rev = company_rev.get(f['year'], 0)
+            recent_fcff_data.append({'year': f['year'], 'fcff': fcff, 'rev': rev})
+
+        if not recent_fcff_data:
+            return {'error': f'{ts_code} 无有效FCFF基准值'}
+
+        # ① Default: 3-year average
+        base_fcff = float(np.mean([d['fcff'] for d in recent_fcff_data]))
+
+        # ② Check deviation from industry
+        if ind_ratio != 0:
+            same_sign_data = []
+            for d in recent_fcff_data:
+                if d['rev'] and d['rev'] > 0:
+                    ratio = d['fcff'] / d['rev']
+                    rel_diff = ratio / ind_ratio
+                    same_sign = (ratio > 0) == (ind_ratio > 0)
+                    same_sign_data.append({
+                        'fcff': d['fcff'],
+                        'rel_diff': rel_diff,
+                        'same_sign': same_sign,
+                    })
+            if same_sign_data:
+                all_same_sign = all(s['same_sign'] for s in same_sign_data)
+                avg_rel = float(np.mean([abs(s['rel_diff']) for s in same_sign_data]))
+                # ③ Deviation too large: pick latest year within reasonable range
+                if not all_same_sign or avg_rel > 3:
+                    for s in reversed(same_sign_data):
+                        if s['same_sign'] and abs(s['rel_diff']) <= 3:
+                            base_fcff = s['fcff']
+                            break
+                    else:
+                        # No qualifying year, use latest
+                        base_fcff = same_sign_data[-1]['fcff']
+
+        # Company's own FCFF/Revenue ratio (for reference)
         company_ratios = []
         for f in company_fcff[-3:]:
             rev = company_rev.get(f['year'])
@@ -781,20 +825,17 @@ class IndustryDCFCalculator:
         # Industry benchmark ratio
         ind_ratio = industry_benchmark['fcff_rev_ratio']['median']
 
-        # Adjustment coefficient
+        # Adjustment coefficient (kept for reference)
         alpha = self._calculate_alpha(company_ratio, ind_ratio)
 
-        # Company revenue growth rate
-        company_rev_growth = self._estimate_growth_from_series(company_rev)
+        # FCFF growth rate: company's own FCFF CAGR
+        company_fcff_map = {f['year']: f['fcff'] for f in company_fcff}
+        company_fcff_growth = self._estimate_growth_from_series(company_fcff_map)
         ind_growth = industry_benchmark['fcff_growth_rate']['median']
-        blended_growth = self._blend_growth_rate(ind_growth, company_rev_growth, p['industry_weight'])
 
-        # Latest revenue
+        # Latest revenue (for reference)
         latest_year = max(company_rev.keys()) if company_rev else None
         latest_revenue = company_rev.get(latest_year, 0) if latest_year else 0
-
-        if latest_revenue <= 0:
-            return {'error': f'{ts_code} 营收数据无效'}
 
         # --- WACC ---
         market_data = market_data or {}
@@ -808,10 +849,8 @@ class IndustryDCFCalculator:
         wacc = wacc_info['wacc']
 
         projected = self._project_fcff_series(
-            base_revenue=latest_revenue,
-            industry_ratio=ind_ratio,
-            alpha=alpha,
-            growth_rate=blended_growth,
+            base_fcff=base_fcff,
+            growth_rate=company_fcff_growth,
             n_years=n_years,
         )
 
@@ -831,9 +870,7 @@ class IndustryDCFCalculator:
 
         # Sensitivity matrix
         sensitivity = self._generate_sensitivity(
-            latest_revenue=latest_revenue,
-            industry_ratio=ind_ratio,
-            alpha=alpha,
+            base_fcff=base_fcff,
             net_debt=net_debt,
             total_shares=total_shares,
             current_price=current_price,
@@ -849,13 +886,14 @@ class IndustryDCFCalculator:
             'company_fcff_rev_ratio': round(company_ratio, 4) if company_ratio is not None else None,
             'industry_fcff_rev_ratio_median': round(ind_ratio, 4),
             'alpha': round(alpha, 4),
+            'base_fcff': round(base_fcff, 2),
             'company_revenue_latest': round(latest_revenue, 2),
-            'company_revenue_growth': round(company_rev_growth, 4),
+            'company_fcff_growth': round(company_fcff_growth, 4),
             'company_fcff_history': company_fcff[-5:],
 
             # Growth parameters
             'industry_growth_rate': round(ind_growth, 4),
-            'blended_growth_rate': round(blended_growth, 4),
+            'company_fcff_growth': round(company_fcff_growth, 4),
             'terminal_growth_rate': terminal_g,
             'forecast_years': n_years,
 
@@ -915,7 +953,7 @@ class IndustryDCFCalculator:
                     growth_rates.append(g)
         if not growth_rates:
             return 0.05
-        return float(np.clip(np.mean(growth_rates), -0.10, 0.20))
+        return float(np.mean(growth_rates))
 
     def _calculate_wacc(
         self,
@@ -962,21 +1000,16 @@ class IndustryDCFCalculator:
 
     def _project_fcff_series(
         self,
-        base_revenue: float,
-        industry_ratio: float,
-        alpha: float,
+        base_fcff: float,
         growth_rate: float,
         n_years: int,
     ) -> list:
-        """Project future FCFF using industry-calibrated parameters."""
+        """Project future FCFF: FCFF_t = base_fcff × (1 + growth_rate)^t."""
         projected = []
-        rev = base_revenue
         for t in range(1, n_years + 1):
-            rev = rev * (1 + growth_rate)
-            fcff = rev * industry_ratio * alpha
+            fcff = base_fcff * (1 + growth_rate) ** t
             projected.append({
                 'year': t,
-                'revenue': round(rev, 2),
                 'fcff': round(fcff, 2),
             })
         return projected
@@ -1050,9 +1083,7 @@ class IndustryDCFCalculator:
 
     def _generate_sensitivity(
         self,
-        latest_revenue: float,
-        industry_ratio: float,
-        alpha: float,
+        base_fcff: float,
         net_debt: float,
         total_shares: float,
         current_price: float,
@@ -1064,17 +1095,13 @@ class IndustryDCFCalculator:
             return {}
 
         wacc_values = np.arange(0.07, 0.12 + 0.001, 0.01).tolist()
-        growth_values = np.arange(0.02, 0.20 + 0.001, 0.04).tolist()
+        growth_values = np.arange(0.10, 1.00 + 0.001, 0.10).tolist()
 
         matrix = []
         for w in wacc_values:
             row = []
             for g in growth_values:
-                projected = []
-                rev = latest_revenue
-                for _ in range(n_years):
-                    rev *= (1 + g)
-                    projected.append(rev * industry_ratio * alpha)
+                projected = [base_fcff * (1 + g) ** t for t in range(1, n_years + 1)]
 
                 pv = sum(f / (1 + w) ** t for t, f in enumerate(projected, 1))
                 last_f = projected[-1] if projected else 0
