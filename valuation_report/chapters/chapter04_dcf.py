@@ -22,7 +22,7 @@ if _PROJECT_DIR not in sys.path:
     sys.path.insert(0, _PROJECT_DIR)
 
 from utils.dcf_calculator import DCFCalculator
-from industry_dcf.utils.industry_dcf_calculator import get_industry_forecast_years
+from industry_dcf.utils.industry_dcf_calculator import get_industry_forecast_years, get_industry_fcff_rev_ratio
 
 
 def _safe_val(row, field):
@@ -240,10 +240,13 @@ def generate_chapter(context):
     }
 
     calculator = DCFCalculator()
+    pro = context.get('pro')
+    industry_fcff_rev = get_industry_fcff_rev_ratio(stock_code, pro) if pro and stock_code else 0
     dcf_result = calculator.calculate_dcf_valuation(
         financial_statements=financial_statements,
         financial_indicators=context.get('financial_indicators', pd.DataFrame()),
         params=dcf_params,
+        industry_fcff_rev_ratio=industry_fcff_rev,
     )
 
     if 'error' in dcf_result:

@@ -1484,21 +1484,55 @@ def generate_chapter(context):
         })
 
     if dcf_scenario_options:
-        # 对DCF估值场景应用基础筛选条件
+        # 对DCF估值场景应用基础筛选条件，并记录每个场景的筛选结果
         qualified_dcf_scenarios = []
+        all_dcf_screening = []
         for scenario in dcf_scenario_options:
             condition_1 = True  # 放开溢价率下限限制
             condition_2 = scenario['median_return'] > 8  # 中位数收益率 > 8%
             condition_3 = scenario['var_95'] > -30  # 95% VaR > -30%
             condition_4 = scenario['profit_prob'] > 70  # 盈利概率 > 70%
+            passed = condition_1 and condition_2 and condition_3 and condition_4
 
-            if condition_1 and condition_2 and condition_3 and condition_4:
+            # 记录未通过的原因
+            reasons = []
+            if not condition_2:
+                reasons.append(f"中位数收益率{scenario['median_return']:+.1f}%≤8%")
+            if not condition_3:
+                reasons.append(f"VaR95={scenario['var_95']:+.1f}%<-30%")
+            if not condition_4:
+                reasons.append(f"盈利概率{scenario['profit_prob']:.1f}%≤70%")
+
+            screening_result = {
+                **scenario,
+                'passed': passed,
+                'reason': '；'.join(reasons) if reasons else '✓ 全部通过',
+            }
+            all_dcf_screening.append(screening_result)
+
+            if passed:
                 qualified_dcf_scenarios.append(scenario)
 
-        # 显示筛选结果
+        # 显示所有DCF场景的筛选结果
         add_paragraph(document, 'DCF估值场景筛选统计：', bold=True)
         add_paragraph(document, f'• DCF估值场景总数：{len(dcf_scenario_options)}个')
         add_paragraph(document, f'• 符合条件的场景数：{len(qualified_dcf_scenarios)}个')
+        add_paragraph(document, '')
+
+        add_paragraph(document, '全部DCF估值场景筛选明细：', bold=True)
+        screening_table_data = []
+        for s in all_dcf_screening:
+            status = '符合' if s['passed'] else '不符合'
+            screening_table_data.append([
+                s['name'],
+                f"{s['premium_rate']:+.1f}%",
+                f"{s['median_return']:+.1f}%",
+                f"{s['var_95']:+.1f}%",
+                f"{s['profit_prob']:.1f}%",
+                status,
+                s['reason'],
+            ])
+        add_table_data(document, ['情景方案', '溢价率', '中位数收益率', '95% VaR', '盈利概率', '筛选结果', '原因'], screening_table_data)
         add_paragraph(document, '')
 
         if qualified_dcf_scenarios:
@@ -1529,7 +1563,9 @@ def generate_chapter(context):
             add_paragraph(document, f'• DCF估值支持报价：共{len(qualified_dcf_scenarios)}个场景符合条件')
             add_paragraph(document, f'• DCF估值指导溢价率：{min_dcf_premium:+.2f}% 至 {max_dcf_premium:+.2f}%')
             add_paragraph(document, f'• 说明：DCF估值基于公司内在价值，为定增定价提供理论参考')
-        # 删除了"无DCF估值场景符合条件"的显示
+        else:
+            add_paragraph(document, '当前没有DCF估值场景满足全部筛选条件。', bold=True)
+            add_paragraph(document, '建议根据具体场景的未通过原因，适当调整筛选标准或估值参数。')
 
         add_paragraph(document, '')
     # 删除了无DCF估值场景的提示信息

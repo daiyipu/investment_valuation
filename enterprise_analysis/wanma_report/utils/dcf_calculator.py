@@ -28,7 +28,9 @@ class DCFCalculator:
         market_risk_premium: float = 0.06,
         beta: float = 1.0,
         terminal_growth_rate: float = 0.03,
-        forecast_years: int = 5
+        forecast_years: int = 5,
+        industry_fcff_rev_ratio: float = None,
+        latest_revenue: float = 0
     ) -> Dict[str, Any]:
         """计算DCF估值
 
@@ -64,10 +66,16 @@ class DCFCalculator:
         # 获取历史FCF数据并预测
         fcf_data = self._prepare_fcf_data(financial_statements, financial_indicators)
 
+        # 计算行业比率反算的fallback FCFF
+        fallback_fcff = 0
+        if industry_fcff_rev_ratio and industry_fcff_rev_ratio > 0 and latest_revenue > 0:
+            fallback_fcff = latest_revenue * industry_fcff_rev_ratio
+
         if not fcf_data.empty:
             # 方法1: FCFF法计算企业价值
             ev, terminal_value_ff, cf_list_ff = self._calculate_ev_from_fcff(
-                fcf_data, wacc, terminal_growth_rate, forecast_years
+                fcf_data, wacc, terminal_growth_rate, forecast_years,
+                fallback_base_fcff=fallback_fcff
             )
             result['method1_ev'] = ev
             result['method1_terminal_value'] = terminal_value_ff
@@ -235,7 +243,8 @@ class DCFCalculator:
         fcf_data: pd.DataFrame,
         wacc: float,
         terminal_growth_rate: float,
-        forecast_years: int
+        forecast_years: int,
+        fallback_base_fcff: float = 0
     ) -> Tuple[float, float, list]:
         """方法1: FCFF法计算企业价值"""
         if fcf_data.empty:
@@ -253,6 +262,19 @@ class DCFCalculator:
         avg_growth = max(min(avg_growth, 0.20), -0.10)
 
         last_fcff = fcff_values[-1] if len(fcff_values) > 0 else 0
+
+        # Fallback: if FCFF is abnormal, use industry-derived base
+        if last_fcff <= 0:
+            if fallback_base_fcff > 0:
+                last_fcff = fallback_base_fcff
+            elif len(fcff_values) >= 2:
+                recent_avg = np.mean(fcff_values[-3:])
+                if recent_avg > 0:
+                    last_fcff = recent_avg
+
+        if last_fcff <= 0:
+            return 0, 0, []
+
         forecast_cf_list = []
 
         for year in range(1, forecast_years + 1):
@@ -305,6 +327,17 @@ class DCFCalculator:
         avg_growth = max(min(avg_growth, 0.20), -0.10)
 
         last_fcfe = fcfe_values[-1] if len(fcfe_values) > 0 else 0
+
+        # Fallback: if FCFE is abnormal, use 3-year average
+        if last_fcfe <= 0 and len(fcfe_values) >= 2:
+            recent_avg = np.mean(fcfe_values[-3:])
+            if recent_avg > 0:
+                last_fcfe = recent_avg
+
+        if last_fcfe <= 0:
+            last_fcfe = 0
+            return 0, 0, []
+
         forecast_cf_list = []
 
         for year in range(1, forecast_years + 1):

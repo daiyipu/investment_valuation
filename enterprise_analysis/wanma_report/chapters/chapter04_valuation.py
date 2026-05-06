@@ -19,7 +19,7 @@ import pandas as pd
 import numpy as np
 
 from utils.dcf_calculator import DCFCalculator
-from industry_dcf.utils.industry_dcf_calculator import get_industry_forecast_years
+from industry_dcf.utils.industry_dcf_calculator import get_industry_forecast_years, get_industry_fcff_rev_ratio
 
 
 class Chapter04Valuation:
@@ -735,15 +735,29 @@ class Chapter04Valuation:
             cashflow = financial_statements.get('cashflow', pd.DataFrame())
 
             if not cashflow.empty:
-                # Get industry-calibrated forecast years
+                # Get industry-calibrated forecast years and FCFF/Revenue ratio
                 stock_code = self.project_info.get('stock_code', '')
                 pro = self.project_info.get('pro_api')
                 industry_years = get_industry_forecast_years(stock_code, pro) if pro and stock_code else 5
+                industry_fcff_rev = get_industry_fcff_rev_ratio(stock_code, pro) if pro and stock_code else 0
+
+                # Get latest revenue for industry fallback
+                latest_revenue = 0
+                income_df = financial_statements.get('income', pd.DataFrame())
+                if not income_df.empty:
+                    inc_annual = income_df[income_df['end_date'].astype(str).str.contains('1231', na=False)]
+                    if not inc_annual.empty:
+                        rev_col = 'total_revenue'
+                        latest_rev = inc_annual.sort_values('end_date').iloc[-1].get(rev_col, 0)
+                        if latest_rev and not (isinstance(latest_rev, float) and np.isnan(latest_rev)):
+                            latest_revenue = float(latest_rev) / 10000  # yuan → wan yuan
 
                 self._dcf_result = self.dcf_calculator.calculate_dcf_valuation(
                     financial_statements=financial_statements,
                     financial_indicators=financial_indicators,
                     forecast_years=industry_years,
+                    industry_fcff_rev_ratio=industry_fcff_rev,
+                    latest_revenue=latest_revenue,
                 )
         return self._dcf_result
 

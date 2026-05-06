@@ -10,6 +10,8 @@
 """
 
 import os
+import json
+import time
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -41,6 +43,9 @@ def generate_chapter(context):
     IMAGES_DIR = context['IMAGES_DIR']
 
     stock_code = project_params.get('stock_code', '')  # 从project_params获取（与V2一致）
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(_script_dir)), 'data')
+    cache_file = os.path.join(DATA_DIR, f"{stock_code.replace('.', '_')}_relative_valuation.json")
 
     # ==================== 二、相对估值分析 ====================
     add_title(document, '二、相对估值分析', level=1)
@@ -51,187 +56,237 @@ def generate_chapter(context):
     add_title(document, '2.1 估值指标对比', level=2)
 
     # 使用 Tushare 数据获取估值指标
-    try:
-        ts_token = os.environ.get('TUSHARE_TOKEN', '')
+    # 优先读取本地缓存（仅当天创建的有效）
+    _cache_loaded = False
+    today_str = datetime.now().strftime('%Y%m%d')
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                cached = json.load(f)
+            # 只使用当天创建的缓存
+            if cached.get('cache_date') == today_str:
+                current_metrics_val = cached['current_metrics']
+                peer_companies_val = pd.DataFrame(cached['peer_companies'])
+                sw_index_pe = cached.get('sw_index_pe')
+                sw_index_pb = cached.get('sw_index_pb')
+                sw_index_ps = cached.get('sw_index_ps')
+                target_index_code = cached.get('target_index_code')
+                target_industry_l3 = cached.get('target_industry_l3')
+                trade_date = cached.get('trade_date')
+                print(f"  使用缓存的相对估值数据（交易日期: {trade_date}）")
+                _cache_loaded = True
+        except (json.JSONDecodeError, KeyError):
+            pass
 
-        if ts_token:
-            import tushare as ts
-            import time
+    if not _cache_loaded:
+        sw_index_pe = None
+        sw_index_pb = None
+        sw_index_ps = None
+        target_index_code = None
+        target_industry_l3 = None
 
-            pro = ts.pro_api(ts_token)
+        try:
+            ts_token = os.environ.get('TUSHARE_TOKEN', '')
 
-            # 获取目标公司的估值数据（自动往前推1-2天直到找到交易日）
-            trade_date = None
-            df_target = None
+            if ts_token:
+                import tushare as ts
 
-            for days_back in range(1, 6):  # 尝试往前推1-5天
-                test_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y%m%d')
+                pro = ts.pro_api(ts_token)
+
+                # 获取目标公司的估值数据（自动往前推1-2天直到找到交易日）
+                trade_date = None
+                df_target = None
+
+                for days_back in range(1, 16):  # 尝试往前推1-15天（覆盖长假）
+                    test_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y%m%d')
+                    try:
+                        df_target = pro.daily_basic(
+                            ts_code=stock_code,
+                            trade_date=test_date,
+                            fields='ts_code,trade_date,close,pe_ttm,pb,ps_ttm,total_mv'
+                        )
+                        if not df_target.empty:
+                            trade_date = test_date
+                            break
+                    except:
+                        continue
+
+                if df_target is None or df_target.empty:
+                    raise ValueError("未获取到目标公司数据（请检查网络或交易日历）")
+
+                current_metrics_val = {
+                    'pe': float(df_target.iloc[0]['pe_ttm']) if pd.notna(df_target.iloc[0]['pe_ttm']) else None,
+                    'pb': float(df_target.iloc[0]['pb']) if pd.notna(df_target.iloc[0]['pb']) else None,
+                    'ps': float(df_target.iloc[0]['ps_ttm']) if pd.notna(df_target.iloc[0]['ps_ttm']) else None
+                }
+                print(f" 获取相对估值数据成功，交易日期: {trade_date}")
+
+                # 获取申万三级行业分类的同行公司（与 notebook 一致）
+                df_industry = pro.index_member_all(ts_code=stock_code)
+                if df_industry.empty:
+                    raise ValueError("未获取到行业分类")
+
+                # 过滤：只保留该股票的记录（防止API返回过多数据）
+                df_industry = df_industry[df_industry['ts_code'] == stock_code]
+                if df_industry.empty:
+                    raise ValueError(f"未找到{stock_code}的行业分类记录")
+
+                # 显示所有行业分类记录，方便调试
+                df_industry = df_industry.sort_values('in_date', ascending=False)
+                print(f" 获取到{len(df_industry)}条行业分类记录:")
+
+                for idx, row in df_industry.head(5).iterrows():
+                    print(f"   [{idx}] {row['in_date']}: 一级={row.get('index_name', 'N/A')}, L1={row.get('l1_name', 'N/A')}, L2={row.get('l2_name', 'N/A')}, L3={row.get('l3_name', 'N/A')}")
+                    print(f"        L1代码={row.get('l1_code', 'N/A')}, L2代码={row.get('l2_code', 'N/A')}, L3代码={row.get('l3_code', 'N/A')}")
+
+                latest_industry = df_industry.iloc[0]
+
+                # 调试输出
+                print(f"\n 使用最新记录:")
+                print(f"   股票代码: {stock_code}")
+                print(f"   申万一级: {latest_industry.get('index_name', 'N/A')}")
+                print(f"   申万三级代码: {latest_industry['l3_code']}")
+                print(f"   申万三级名称: {latest_industry['l3_name']}")
+
+                target_index_code = latest_industry['l3_code']  # 申万三级行业指数代码
+                target_industry_l3 = latest_industry['l3_name']  # 行业名称
+
+                # 获取该三级行业的所有成分股
+                print(f"\n 正在使用指数代码 {target_index_code} 查询成分股...")
+
+                df_peers = pro.index_member_all(l3_code=target_index_code)
+                print(f" 获取到 {len(df_peers)} 条成分股记录")
+
+                df_peers = df_peers[df_peers['ts_code'] != stock_code]
+
+                # 获取同行公司基本信息
+                peer_codes = df_peers['ts_code'].unique().tolist()
+                print(f" 过滤后剩余 {len(peer_codes)} 个同行公司")
+
+                peer_basic = pro.stock_basic(ts_code=','.join(peer_codes[:30]),
+                                           fields='ts_code,name,market')
+
+                peer_stocks_all = pd.merge(df_peers, peer_basic, on='ts_code', how='left')
+                peer_stocks_all = peer_stocks_all.drop_duplicates(subset=['ts_code'])
+
+                # 限制数量并排序（扩充到30家）
+                peer_stocks_all = peer_stocks_all.head(30)
+                peer_names_dict = dict(zip(peer_stocks_all['ts_code'], peer_stocks_all['name_x']))
+
+                # 获取同行公司的估值数据
+                peer_data_list = []
+                for peer_code in peer_stocks_all['ts_code'].tolist():
+                    peer_name = peer_names_dict.get(peer_code, peer_code)
+
+                    try:
+                        df_peer = pro.daily_basic(
+                            ts_code=peer_code,
+                            trade_date=trade_date,
+                            fields='ts_code,pe_ttm,pb,ps_ttm,total_mv'
+                        )
+                        if not df_peer.empty:
+                            df_peer['name'] = peer_name
+                            peer_data_list.append(df_peer)
+                    except:
+                        pass
+
+                    time.sleep(0.2)  # 避免请求过快
+
+                # 获取申万行业指数的PE数据（使用sw_daily接口）
                 try:
-                    df_target = pro.daily_basic(
-                        ts_code=stock_code,
-                        trade_date=test_date,
-                        fields='ts_code,trade_date,close,pe_ttm,pb,ps_ttm,total_mv'
+                    print(f" 正在获取申万行业指数PE数据: {target_index_code}")
+                    end_date = datetime.now().strftime('%Y%m%d')
+                    start_date = (datetime.now() - timedelta(days=10)).strftime('%Y%m%d')
+                    df_index = pro.sw_daily(
+                        ts_code=target_index_code,
+                        start_date=start_date,
+                        end_date=end_date
                     )
-                    if not df_target.empty:
-                        trade_date = test_date
-                        break
-                except:
-                    continue
+                    if df_index is not None and not df_index.empty:
+                        latest = df_index.iloc[-1]
+                        sw_index_pe = latest.get('pe', None)
+                        sw_index_pb = latest.get('pb', None)
+                        sw_index_ps = latest.get('ps_ttm', None)
+                        if sw_index_pe:
+                            print(f" 申万行业指数PE数据获取成功: PE={sw_index_pe:.2f}, PB={sw_index_pb:.2f}")
+                    else:
+                        print(f" 申万行业指数PE数据为空")
+                except Exception as e:
+                    print(f" 获取申万行业指数PE数据失败: {e}")
 
-            if df_target is None or df_target.empty:
-                raise ValueError("未获取到目标公司数据（请检查网络或交易日历）")
+                if peer_data_list:
+                    peer_companies_val = pd.concat(peer_data_list, ignore_index=True)
 
-            current_metrics_val = {
-                'pe': float(df_target.iloc[0]['pe_ttm']) if pd.notna(df_target.iloc[0]['pe_ttm']) else None,
-                'pb': float(df_target.iloc[0]['pb']) if pd.notna(df_target.iloc[0]['pb']) else None,
-                'ps': float(df_target.iloc[0]['ps_ttm']) if pd.notna(df_target.iloc[0]['ps_ttm']) else None
-            }
-            print(f" 获取相对估值数据成功，交易日期: {trade_date}")
+                    # 过滤异常数据
+                    peer_companies_val = peer_companies_val[
+                        (peer_companies_val['pe_ttm'] > 0) &
+                        (peer_companies_val['pe_ttm'] < 500) &
+                        (peer_companies_val['pb'] > 0) &
+                        (peer_companies_val['pb'] < 20)
+                    ]
 
-            # 获取申万三级行业分类的同行公司（与 notebook 一致）
-            df_industry = pro.index_member_all(ts_code=stock_code)
-            if df_industry.empty:
-                raise ValueError("未获取到行业分类")
+                    # 重命名列并进行单位转换
+                    peer_companies_val['market_cap'] = peer_companies_val['total_mv'] / 10000
 
-            # 过滤：只保留该股票的记录（防止API返回过多数据）
-            df_industry = df_industry[df_industry['ts_code'] == stock_code]
-            if df_industry.empty:
-                raise ValueError(f"未找到{stock_code}的行业分类记录")
+                    peer_companies_val = peer_companies_val.rename(columns={
+                        'pe_ttm': 'pe',
+                        'ps_ttm': 'ps',
+                        'ts_code': 'code'
+                    })
 
-            # 显示所有行业分类记录，方便调试
-            df_industry = df_industry.sort_values('in_date', ascending=False)
-            print(f" 获取到{len(df_industry)}条行业分类记录:")
-
-            for idx, row in df_industry.head(5).iterrows():
-                print(f"   [{idx}] {row['in_date']}: 一级={row.get('index_name', 'N/A')}, L1={row.get('l1_name', 'N/A')}, L2={row.get('l2_name', 'N/A')}, L3={row.get('l3_name', 'N/A')}")
-                print(f"        L1代码={row.get('l1_code', 'N/A')}, L2代码={row.get('l2_code', 'N/A')}, L3代码={row.get('l3_code', 'N/A')}")
-
-            latest_industry = df_industry.iloc[0]
-
-            # 调试输出
-            print(f"\n 使用最新记录:")
-            print(f"   股票代码: {stock_code}")
-            print(f"   申万一级: {latest_industry.get('index_name', 'N/A')}")
-            print(f"   申万三级代码: {latest_industry['l3_code']}")
-            print(f"   申万三级名称: {latest_industry['l3_name']}")
-
-            target_index_code = latest_industry['l3_code']  # 申万三级行业指数代码
-            target_industry_l3 = latest_industry['l3_name']  # 行业名称
-
-            # 获取该三级行业的所有成分股
-            print(f"\n 正在使用指数代码 {target_index_code} 查询成分股...")
-
-            df_peers = pro.index_member_all(l3_code=target_index_code)
-            print(f" 获取到 {len(df_peers)} 条成分股记录")
-
-            df_peers = df_peers[df_peers['ts_code'] != stock_code]
-
-            # 获取同行公司基本信息
-            peer_codes = df_peers['ts_code'].unique().tolist()
-            print(f" 过滤后剩余 {len(peer_codes)} 个同行公司")
-
-            peer_basic = pro.stock_basic(ts_code=','.join(peer_codes[:30]),
-                                       fields='ts_code,name,market')
-
-            peer_stocks_all = pd.merge(df_peers, peer_basic, on='ts_code', how='left')
-            peer_stocks_all = peer_stocks_all.drop_duplicates(subset=['ts_code'])
-
-            # 限制数量并排序（扩充到30家）
-            peer_stocks_all = peer_stocks_all.head(30)
-            peer_names_dict = dict(zip(peer_stocks_all['ts_code'], peer_stocks_all['name_x']))
-
-            # 获取同行公司的估值数据
-            peer_data_list = []
-            for peer_code in peer_stocks_all['ts_code'].tolist():
-                peer_name = peer_names_dict.get(peer_code, peer_code)
-
-                try:
-                    df_peer = pro.daily_basic(
-                        ts_code=peer_code,
-                        trade_date=trade_date,
-                        fields='ts_code,pe_ttm,pb,ps_ttm,total_mv'
-                    )
-                    if not df_peer.empty:
-                        df_peer['name'] = peer_name
-                        peer_data_list.append(df_peer)
-                except:
-                    pass
-
-                time.sleep(0.2)  # 避免请求过快
-
-            # 获取申万行业指数的PE数据（使用sw_daily接口）
-            sw_index_pe = None
-            sw_index_pb = None
-            sw_index_ps = None
-            try:
-                print(f" 正在获取申万行业指数PE数据: {target_index_code}")
-                # 获取最近5天的数据，取最新的一条
-                end_date = datetime.now().strftime('%Y%m%d')
-                start_date = (datetime.now() - timedelta(days=10)).strftime('%Y%m%d')
-                df_index = pro.sw_daily(
-                    ts_code=target_index_code,
-                    start_date=start_date,
-                    end_date=end_date
-                )
-                if df_index is not None and not df_index.empty:
-                    # sw_daily返回的是pe列（不是pe_ttm）
-                    latest = df_index.iloc[-1]
-                    sw_index_pe = latest.get('pe', None)
-                    sw_index_pb = latest.get('pb', None)
-                    sw_index_ps = latest.get('ps_ttm', None)  # sw_daily可能没有ps_ttm
-                    if sw_index_pe:
-                        print(f" 申万行业指数PE数据获取成功: PE={sw_index_pe:.2f}, PB={sw_index_pb:.2f}")
+                    peer_companies_val = peer_companies_val[['name', 'code', 'pe', 'ps', 'pb', 'market_cap']]
                 else:
-                    print(f" 申万行业指数PE数据为空")
-            except Exception as e:
-                print(f" 获取申万行业指数PE数据失败: {e}")
+                    raise ValueError("未获取到同行公司估值数据")
 
-            if peer_data_list:
-                peer_companies_val = pd.concat(peer_data_list, ignore_index=True)
-
-                # 过滤异常数据
-                peer_companies_val = peer_companies_val[
-                    (peer_companies_val['pe_ttm'] > 0) &
-                    (peer_companies_val['pe_ttm'] < 500) &
-                    (peer_companies_val['pb'] > 0) &
-                    (peer_companies_val['pb'] < 20)
-                ]
-
-                # 重命名列并进行单位转换
-                # total_mv单位是万元，需要转换为亿元（除以10000）
-                peer_companies_val['market_cap'] = peer_companies_val['total_mv'] / 10000
-
-                peer_companies_val = peer_companies_val.rename(columns={
-                    'pe_ttm': 'pe',
-                    'ps_ttm': 'ps',
-                    'ts_code': 'code'
-                })
-
-                # 只保留需要的列
-                peer_companies_val = peer_companies_val[['name', 'code', 'pe', 'ps', 'pb', 'market_cap']]
             else:
-                raise ValueError("未获取到同行公司估值数据")
+                raise ValueError("TUSHARE_TOKEN 未设置")
 
+            # API 成功，保存缓存
+            try:
+                cache_data = {
+                    'cache_date': today_str,
+                    'trade_date': trade_date,
+                    'current_metrics': current_metrics_val,
+                    'peer_companies': peer_companies_val.to_dict('records'),
+                    'sw_index_pe': sw_index_pe,
+                    'sw_index_pb': sw_index_pb,
+                    'sw_index_ps': sw_index_ps,
+                    'target_index_code': target_index_code,
+                    'target_industry_l3': target_industry_l3,
+                }
+                with open(cache_file, 'w', encoding='utf-8') as f:
+                    json.dump(cache_data, f, ensure_ascii=False, indent=2)
+                print(f"  已缓存相对估值数据到 {os.path.basename(cache_file)}")
+            except Exception:
+                pass
+
+        except Exception as e:
+            print(f"获取相对估值数据失败: {e}，使用示例数据")
+        # 初始化申万行业变量（防止 UnboundLocalError）
+        sw_index_pe = None
+        sw_index_pb = None
+        sw_index_ps = None
+        target_index_code = None
+        target_industry_l3 = None
+
+        # 尝试使用过期缓存（API不可用时的降级方案）
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, 'r', encoding='utf-8') as f:
+                    cached = json.load(f)
+                current_metrics_val = cached['current_metrics']
+                peer_companies_val = pd.DataFrame(cached['peer_companies'])
+                sw_index_pe = cached.get('sw_index_pe')
+                sw_index_pb = cached.get('sw_index_pb')
+                sw_index_ps = cached.get('sw_index_ps')
+                target_index_code = cached.get('target_index_code')
+                target_industry_l3 = cached.get('target_industry_l3')
+                trade_date = cached.get('trade_date')
+                print(f"  使用过期缓存的相对估值数据（交易日期: {trade_date}）")
+            except (json.JSONDecodeError, KeyError):
+                raise ValueError(f"无法获取相对估值数据且无可用缓存，请检查网络连接")
         else:
-            raise ValueError("TUSHARE_TOKEN 未设置")
-
-    except Exception as e:
-        print(f"获取相对估值数据失败: {e}，使用示例数据")
-        # 使用示例数据
-        current_metrics_val = {
-            'pe': 56.24,
-            'pb': 3.71,
-            'ps': 2.30
-        }
-
-        peer_companies_val = pd.DataFrame({
-            'name': ['立讯精密', '歌尔股份', '蓝思科技', '长盈精密', '领益智造', '安洁科技', '比亚迪电子'],
-            'code': ['002475.SZ', '002241.SZ', '300433.SZ', '300115.SZ', '002600.SZ', '002635.SZ', '0285.HK'],
-            'pe': [20.5, 25.8, 22.3, 28.6, 18.9, 32.1, 24.5],
-            'ps': [1.2, 1.8, 1.5, 2.1, 1.0, 2.5, 1.6],
-            'pb': [2.8, 3.2, 2.5, 3.8, 2.1, 4.2, 3.0],
-            'market_cap': [120, 80, 50, 45, 65, 25, 90]
-        })
+            raise ValueError(f"无法获取相对估值数据且无缓存，请检查网络连接")
 
     # 计算行业统计指标
     industry_stats_val = {

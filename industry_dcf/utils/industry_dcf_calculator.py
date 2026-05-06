@@ -770,6 +770,7 @@ class IndustryDCFCalculator:
         #   ① Default: average of recent 3 years
         #   ② Sanity check: company FCFF/Revenue should not deviate too much from industry
         #   ③ If deviation too large: use the latest year that is within reasonable range
+        #   ④ If FCFF is abnormal (negative/extreme): use industry FCFF/Revenue ratio to derive
         ind_ratio = industry_benchmark['fcff_rev_ratio']['median']
         recent_fcff_data = []
         for f in company_fcff[-3:]:
@@ -810,6 +811,13 @@ class IndustryDCFCalculator:
                     else:
                         # No qualifying year, use latest
                         base_fcff = same_sign_data[-1]['fcff']
+
+        # ④ Fallback: if FCFF is abnormal, derive from industry FCFF/Revenue ratio
+        latest_rev = company_rev.get(max(company_rev.keys()), 0) if company_rev else 0
+        if latest_rev > 0 and ind_ratio > 0:
+            industry_derived_fcff = latest_rev * ind_ratio
+            if base_fcff <= 0 or base_fcff > latest_rev * 0.5 or base_fcff < latest_rev * 0.005:
+                base_fcff = industry_derived_fcff
 
         # Company's own FCFF/Revenue ratio (for reference)
         company_ratios = []
@@ -1206,3 +1214,48 @@ def get_industry_forecast_years(
 
     except Exception:
         return 5
+
+
+def get_industry_fcff_rev_ratio(
+    ts_code: str,
+    pro,
+    force_refresh: bool = False,
+) -> float:
+    """Get industry median FCFF/Revenue ratio for a stock.
+
+    Returns 0 on any failure.
+    """
+    import time as _time
+    from .rate_limiter import RateLimiter as _RL
+    from .shenwan_lookup import find_l3_by_code as _find_l3
+    from .industry_data_fetcher import IndustryDataFetcher as _IDF
+
+    if not ts_code or pro is None:
+        return 0
+
+    try:
+        industry_info = _find_l3(ts_code, pro)
+        if not industry_info:
+            return 0
+        l3_code = industry_info['l3_code']
+
+        rl = _RL()
+        fetcher = _IDF(pro, rate_limiter=rl)
+        calculator = IndustryDCFCalculator()
+
+        industry_financials = fetcher.get_industry_financials(
+            l3_code, force_refresh=force_refresh,
+        )
+        industry_pe_data = fetcher.get_industry_daily_basics(l3_code)
+
+        benchmark = calculator.calculate_industry_benchmark(
+            industry_financials, industry_pe_data=industry_pe_data,
+        )
+
+        if 'error' in benchmark:
+            return 0
+
+        return benchmark.get('fcff_rev_ratio', {}).get('median', 0)
+
+    except Exception:
+        return 0

@@ -166,6 +166,7 @@ class DCFCalculator:
         financial_statements: dict,
         financial_indicators: pd.DataFrame = None,
         params: Optional[dict] = None,
+        industry_fcff_rev_ratio: float = 0,
     ) -> dict:
         """Run full three-method DCF valuation.
 
@@ -219,6 +220,22 @@ class DCFCalculator:
 
         # 6. Project FCF
         last_fcf = fcf_list[-1]['fcf']
+
+        # Fallback: if FCF is abnormal, use industry FCFF/Revenue ratio
+        if last_fcf <= 0:
+            if industry_fcff_rev_ratio > 0 and income_df is not None and not income_df.empty:
+                inc_annual = income_df[income_df['end_date'].astype(str).str.contains('1231', na=False)]
+                if not inc_annual.empty:
+                    latest_rev = inc_annual.sort_values('end_date').iloc[-1].get('total_revenue', 0)
+                    if latest_rev and not (isinstance(latest_rev, float) and np.isnan(latest_rev)):
+                        last_fcf = float(latest_rev) / 10000 * industry_fcff_rev_ratio
+            if last_fcf <= 0:
+                recent_fcfs = [f['fcf'] for f in fcf_list[-3:] if f['fcf'] > 0]
+                if recent_fcfs:
+                    last_fcf = np.mean(recent_fcfs)
+            if last_fcf <= 0:
+                return {'error': 'FCF基准值为负或零，无法进行DCF估值'}
+
         n_years = p['forecast_years']
         terminal_g = p['terminal_growth_rate']
 

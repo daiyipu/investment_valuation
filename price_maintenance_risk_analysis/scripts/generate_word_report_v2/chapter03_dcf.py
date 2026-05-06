@@ -492,6 +492,12 @@ def generate_chapter(context):
             # 获取第二章的同行公司数据
             peer_companies_val = context.get('peer_companies_val', None)
 
+            # 补充市值参数（current_price × total_shares）
+            if 'market_cap' not in project_params and total_shares:
+                current_price = project_params.get('current_price', 0)
+                if current_price:
+                    project_params['market_cap'] = current_price * total_shares
+
             wacc_result = calculator.calculate_wacc(
                 stock_code=stock_code,
                 market_data=project_params,  # 传递市场数据

@@ -21,8 +21,8 @@
     "win_rate_60d": 0.5666666666666667,
     "win_rate_120d": 0.5666666666666667,
     "win_rate_250d": 0.584,
-    "locked_issue_date": "20260504",
-    "locked_data_date": "20260503"
+    "locked_issue_date": "20260506",
+    "locked_data_date": "20260505"
   },
   "深证成指": {
     "current_level": 15107.5532,
@@ -46,8 +46,8 @@
     "win_rate_60d": 0.5,
     "win_rate_120d": 0.5416666666666666,
     "win_rate_250d": 0.548,
-    "locked_issue_date": "20260504",
-    "locked_data_date": "20260503"
+    "locked_issue_date": "20260506",
+    "locked_data_date": "20260505"
   },
   "沪深300": {
     "current_level": 4807.3069,
@@ -71,8 +71,8 @@
     "win_rate_60d": 0.48333333333333334,
     "win_rate_120d": 0.5,
     "win_rate_250d": 0.552,
-    "locked_issue_date": "20260504",
-    "locked_data_date": "20260503"
+    "locked_issue_date": "20260506",
+    "locked_data_date": "20260505"
   },
   "中证500": {
     "current_level": 8349.5081,
@@ -96,8 +96,8 @@
     "win_rate_60d": 0.5,
     "win_rate_120d": 0.5583333333333333,
     "win_rate_250d": 0.572,
-    "locked_issue_date": "20260504",
-    "locked_data_date": "20260503"
+    "locked_issue_date": "20260506",
+    "locked_data_date": "20260505"
   },
   "创业板指": {
     "current_level": 3677.1485,
@@ -121,8 +121,8 @@
     "win_rate_60d": 0.45,
     "win_rate_120d": 0.5,
     "win_rate_250d": 0.536,
-    "locked_issue_date": "20260504",
-    "locked_data_date": "20260503"
+    "locked_issue_date": "20260506",
+    "locked_data_date": "20260505"
   },
   "科创50": {
     "current_level": 1571.0652,
@@ -146,8 +146,8 @@
     "win_rate_60d": 0.5166666666666667,
     "win_rate_120d": 0.5166666666666667,
     "win_rate_250d": 0.536,
-    "locked_issue_date": "20260504",
-    "locked_data_date": "20260503"
+    "locked_issue_date": "20260506",
+    "locked_data_date": "20260505"
   },
   "中证1000": {
     "current_level": 6342.2636,
@@ -171,7 +171,7 @@
     "win_rate_60d": 0.5166666666666667,
     "win_rate_120d": 0.5416666666666666,
     "win_rate_250d": 0.556,
-    "locked_issue_date": "20260504",
-    "locked_data_date": "20260503"
+    "locked_issue_date": "20260506",
+    "locked_data_date": "20260505"
   }
 }
