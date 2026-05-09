@@ -23,6 +23,7 @@ from industry_dcf.utils.rate_limiter import RateLimiter
 from industry_dcf.utils.shenwan_lookup import find_l3_by_code
 from industry_dcf.utils.industry_data_fetcher import IndustryDataFetcher
 from industry_dcf.utils.industry_dcf_calculator import IndustryDCFCalculator
+from industry_dcf.utils.pe_estimator import PEEstimator, print_pe_result
 
 # Try to import WACCCalculator from valuation_report
 try:
@@ -139,6 +140,18 @@ def run_industry_dcf(
         params=params,
     )
 
+    # 8. PE estimation
+    print("计算标准化PE估值...")
+    pe_estimator = PEEstimator()
+    pe_result = pe_estimator.estimate_normalized_pe(
+        ts_code=ts_code,
+        industry_financials=industry_financials,
+        industry_benchmark=benchmark,
+        company_financials=company_data,
+        market_data=market_data,
+    )
+    result['pe_estimation'] = pe_result
+
     return result
 
 
@@ -243,6 +256,11 @@ def print_result(result: dict):
             print(row_str)
 
     print("\n" + "=" * 70)
+
+    # PE estimation results
+    pe = result.get('pe_estimation')
+    if pe:
+        print_pe_result(pe)
 
 
 def main():

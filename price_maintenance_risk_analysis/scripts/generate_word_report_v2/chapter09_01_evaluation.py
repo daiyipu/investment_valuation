@@ -43,7 +43,7 @@ def generate_chapter(context):
     mc_volatility = context['results'].get('mc_volatility', 0.30)
     mc_drift = context['results'].get('mc_drift', 0.08)
 
-    # ==================== 9.1 综合评估汇总 ====================
+    # ==================== 9.1 分析汇总 ====================
     # 注意：9.1的level=2标题已在chapter09_advice.py中生成，这里只生成内容
 
     add_paragraph(document, '本节对前面章节的分析结果进行综合汇总，涵盖相对估值、DCF估值、蒙特卡洛模拟、情景分析、压力测试和VaR风险度量等核心内容。')
@@ -71,21 +71,21 @@ def generate_chapter(context):
 
     # 添加评估
     if current_price > ma120:
-        price_eval = "高于半年线，偏强势"
+        price_eval = "高于半年线"
     elif current_price < ma120 * 0.95:
-        price_eval = "低于半年线5%以上，偏弱势"
+        price_eval = "低于半年线5%以上"
     else:
-        price_eval = "在半年线附近，震荡整理"
+        price_eval = "在半年线附近"
     ma_comparison_data[1][6] = price_eval
 
     add_table_data(document, ma_comparison_data[0], [ma_comparison_data[1]])
 
     add_paragraph(document, '')
-    add_paragraph(document, ' 技术位置解读：', bold=True)
+    add_paragraph(document, ' 均线位置：', bold=True)
     add_paragraph(document, f'• 当前价格：{current_price:.2f}元')
     add_paragraph(document, f'• 相对MA20：{((current_price/ma20 - 1) * 100):+.2f}%')
     add_paragraph(document, f'• 相对MA120：{((current_price/ma120 - 1) * 100):+.2f}%')
-    add_paragraph(document, f'• 技术位置：{price_eval}')
+    add_paragraph(document, f'• 相对MA250：{((current_price/ma250 - 1) * 100):+.2f}%')
     
     # ==================== 9.1.2 相对估值分析汇总 ====================
     add_title(document, '9.1.2 相对估值分析', level=3)

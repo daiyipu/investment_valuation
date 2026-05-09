@@ -20,6 +20,114 @@ from module_utils import generate_break_even_chart, generate_market_turnover_cha
 import chapter09_01_evaluation
 
 
+def calculate_decision_conclusion(thresholds, qualified_by_category=None,
+                                   category_premium_ranges=None,
+                                   qualified_dcf=None, qualified_pe=None):
+    """纯计算函数：根据分析结果返回结构化定增决策结论。
+
+    Args:
+        thresholds: 9.3.2.6.2 汇总的阈值列表 [(name, {min, max, avg, count})]
+        qualified_by_category: 历史场景按类别分组的符合条件情景
+        category_premium_ranges: 各类别溢价率范围
+        qualified_dcf: DCF估值符合条件情景列表
+        qualified_pe: 修正PE估值符合条件情景列表
+
+    Returns:
+        dict with keys:
+            premium_range: {'min': float, 'max': float} or None
+            valid_thresholds: int
+            step1: {'pass': bool, 'detail': str}
+            step2: {'pass': bool, 'detail': str}
+            step3: {'pass': bool, 'detail': str}
+            decision: str ('建议参与本次定向增发' / '不建议本阶段参与该企业的本笔定向增发')
+            summary: str (完整详情，适合写入Excel)
+    """
+    valid_thresholds = len(thresholds)
+
+    if valid_thresholds < 2:
+        return {
+            'premium_range': None,
+            'valid_thresholds': valid_thresholds,
+            'step1': {'pass': False, 'detail': '阈值不足'},
+            'step2': {'pass': False, 'detail': '阈值不足'},
+            'step3': {'pass': False, 'detail': '阈值不足'},
+            'decision': '不建议本阶段参与该企业的本笔定向增发',
+            'summary': f'有效阈值数量不足（{valid_thresholds}个，需≥2个），不建议本阶段参与该企业的本笔定向增发。',
+        }
+
+    # 溢价率区间
+    all_min = [t['min_premium'] for _, t in thresholds]
+    all_max = [t['max_premium'] for _, t in thresholds]
+    min_premium = max(all_min)
+    max_premium = min(all_max)
+    premium_range = {'min': min_premium, 'max': max_premium}
+
+    # ① 历史数据场景
+    hist_count = 0
+    hist_cats = []
+    if qualified_by_category:
+        for cat, scenarios in qualified_by_category.items():
+            if scenarios:
+                hist_count += 1
+                hist_cats.append(cat)
+    step1_pass = hist_count >= 2
+    step1_detail = f'{hist_count}/3个历史子场景有符合条件'
+    if hist_cats:
+        step1_detail += '（' + '、'.join(hist_cats) + '）'
+
+    # ② 预期估值场景
+    dcf_ok = bool(qualified_dcf)
+    pe_ok = bool(qualified_pe)
+    val_count = (1 if dcf_ok else 0) + (1 if pe_ok else 0)
+    step2_pass = val_count >= 1
+    val_parts = []
+    if dcf_ok:
+        val_parts.append('DCF估值')
+    if pe_ok:
+        val_parts.append('修正PE估值')
+    step2_detail = f'{val_count}/2个大场景符合（' + ('、'.join(val_parts) if val_parts else '均无符合') + '）'
+
+    # ③ 反向推算/蒙特卡洛/参数构造
+    method_names = {name for name, _ in thresholds}
+    method_count = 0
+    method_details = []
+    for m in ['反向推算', '蒙特卡洛模拟', '参数构造场景']:
+        if m in method_names:
+            method_count += 1
+            method_details.append(m)
+    step3_pass = method_count >= 2
+    step3_detail = f'{method_count}/3个有效（' + '、'.join(method_details) + '）' if method_details else f'{method_count}/3个有效'
+
+    all_pass = step1_pass and step2_pass and step3_pass
+
+    if all_pass:
+        decision = '建议参与本次定向增发'
+    else:
+        decision = '不建议本阶段参与该企业的本笔定向增发'
+
+    # 汇总文本
+    lines = []
+    lines.append(f'溢价率区间（相对MA20）：[{min_premium:+.2f}%, {max_premium:+.2f}%]')
+    s1_status = '✓ 通过' if step1_pass else '✗ 未通过'
+    s2_status = '✓ 通过' if step2_pass else '✗ 未通过'
+    s3_status = '✓ 通过' if step3_pass else '✗ 未通过'
+    lines.append(f'①历史数据场景：{step1_detail} → {s1_status}')
+    lines.append(f'②预期估值场景：{step2_detail} → {s2_status}')
+    lines.append(f'③量化方法：{step3_detail} → {s3_status}')
+    lines.append(f'结论：{decision}')
+    summary = '\n'.join(lines)
+
+    return {
+        'premium_range': premium_range,
+        'valid_thresholds': valid_thresholds,
+        'step1': {'pass': step1_pass, 'detail': step1_detail},
+        'step2': {'pass': step2_pass, 'detail': step2_detail},
+        'step3': {'pass': step3_pass, 'detail': step3_detail},
+        'decision': decision,
+        'summary': summary,
+    }
+
+
 def calculate_macro_environment_assessment(market_data, document, context=None, industry_cycle_override=None):
     """
     计算市场环境评估得分
@@ -298,9 +406,11 @@ def generate_chapter(context):
     add_paragraph(document, '本章节从风险控制角度，给出盈亏平衡分析、核心指标汇总、最终报价建议和全面的风险提示。')
     add_paragraph(document, '基于保守原则，确保投资决策在合理风险可控范围内进行。')
 
-    # ==================== 9.1 综合评估汇总 ====================
+    # ==================== 9.1 分析汇总 ====================
+    add_title(document, '9.1 分析汇总', level=2)
+
     # 生成9.1节的内容（通过调用chapter09_01_evaluation模块）
-    print("\n 生成第九章第一节：综合评估汇总...")
+    print("\n 生成第九章第一节：分析汇总...")
     context = chapter09_01_evaluation.generate_chapter(context)
 
     # ==================== 9.2 盈亏平衡分析 ====================
@@ -1430,11 +1540,10 @@ def generate_chapter(context):
         add_paragraph(document, '• 原因：第六章情景分析未生成或数据缺失')
         add_paragraph(document, '• 建议：请检查第六章情景分析是否正常生成')
 
-    # ==================== 9.3.2.4 基于DCF估值场景的筛选 ====================
-    add_title(document, '9.3.2.4 基于DCF估值场景的筛选', level=4)
+    # ==================== 9.3.2.4 基于预期估值场景的筛选 ====================
+    add_title(document, '9.3.2.4 基于预期估值场景的筛选', level=4)
 
-    add_paragraph(document, '本节基于DCF内在估值模型的情景分析，从绝对估值角度筛选符合风险收益要求的报价方案。')
-    add_paragraph(document, 'DCF估值基于公司基本面分析，通过预测未来现金流并折现计算内在价值，为定增定价提供理论支撑。')
+    add_paragraph(document, '本节基于DCF内在估值和修正PE估值的情景分析，从绝对估值和行业修正估值两个角度筛选符合风险收益要求的报价方案。')
     add_paragraph(document, '')
 
     # 基础筛选条件
@@ -1459,8 +1568,8 @@ def generate_chapter(context):
 
         scenario_name = scenario_obj.get('name', '')
 
-        # 只处理DCF估值场景
-        if 'DCF估值' not in scenario_name:
+        # 只处理估值场景（DCF估值和修正PE估值）
+        if 'DCF估值' not in scenario_name and '修正PE估值' not in scenario_name:
             continue
 
         # 提取关键指标
@@ -1484,7 +1593,11 @@ def generate_chapter(context):
         })
 
     if dcf_scenario_options:
-        # 对DCF估值场景应用基础筛选条件，并记录每个场景的筛选结果
+        # 区分DCF和修正PE场景
+        dcf_only = [s for s in dcf_scenario_options if 'DCF估值' in s['name']]
+        pe_only = [s for s in dcf_scenario_options if '修正PE估值' in s['name']]
+
+        # 对估值场景应用基础筛选条件，并记录每个场景的筛选结果
         qualified_dcf_scenarios = []
         all_dcf_screening = []
         for scenario in dcf_scenario_options:
@@ -1513,13 +1626,17 @@ def generate_chapter(context):
             if passed:
                 qualified_dcf_scenarios.append(scenario)
 
-        # 显示所有DCF场景的筛选结果
-        add_paragraph(document, 'DCF估值场景筛选统计：', bold=True)
-        add_paragraph(document, f'• DCF估值场景总数：{len(dcf_scenario_options)}个')
-        add_paragraph(document, f'• 符合条件的场景数：{len(qualified_dcf_scenarios)}个')
+        # 显示筛选统计
+        add_paragraph(document, '估值场景筛选统计：', bold=True)
+        add_paragraph(document, f'• DCF估值场景：{len(dcf_only)}个')
+        add_paragraph(document, f'• 修正PE估值场景：{len(pe_only)}个')
+        qualified_dcf = [s for s in qualified_dcf_scenarios if 'DCF估值' in s['name']]
+        qualified_pe = [s for s in qualified_dcf_scenarios if '修正PE估值' in s['name']]
+        add_paragraph(document, f'• DCF估值符合条件：{len(qualified_dcf)}个')
+        add_paragraph(document, f'• 修正PE估值符合条件：{len(qualified_pe)}个')
         add_paragraph(document, '')
 
-        add_paragraph(document, '全部DCF估值场景筛选明细：', bold=True)
+        add_paragraph(document, '全部估值场景筛选明细：', bold=True)
         screening_table_data = []
         for s in all_dcf_screening:
             status = '符合' if s['passed'] else '不符合'
@@ -1536,39 +1653,45 @@ def generate_chapter(context):
         add_paragraph(document, '')
 
         if qualified_dcf_scenarios:
-            add_paragraph(document, '符合条件的DCF估值场景：', bold=True)
+            add_paragraph(document, '符合条件的估值场景：', bold=True)
 
-            # 创建DCF估值场景表格
-            dcf_scenarios_data = []
-            for scenario in qualified_dcf_scenarios:
-                dcf_scenarios_data.append([
-                    scenario['name'],
-                    f"{scenario.get('drift', 0)*100:.0f}%",
-                    f"{scenario.get('volatility', 0)*100:.0f}%",
-                    f"{scenario['premium_rate']:+.1f}%",
-                    f"{scenario['median_return']:+.1f}%",
-                    f"{scenario['var_95']:+.1f}%",
-                    f"{scenario['profit_prob']:.1f}%"
-                ])
+            # 分别展示DCF和修正PE符合条件的场景
+            for val_type, val_label, val_list in [
+                ('DCF估值', 'DCF估值', qualified_dcf),
+                ('修正PE估值', '修正PE估值', qualified_pe),
+            ]:
+                if not val_list:
+                    continue
+                add_paragraph(document, f'  {val_label}符合条件场景：', bold=True)
+                val_scenarios_data = []
+                for scenario in val_list:
+                    val_scenarios_data.append([
+                        scenario['name'],
+                        f"{scenario.get('drift', 0)*100:.0f}%",
+                        f"{scenario.get('volatility', 0)*100:.0f}%",
+                        f"{scenario['premium_rate']:+.1f}%",
+                        f"{scenario['median_return']:+.1f}%",
+                        f"{scenario['var_95']:+.1f}%",
+                        f"{scenario['profit_prob']:.1f}%"
+                    ])
 
-            add_table_data(document, ['情景方案', '漂移率', '波动率', '溢价率', '中位数收益率', '95% VaR', '盈利概率'], dcf_scenarios_data)
-            add_paragraph(document, '')
+                add_table_data(document, ['情景方案', '漂移率', '波动率', '溢价率', '中位数收益率', '95% VaR', '盈利概率'], val_scenarios_data)
+                add_paragraph(document, '')
 
-            # 计算DCF估值场景的溢价率区间
-            dcf_premiums = [s['premium_rate'] for s in qualified_dcf_scenarios]
-            min_dcf_premium = min(dcf_premiums)
-            max_dcf_premium = max(dcf_premiums)
-
-            add_paragraph(document, 'DCF估值投资建议：', bold=True)
-            add_paragraph(document, f'• DCF估值支持报价：共{len(qualified_dcf_scenarios)}个场景符合条件')
-            add_paragraph(document, f'• DCF估值指导溢价率：{min_dcf_premium:+.2f}% 至 {max_dcf_premium:+.2f}%')
-            add_paragraph(document, f'• 说明：DCF估值基于公司内在价值，为定增定价提供理论参考')
+            # 投资建议
+            add_paragraph(document, '估值场景投资建议：', bold=True)
+            if qualified_dcf:
+                dcf_premiums = [s['premium_rate'] for s in qualified_dcf]
+                add_paragraph(document, f'• DCF估值：{len(qualified_dcf)}个场景符合条件，指导溢价率 {min(dcf_premiums):+.2f}% 至 {max(dcf_premiums):+.2f}%')
+            if qualified_pe:
+                pe_premiums = [s['premium_rate'] for s in qualified_pe]
+                add_paragraph(document, f'• 修正PE估值：{len(qualified_pe)}个场景符合条件，指导溢价率 {min(pe_premiums):+.2f}% 至 {max(pe_premiums):+.2f}%')
         else:
-            add_paragraph(document, '当前没有DCF估值场景满足全部筛选条件。', bold=True)
+            add_paragraph(document, '当前没有估值场景满足全部筛选条件。', bold=True)
             add_paragraph(document, '建议根据具体场景的未通过原因，适当调整筛选标准或估值参数。')
 
         add_paragraph(document, '')
-    # 删除了无DCF估值场景的提示信息
+    # 删除了无估值场景的提示信息
 
     add_paragraph(document, '')
 
@@ -1725,11 +1848,12 @@ def generate_chapter(context):
     add_title(document, '9.3.2.6.1 溢价率情景对照表', level=5)
 
     add_paragraph(document, '为明确推导过程，以下是各筛选方法中每一档溢价率对应的情景统计：')
-    add_paragraph(document, '本表综合了五种场景类型的分析结果：')
+    add_paragraph(document, '本表综合了六种场景类型的分析结果：')
     add_paragraph(document, '• 反向推算：基于目标收益率8%的反向推算结果')
     add_paragraph(document, '• 蒙特卡洛模拟：基于ARIMA+GARCH预测参数的585种情景模拟')
     add_paragraph(document, '• 历史数据：基于历史数据情景（市场指数、行业PE、个股PE）')
     add_paragraph(document, '• DCF估值：基于DCF内在估值模型的绝对估值分析')
+    add_paragraph(document, '• 修正PE估值：基于行业净利率修正的PE估值分析')
     add_paragraph(document, '• 参数构造：基于585种参数构造情景（13种漂移率×5种波动率×9种溢价率）')
     add_paragraph(document, '')
 
@@ -1844,7 +1968,23 @@ def generate_chapter(context):
                 'is_qualified': True
             })
 
-    # 5. 参数构造场景
+    # 5. 修正PE估值场景
+    if 'qualified_pe' in locals() and qualified_pe:
+        for scenario in qualified_pe:
+            drift_val = scenario.get('drift', 0)
+            vol_val = scenario.get('volatility', 0)
+            params = f"漂移率{drift_val*100:.0f}%, 波动率{vol_val*100:.0f}%"
+            results = f"概率{scenario['profit_prob']:.1f}%, 收益{scenario['median_return']:.1f}%"
+            all_scenarios_details.append({
+                'premium_rate': scenario['premium_rate'],
+                'scenario_type': '修正PE估值',
+                'scenario_name': '修正PE估值',
+                'params': params,
+                'results': results,
+                'is_qualified': True
+            })
+
+    # 6. 参数构造场景
     if 'environment_matched_scenarios' in locals() and environment_matched_scenarios:
         for scenario in environment_matched_scenarios:
             all_scenarios_details.append({
@@ -2080,6 +2220,19 @@ def generate_chapter(context):
             'count': 1  # 反向推算只有一个结果
         }))
 
+    # 修正PE估值场景
+    if 'qualified_pe' in locals() and qualified_pe:
+        pe_premiums_list = [s['premium_rate'] for s in qualified_pe]
+        pe_min_premium = min(pe_premiums_list)
+        pe_max_premium = max(pe_premiums_list)
+        pe_avg = (pe_min_premium + pe_max_premium) / 2
+        thresholds.append(('修正PE估值', {
+            'min_premium': pe_min_premium,
+            'max_premium': pe_max_premium,
+            'avg_premium': pe_avg,
+            'count': len(qualified_pe)
+        }))
+
     if len(thresholds) >= 2:
         # 提取所有阈值的最小值和最大值
         all_min_premiums = []
@@ -2106,16 +2259,6 @@ def generate_chapter(context):
             max_val = threshold['max_premium']
             add_paragraph(document, f'• {name}阈值：[{min_val:+.1f}%, {max_val:+.1f}%]（名义溢价率，相对MA20{count_str}）')
 
-        add_paragraph(document, '')
-        add_paragraph(document, '最终溢价率区间建议：', bold=True)
-        add_paragraph(document, f'• 名义溢价率区间（相对MA20）：[{min_premium:+.2f}%, {max_premium:+.2f}%]')
-        add_paragraph(document, f'• 区间宽度：{premium_range:.2f}%')
-
-        add_paragraph(document, '')
-        add_paragraph(document, '最终建议：', bold=True)
-        add_paragraph(document, f'• 名义溢价率上限：≤{max_premium:.2f}%（相对MA20，硬约束）')
-        add_paragraph(document, f'• 名义溢价率下限：{min_premium:+.2f}%（相对MA20，最优方案）')
-        add_paragraph(document, f'• 区间宽度：{premium_range:.2f}%')
     else:
         add_paragraph(document, '• 有效阈值数量不足（少于2个）')
         add_paragraph(document, '• 无法形成可靠的溢价率区间，建议谨慎参与本次定增')
@@ -2125,15 +2268,76 @@ def generate_chapter(context):
         add_paragraph(document, '  - 反向推算：上限值≤-20%，无溢价空间（无法在定增规则下达到8%收益目标）')
         add_paragraph(document, '• 建议：参考单一可用的有效阈值（如有）或谨慎参与本次定增')
 
-        # ==================== 9.4 主要风险提示 ====================
-    add_title(document, '9.4 主要风险提示', level=2)
+    # ==================== 9.4 定增决策结论 ====================
+    add_title(document, '9.4 定增决策结论', level=2)
+
+    # 调用纯计算函数获取结构化结果
+    _qbc = qualified_by_category if 'qualified_by_category' in locals() else None
+    _cpr = category_premium_ranges if 'category_premium_ranges' in locals() else None
+    _qd = qualified_dcf if 'qualified_dcf' in locals() else None
+    _qp = qualified_pe if 'qualified_pe' in locals() else None
+    decision_result = calculate_decision_conclusion(
+        thresholds, _qbc, _cpr, _qd, _qp,
+    )
+    # 写入context供外部调用
+    context['results']['decision_conclusion'] = decision_result
+
+    pr = decision_result['premium_range']
+    if pr is not None:
+        add_paragraph(document, '最终溢价率区间建议：', bold=True)
+        add_paragraph(document, f'• 名义溢价率区间（相对MA20）：[{pr["min"]:+.2f}%, {pr["max"]:+.2f}%]')
+        add_paragraph(document, f'• 区间宽度：{pr["max"] - pr["min"]:.2f}%')
+
+        add_paragraph(document, '')
+        add_paragraph(document, '最终建议：', bold=True)
+        add_paragraph(document, f'• 名义溢价率上限：≤{pr["max"]:.2f}%（相对MA20，硬约束）')
+        add_paragraph(document, f'• 名义溢价率下限：{pr["min"]:+.2f}%（相对MA20，最优方案）')
+        add_paragraph(document, f'• 区间宽度：{pr["max"] - pr["min"]:.2f}%')
+
+        add_paragraph(document, '')
+        add_paragraph(document, '定增决策结论：', bold=True)
+
+        s1 = decision_result['step1']
+        s2 = decision_result['step2']
+        s3 = decision_result['step3']
+        s1_status = '✓ 通过' if s1['pass'] else '✗ 未通过'
+        s2_status = '✓ 通过' if s2['pass'] else '✗ 未通过'
+        s3_status = '✓ 通过' if s3['pass'] else '✗ 未通过'
+        add_paragraph(document, f'① 历史数据场景：{s1["detail"]} → {s1_status}（需≥2个）')
+        add_paragraph(document, f'② 预期估值场景：{s2["detail"]} → {s2_status}（需≥1个）')
+        add_paragraph(document, f'③ 反向推算/蒙特卡洛/参数构造：{s3["detail"]} → {s3_status}（需≥2个）')
+        add_paragraph(document, '')
+
+        if all([s1['pass'], s2['pass'], s3['pass']]):
+            add_paragraph(document, '综合结论：三步判断均通过，建议参与本次定向增发。', bold=True)
+        else:
+            failed_steps = []
+            if not s1['pass']:
+                failed_steps.append('①历史数据场景不足')
+            if not s2['pass']:
+                failed_steps.append('②预期估值场景不足')
+            if not s3['pass']:
+                failed_steps.append('③量化方法不足')
+            add_paragraph(document, f'综合结论：{"、".join(failed_steps)}，不建议本阶段参与该企业的本笔定向增发。', bold=True)
+    else:
+        add_paragraph(document, '综合结论：有效阈值数量不足（少于2个），不建议本阶段参与该企业的本笔定向增发。', bold=True)
+
+    # ==================== 9.5 主要风险提示 ====================
+    add_title(document, '9.5 主要风险提示', level=2)
     add_paragraph(document, '基于多维度风险分析，提示以下主要风险（详见前文各章节详细分析）：')
     add_paragraph(document, '')
 
     # 1. 市场风险
     add_paragraph(document, '1. 市场风险')
     add_paragraph(document, f'   • 波动率风险：当前120日窗口年化波动率为{mc_volatility_120d*100:.1f}%，市场波动可能导致实际收益偏离预期')
-    add_paragraph(document, f'   • 趋势风险：当前120日窗口年化漂移率为{mc_drift_120d*100:+.2f}%，{"上升趋势" if mc_drift_120d > 0 else "下降趋势" if mc_drift_120d < 0 else "震荡趋势"}可能影响解禁时收益')
+    drift_pct = mc_drift_120d * 100
+    if drift_pct > 0:
+        trend_desc = f'当前呈上升趋势，需关注趋势反转风险，一旦趋势由升转降可能影响解禁时收益'
+    elif drift_pct < 0:
+        trend_desc = f'当前呈下降趋势，可能影响解禁时收益'
+    else:
+        trend_desc = '当前呈震荡趋势，方向不明确可能影响解禁时收益'
+    add_paragraph(document, f'   • 趋势风险：当前120日窗口年化漂移率为{drift_pct:+.2f}%，{trend_desc}')
 
     # 2. 流动性风险
     add_paragraph(document, '2. 流动性风险')
@@ -2167,8 +2371,8 @@ def generate_chapter(context):
     add_paragraph(document, '   • 业绩波动风险：需关注公司业绩预告、审计报告等')
     add_paragraph(document, '   • 竞争格局风险：行业竞争加剧可能影响盈利能力')
 
-    # ==================== 9.5 免责声明 ====================
-    add_title(document, '9.5 免责声明', level=2)
+    # ==================== 9.6 免责声明 ====================
+    add_title(document, '9.6 免责声明', level=2)
 
     disclaimer = f'''
     本报告数据取至tushare平台，报告系半自动化生成，仅供参考使用，不构成投资建议。

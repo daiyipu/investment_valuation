@@ -1196,9 +1196,157 @@ def generate_chapter(context):
         else:
             print(" DCF内在价值数据不可用，跳过6.5节")
             add_paragraph(document, ' DCF估值数据不可用，跳过本节分析')
-        # ==================== 6.6 情景综合分析汇总表 ====================
+
+        # ==================== 6.6 基于修正PE估值的情景分析 ====================
         add_paragraph(document, '')
-        add_title(document, '6.6 情景综合分析汇总表', level=2)
+        add_title(document, '6.6 基于修正PE估值的情景分析', level=2)
+
+        add_paragraph(document, '本节基于2.4节修正PE估值结果，使用1年后前瞻PE对应的目标股价作为基准，')
+        add_paragraph(document, '构建情景矩阵分析定增收益。修正PE估值结合行业净利率和净利润增速，')
+        add_paragraph(document, '推算企业"正常盈利"下的合理股价，并通过蒙特卡洛模拟评估不同波动率和溢价率下的收益分布。')
+        add_paragraph(document, '')
+
+        pe_estimation = context.get('pe_estimation')
+        pe_projections = pe_estimation.get('forward_pe_projections', []) if pe_estimation else []
+
+        if pe_estimation and pe_projections and len(pe_projections) > 0:
+            try:
+                # 取1年后的预测数据
+                proj_1y = pe_projections[0]  # year=1
+                pe_target_price = proj_1y.get('projected_price', 0)
+                pe_current_price = pe_estimation.get('current_price', 0)
+
+                if pe_target_price > 0 and pe_current_price > 0:
+                    # 漂移率 = (目标价 - 当前价) / 当前价
+                    pe_drift = (pe_target_price / pe_current_price) - 1.0
+                    pe_drift = max(-0.50, min(1.00, pe_drift))
+
+                    norm_pe_val = pe_estimation.get('normalized_pe', 0)
+                    ind_pe_val = pe_estimation.get('industry_pe_median', 0)
+                    norm_ni = pe_estimation.get('normalized_net_income', 0)
+                    eg = pe_estimation.get('earnings_growth_used', 0)
+
+                    add_paragraph(document, f'修正PE估值参数：')
+                    add_paragraph(document, f'• 修正后PE: {norm_pe_val:.1f}倍')
+                    add_paragraph(document, f'• 行业PE中位数: {ind_pe_val:.1f}倍')
+                    add_paragraph(document, f'• 行业净利润增速: {eg*100:.1f}%')
+                    add_paragraph(document, f'• 1年后预测净利润: {proj_1y["projected_ni"]/10000:.2f}亿元')
+                    add_paragraph(document, f'• 1年后行业PE对应价: {pe_target_price:.2f}元 (当前价: {pe_current_price:.2f}元)')
+                    add_paragraph(document, f'• 漂移率(区间): {pe_drift*100:+.1f}%')
+                    add_paragraph(document, '')
+
+                    # 确保波动率变量可用
+                    if 'index_vol_high' not in dir():
+                        index_vol_high = market_data.get('volatility_120d', 0.35) * 1.1
+                        index_vol_mid = market_data.get('volatility_120d', 0.35)
+                        index_vol_low = market_data.get('volatility_120d', 0.35) * 0.9
+
+                    # 使用与6.5节相同的波动率档位
+                    pe_premium_levels = [-0.20, -0.15, -0.10, -0.05, 0.0]
+                    pe_scenarios = generate_scenario_matrix(
+                        drift_levels=[pe_drift],
+                        vol_levels=[index_vol_high, index_vol_mid, index_vol_low],
+                        premium_levels=pe_premium_levels,
+                        scenario_name_prefix='修正PE估值',
+                        drift_source='基于修正PE 1年后目标价与当前价的比值',
+                        project_params=project_params
+                    )
+
+                    print(f" 生成修正PE估值情景矩阵: {len(pe_scenarios)}个情景")
+
+                    # 运行模拟
+                    pe_scenario_results = []
+                    for idx, scenario in enumerate(pe_scenarios):
+                        annual_vol = scenario['volatility']
+                        period_drift = scenario['drift']
+                        annual_drift = period_drift * (250.0 / 120.0)
+
+                        try:
+                            sim_result = analyzer.monte_carlo_simulation(
+                                n_simulations=5000,
+                                time_steps=120,
+                                volatility=annual_vol,
+                                drift=annual_drift,
+                                seed=42 + idx + 100
+                            )
+
+                            final_prices = sim_result.iloc[:, -1].values
+                            scenario_issue_price = scenario['issue_price']
+                            log_returns = np.log(final_prices / scenario_issue_price)
+
+                            profit_prob = (log_returns > 0).mean() * 100
+                            median_return = float(np.median(log_returns))
+
+                            pe_scenario_results.append({
+                                'scenario': scenario,
+                                'profit_prob': profit_prob,
+                                'median_return': median_return,
+                            })
+                        except Exception as e:
+                            print(f"   修正PE情景 {scenario['name']} 模拟失败: {e}")
+
+                    # 生成表格
+                    if pe_scenario_results:
+                        add_paragraph(document, '修正PE估值情景参数表（全部15个情景）：')
+                        add_paragraph(document, '')
+
+                        sorted_pe = sorted(pe_scenario_results, key=lambda x: x['profit_prob'], reverse=True)
+
+                        pe_table_data = []
+                        for sr in sorted_pe:
+                            s = sr['scenario']
+                            annual_drift = s['drift'] * (250.0 / 120.0)
+                            pe_table_data.append([
+                                s['name'],
+                                f"修正PE({pe_target_price:.2f}元)",
+                                f"{s['drift']*100:+.1f}%",
+                                f"{annual_drift*100:+.1f}%",
+                                f"{s['vol_level']}({s['volatility']*100:.1f}%)",
+                                s['premium_level'],
+                                f"{sr['profit_prob']:.1f}%",
+                                f"{sr['median_return']*100:+.1f}%",
+                            ])
+
+                        add_table_data(document,
+                            ['情景', '修正PE估值', '漂移率（区间）', '漂移率（年化）', '波动率', '溢价率', '盈利概率', '中位数收益'],
+                            pe_table_data, font_size=10.5)
+
+                        add_paragraph(document, '')
+                        add_paragraph(document, ' 修正PE估值情景分析结论：')
+                        best_pe = max(pe_scenario_results, key=lambda x: x['profit_prob'])
+                        worst_pe = min(pe_scenario_results, key=lambda x: x['profit_prob'])
+                        add_paragraph(document, f'• 最优情景：{best_pe["scenario"]["name"]}，盈利概率{best_pe["profit_prob"]:.1f}%，中位数收益{best_pe["median_return"]*100:+.1f}%')
+                        add_paragraph(document, f'• 最差情景：{worst_pe["scenario"]["name"]}，盈利概率{worst_pe["profit_prob"]:.1f}%，中位数收益{worst_pe["median_return"]*100:+.1f}%')
+
+                    # 将修正PE情景加入汇总和附件
+                    all_scenarios.extend(pe_scenario_results)
+                    for sr in pe_scenario_results:
+                        flat = sr['scenario'].copy()
+                        flat.update({
+                            'profit_prob': sr['profit_prob'],
+                            'median_return': sr['median_return'],
+                            'mean_return': 0,
+                            'var_5': 0,
+                            'var_95': 0,
+                            'issue_price': sr['scenario'].get('issue_price', 0),
+                        })
+                        historical_scenarios_for_appendix.append(flat)
+
+                    add_paragraph(document, '')
+                else:
+                    add_paragraph(document, '• 修正PE目标价数据不足，跳过情景分析')
+
+            except Exception as e:
+                print(f" 修正PE估值情景分析失败: {e}")
+                import traceback
+                traceback.print_exc()
+                add_paragraph(document, f'• 修正PE估值情景分析执行失败: {e}')
+        else:
+            add_paragraph(document, '• 2.4节修正PE估值数据不可用，跳过本节分析')
+
+        # ==================== 6.7 情景综合分析汇总表 ====================
+        add_paragraph(document, '')
+        add_title(document, '6.7 情景综合分析汇总表', level=2)
 
         add_paragraph(document, '本节对所有情景进行统计分析，汇总各类情景的数量分布和关键指标。')
         add_paragraph(document, '详细的情景数据请参见报告附件《情景数据表》。')

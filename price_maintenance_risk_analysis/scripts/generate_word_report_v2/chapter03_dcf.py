@@ -46,7 +46,7 @@ from module_utils import (
 _ROOT_DIR = os.path.dirname(PROJECT_DIR)
 if _ROOT_DIR not in sys.path:
     sys.path.insert(0, _ROOT_DIR)
-from industry_dcf.utils.industry_dcf_calculator import get_industry_forecast_years
+from industry_dcf.utils.industry_dcf_calculator import get_industry_forecast_years, get_industry_fcff_rev_ratio
 
 # 获取中文字体
 font_prop = get_font_prop()
@@ -134,6 +134,7 @@ def generate_chapter(context):
     net_income_cagr = None  # 净利润CAGR（备选）
     fcf_cagr = None  # FCF的CAGR（优先使用）
     historical_incomes = None
+    income = {}  # 初始化利润表数据（用于后续获取营收）
 
     try:
         from update_market_data import TushareFinancialData
@@ -182,14 +183,14 @@ def generate_chapter(context):
                 # CAGR = (终值/起始值)^(1/年数) - 1
                 start_income = historical_incomes[-1]
                 end_income = historical_incomes[0]
-                n_years = len(historical_incomes) - 1
+                cagr_years = len(historical_incomes) - 1
 
                 if start_income > 0 and end_income > 0:
-                    net_income_cagr = (end_income / start_income) ** (1 / n_years) - 1
+                    net_income_cagr = (end_income / start_income) ** (1 / cagr_years) - 1
                     print(f" 计算净利润历史CAGR（备选）:")
                     print(f"   起始净利润: {start_income/100000000:.2f} 亿元")
                     print(f"   最新净利润: {end_income/100000000:.2f} 亿元")
-                    print(f"   历史年数: {n_years} 年")
+                    print(f"   历史年数: {cagr_years} 年")
                     print(f"   净利润CAGR: {net_income_cagr*100:+.2f}%")
                     print(f"   注：将优先使用FCF的CAGR，如果不可用则使用净利润CAGR")
 
@@ -238,6 +239,33 @@ def generate_chapter(context):
     fcf_data_description = "使用净利润近似FCF（无历史FCF数据）"
     fcf_cagr = None  # FCF复合增长率（优先使用）
 
+    # 当 historical_fcf_data 不存在时，用行业比率修正 base_fcf
+    if not ('historical_fcf_data' in project_params and project_params['historical_fcf_data']):
+        ts_token_ind = os.environ.get('TUSHARE_TOKEN', '')
+        industry_fcff_rev = 0
+        if ts_token_ind and stock_code:
+            try:
+                import tushare as ts
+                _pro = ts.pro_api(ts_token_ind)
+                industry_fcff_rev = get_industry_fcff_rev_ratio(stock_code, _pro)
+            except Exception:
+                pass
+        latest_revenue = income.get('revenue', 0) if isinstance(income, dict) else 0
+        if industry_fcff_rev > 0 and latest_revenue > 0:
+            industry_derived = latest_revenue * industry_fcff_rev
+            base_fcf_yi = base_fcf / 100000000
+            rev_yi = latest_revenue / 100000000
+            # 与行业预期FCFF比较，偏差超过3倍视为异常
+            is_abnormal = (base_fcf <= 0 or
+                           base_fcf > industry_derived * 5 or
+                           base_fcf < industry_derived / 3)
+            if is_abnormal:
+                base_fcf = industry_derived
+                using_net_income_as_fcf = False
+                fcf_data_description = f"使用行业FCFF/营收比率修正（{industry_fcff_rev:.4f}）"
+                print(f"    base_fcf异常({base_fcf_yi:.2f}亿/行业预期{industry_derived/100000000:.2f}亿)，"
+                      f"使用行业比率修正: {base_fcf/100000000:.2f}亿")
+
     if 'historical_fcf_data' in project_params and project_params['historical_fcf_data']:
         historical_fcf = project_params['historical_fcf_data']
         historical_fcf_years = historical_fcf['years']
@@ -262,13 +290,44 @@ def generate_chapter(context):
 
         print(f"\n   近3年FCFF: {', '.join([f'{v:.2f}亿' for v in recent_3_fcf_values])}")
         print(f"   近3年均值: {avg_fcf_3y:.2f} 亿元")
-        if base_fcf > 0:
+        # 判断 base_fcf 是否异常：与行业FCFF/营收比率预期比较
+        latest_rev_yi = historical_fcf['data'][-1].get('revenue', 0) if historical_fcf['data'] else 0
+        latest_rev = latest_rev_yi * 100000000  # 亿元→元
+        # 获取行业FCFF/营收比率用于异常判断
+        ts_token_chk = os.environ.get('TUSHARE_TOKEN', '')
+        industry_fcff_rev = 0
+        if ts_token_chk and stock_code:
+            try:
+                import tushare as ts
+                _pro = ts.pro_api(ts_token_chk)
+                industry_fcff_rev = get_industry_fcff_rev_ratio(stock_code, _pro)
+            except Exception:
+                pass
+        industry_derived = latest_rev * industry_fcff_rev if industry_fcff_rev > 0 else 0
+        # 与行业预期FCFF比较，偏差超过3倍视为异常
+        if industry_derived > 0:
+            is_abnormal = (base_fcf <= 0 or
+                           base_fcf > industry_derived * 5 or
+                           base_fcf < industry_derived / 3)
+        else:
+            is_abnormal = base_fcf <= 0
+        if not is_abnormal:
             using_net_income_as_fcf = False
             print(f"    使用近3年FCFF均值作为预测基准")
         else:
-            base_fcf = net_income
-            using_net_income_as_fcf = True
-            print(f"    近3年FCFF均值为负，使用净利润作为基准")
+            if industry_derived > 0:
+                base_fcf = industry_derived
+                using_net_income_as_fcf = False
+                print(f"    base_fcf异常({avg_fcf_3y:.2f}亿/行业预期{industry_derived/100000000:.2f}亿)，"
+                      f"使用行业FCFF/营收比率{industry_fcff_rev:.4f}修正: {base_fcf/100000000:.2f}亿")
+            else:
+                if base_fcf > 0:
+                    using_net_income_as_fcf = False
+                    print(f"    无行业比率数据，base_fcf虽偏小但仍使用FCFF均值: {base_fcf/100000000:.2f}亿")
+                else:
+                    base_fcf = net_income
+                    using_net_income_as_fcf = True
+                    print(f"    无行业比率数据且FCFF为负，使用净利润作为基准")
 
         # 计算历史FCF复合增长率（CAGR）- 优先使用
         # 只计算正FCF年份
@@ -443,8 +502,28 @@ def generate_chapter(context):
         latest_fcf = recent_fcf[-1]['fcf']
         add_paragraph(document, f'• 最新年度FCF（{recent_fcf[-1]["year"]}年）：{latest_fcf:.2f} 亿元')
 
-        if latest_fcf > 0:
-            add_paragraph(document, '•  FCF为正值，说明公司具备良好的现金生成能力')
+        # 与行业FCFF/营收比率比较
+        ts_token_cmp = os.environ.get('TUSHARE_TOKEN', '')
+        industry_fcff_rev_cmp = 0
+        if ts_token_cmp and stock_code:
+            try:
+                import tushare as ts
+                _pro_cmp = ts.pro_api(ts_token_cmp)
+                industry_fcff_rev_cmp = get_industry_fcff_rev_ratio(stock_code, _pro_cmp)
+            except Exception:
+                pass
+        latest_rev_cmp = recent_fcf[-1].get('revenue', 0)
+        if industry_fcff_rev_cmp > 0 and latest_rev_cmp > 0:
+            company_fcff_rev = latest_fcf / latest_rev_cmp
+            industry_expected_fcf = latest_rev_cmp * industry_fcff_rev_cmp
+            if company_fcff_rev >= industry_fcff_rev_cmp * 0.8:
+                add_paragraph(document, f'•  FCF/营收比率({company_fcff_rev*100:.1f}%)高于或接近行业水平({industry_fcff_rev_cmp*100:.1f}%)，现金生成能力良好')
+            elif company_fcff_rev >= industry_fcff_rev_cmp * 0.5:
+                add_paragraph(document, f'•  FCF/营收比率({company_fcff_rev*100:.1f}%)低于行业水平({industry_fcff_rev_cmp*100:.1f}%)，现金生成能力一般')
+            else:
+                add_paragraph(document, f'•  FCF/营收比率({company_fcff_rev*100:.1f}%)远低于行业水平({industry_fcff_rev_cmp*100:.1f}%)，现金生成能力较弱（行业预期FCF约{industry_expected_fcf:.2f}亿元）')
+        elif latest_fcf > 0:
+            add_paragraph(document, '•  FCF为正值，说明公司具备现金生成能力')
         else:
             add_paragraph(document, '•  FCF为负值，可能由于大额资本支出或营运资金占用')
 
@@ -611,10 +690,11 @@ def generate_chapter(context):
     fcfs = []
     fcf_sources = []  # 记录每个FCF的来源
     if actual_data_years > 0 and 'historical_fcf_data' in project_params:
-        # 使用最新历史FCF数据作为基准，正向预测未来n年
+        # 使用 base_fcf（已含行业比率修正）作为预测基准
         historical_fcf = project_params['historical_fcf_data']['data']
-        latest_fcf = historical_fcf[-1]['fcf'] * 100000000  # 最新一年（2025年）FCF，转回元
         latest_year = historical_fcf[-1]['year']
+        # 使用已修正的 base_fcf 替代 raw latest_fcf
+        latest_fcf = base_fcf
 
         # 计算历史FCF复利增长率（CAGR）- 仅用于报告显示
         # 使用最早的正FCF年份和最新的正FCF年份计算

@@ -7,6 +7,7 @@
 - 2.1.1 同行公司名单
 - 2.2 估值偏离度分析
 - 2.3 PE历史分位数趋势分析
+- 2.4 PE估值分析（绝对估值与修正估值）
 """
 
 import os
@@ -912,6 +913,229 @@ def generate_chapter(context):
         add_paragraph(document, f' PE历史分位数趋势分析执行失败: {e}')
 
     add_paragraph(document, '')
+
+    # ==================== 2.4 PE估值分析（绝对估值与修正估值） ====================
+    add_title(document, '2.4 PE估值分析', level=2)
+    add_paragraph(document, '基于行业净利率、净利润增长率等参数，对PE进行绝对估值和修正估值分析。')
+
+    try:
+        import sys
+        _PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        _ROOT_DIR = os.path.dirname(_PROJECT_DIR)
+        if _ROOT_DIR not in sys.path:
+            sys.path.insert(0, _ROOT_DIR)
+
+        from industry_dcf.utils.pe_estimator import PEEstimator
+
+        ts_token = os.environ.get('TUSHARE_TOKEN', '')
+        if ts_token and stock_code:
+            import tushare as ts
+            from industry_dcf.utils.industry_data_fetcher import IndustryDataFetcher
+            from industry_dcf.utils.rate_limiter import RateLimiter
+            from industry_dcf.utils.shenwan_lookup import find_l3_by_code
+            from industry_dcf.utils.industry_dcf_calculator import IndustryDCFCalculator
+
+            pro = ts.pro_api(ts_token)
+            rl = RateLimiter()
+            fetcher = IndustryDataFetcher(pro, rate_limiter=rl)
+            calculator = IndustryDCFCalculator()
+
+            # 行业识别
+            ind_info = find_l3_by_code(stock_code, pro)
+            if ind_info:
+                l3_code = ind_info['l3_code']
+                ind_name = ind_info.get('l3_name', '')
+
+                # 获取行业数据
+                print("  [2.4] 获取行业数据用于PE估值...")
+                ind_financials = fetcher.get_industry_financials(l3_code)
+                ind_pe_data = fetcher.get_industry_daily_basics(l3_code)
+                benchmark = calculator.calculate_industry_benchmark(ind_financials, industry_pe_data=ind_pe_data)
+
+                # 获取个股数据
+                company_data = fetcher.get_company_financials(stock_code)
+
+                # 市值数据
+                current_price = project_params.get('current_price', 0)
+                total_shares = project_params.get('total_shares', 0)
+                market_cap = current_price * total_shares if current_price and total_shares else 0
+
+                # 尝试从daily_basic获取更准确的市值
+                if ts_token:
+                    try:
+                        for db_back in range(0, 10):
+                            td = (datetime.now() - timedelta(days=db_back)).strftime('%Y%m%d')
+                            db_df = pro.daily_basic(ts_code=stock_code, trade_date=td,
+                                                    fields='ts_code,total_mv,total_share,close')
+                            if db_df is not None and not db_df.empty:
+                                row = db_df.iloc[0]
+                                market_cap = float(row.get('total_mv', 0) or 0) * 10000
+                                total_shares = float(row.get('total_share', 0) or 0)
+                                current_price = float(row.get('close', 0) or 0)
+                                break
+                    except Exception:
+                        pass
+
+                market_data = {
+                    'market_cap': market_cap,
+                    'current_price': current_price,
+                    'total_shares': total_shares,
+                }
+
+                # 执行PE估值
+                estimator = PEEstimator()
+                pe_result = estimator.estimate_normalized_pe(
+                    ts_code=stock_code,
+                    industry_financials=ind_financials,
+                    industry_benchmark=benchmark,
+                    company_financials=company_data,
+                    market_data=market_data,
+                )
+
+                # ====== 2.4.1 绝对估值 ======
+                add_title(document, '2.4.1 绝对PE估值', level=3)
+                add_paragraph(document, '基于当前市值和实际归母净利润计算的PE值。')
+                add_paragraph(document, '')
+
+                actual_pe = pe_result.get('actual_pe')
+                ind_pe_med = pe_result.get('industry_pe_median', 0)
+                company_rev = pe_result.get('company_revenue_latest', 0)
+                actual_ni = pe_result.get('actual_net_income', 0)
+                co_margin = pe_result.get('company_net_margin', {})
+
+                pe_headers = ['指标', '数值']
+                pe_data_rows = [
+                    ['当前股价', f'{current_price:.2f} 元'],
+                    ['总市值', f'{market_cap/100000000:.2f} 亿元' if market_cap else 'N/A'],
+                    ['最新营收', f'{company_rev/10000:.2f} 亿元' if company_rev else 'N/A'],
+                    ['归母净利润', f'{actual_ni/10000:.2f} 亿元' if actual_ni else 'N/A'],
+                    ['公司净利率(最新)', f'{co_margin.get("latest", 0)*100:.2f}%'],
+                    ['公司净利率(3年均)', f'{co_margin.get("avg_3y", 0)*100:.2f}%'],
+                    ['实际PE(静态)', f'{actual_pe:.1f} 倍' if actual_pe else 'N/A(亏损)'],
+                    ['行业PE中位数', f'{ind_pe_med:.1f} 倍'],
+                ]
+                add_table_data(document, pe_headers, pe_data_rows)
+                add_paragraph(document, '')
+
+                if actual_pe and ind_pe_med > 0:
+                    if actual_pe > ind_pe_med * 1.5:
+                        pe_comment = f'实际PE({actual_pe:.1f}倍)显著高于行业PE中位数({ind_pe_med:.1f}倍)，估值偏高'
+                    elif actual_pe > ind_pe_med:
+                        pe_comment = f'实际PE({actual_pe:.1f}倍)略高于行业PE中位数({ind_pe_med:.1f}倍)，估值略高'
+                    elif actual_pe > ind_pe_med * 0.8:
+                        pe_comment = f'实际PE({actual_pe:.1f}倍)接近行业PE中位数({ind_pe_med:.1f}倍)，估值合理'
+                    else:
+                        pe_comment = f'实际PE({actual_pe:.1f}倍)低于行业PE中位数({ind_pe_med:.1f}倍)，估值偏低'
+                    add_paragraph(document, f'• {pe_comment}')
+
+                # ====== 2.4.2 修正估值 ======
+                add_title(document, '2.4.2 修正PE估值（行业修正）', level=3)
+                add_paragraph(document, '当企业净利率低于行业水平时，使用行业净利率修正净利润，推算"正常"PE和对应股价。')
+                add_paragraph(document, '')
+
+                ind_margin = pe_result.get('industry_net_margin', {})
+                ind_eg = pe_result.get('industry_earnings_growth', {})
+                norm_ni = pe_result.get('normalized_net_income', 0)
+                norm_pe = pe_result.get('normalized_pe')
+                norm_src = pe_result.get('normalized_margin_source', 'industry')
+                norm_margin = pe_result.get('normalized_margin_used', 0)
+                margin_gap = pe_result.get('margin_gap', 0)
+
+                mod_headers = ['指标', '数值']
+                mod_rows = [
+                    ['行业净利率中位数', f'{ind_margin.get("median", 0)*100:.2f}%'],
+                    ['行业净利润增速中位数', f'{ind_eg.get("median", 0)*100:.2f}%'],
+                    ['净利率差距(公司-行业)', f'{margin_gap*100:+.2f}%'],
+                    ['采用的净利率', f'{norm_margin*100:.2f}% ({("公司实际" if norm_src == "company" else "行业中位数")})'],
+                    ['修正后净利润', f'{norm_ni/10000:.2f} 亿元' if norm_ni else 'N/A'],
+                    ['修正后PE', f'{norm_pe:.1f} 倍' if norm_pe else 'N/A'],
+                ]
+                add_table_data(document, mod_headers, mod_rows)
+                add_paragraph(document, '')
+
+                if norm_src == 'industry':
+                    add_paragraph(document, f'• 公司净利率低于行业水平，使用行业净利率({ind_margin.get("median",0)*100:.1f}%)修正盈利')
+                else:
+                    add_paragraph(document, f'• 公司净利率高于或等于行业水平，使用公司实际净利率({co_margin.get("latest",0)*100:.1f}%)')
+
+                # ====== 修正估值反推股价 ======
+                add_title(document, '2.4.3 修正估值目标股价', level=3)
+                add_paragraph(document, '基于修正后净利润和行业PE中位数，反推目标股价及增长空间。')
+                add_paragraph(document, '')
+
+                total_shares_wan = total_shares  # Tushare total_share 单位为万股
+                if norm_ni > 0 and ind_pe_med > 0 and total_shares_wan > 0 and current_price > 0:
+                    target_price = norm_ni * ind_pe_med / total_shares_wan
+                    upside = (target_price / current_price - 1) * 100
+
+                    target_headers = ['指标', '数值']
+                    target_rows = [
+                        ['当前股价', f'{current_price:.2f} 元'],
+                        ['修正后净利润', f'{norm_ni/10000:.2f} 亿元'],
+                        ['行业PE中位数', f'{ind_pe_med:.1f} 倍'],
+                        ['目标股价', f'{target_price:.2f} 元'],
+                        ['增长空间', f'{upside:+.1f}%'],
+                    ]
+                    add_table_data(document, target_headers, target_rows)
+                    add_paragraph(document, '')
+
+                    if upside > 20:
+                        target_comment = f'修正估值目标价({target_price:.2f}元)较当前价({current_price:.2f}元)有{upside:.1f}%的增长空间，股价具有上行潜力'
+                    elif upside > 0:
+                        target_comment = f'修正估值目标价({target_price:.2f}元)较当前价({current_price:.2f}元)有{upside:.1f}%的增长空间'
+                    elif upside > -20:
+                        target_comment = f'修正估值目标价({target_price:.2f}元)略低于当前价({current_price:.2f}元)，估值基本合理'
+                    else:
+                        target_comment = f'修正估值目标价({target_price:.2f}元)较当前价({current_price:.2f}元)低{abs(upside):.1f}%，存在高估风险'
+                    add_paragraph(document, f'• {target_comment}')
+                    add_paragraph(document, '')
+                    add_paragraph(document, f'计算公式: 目标股价 = 修正后净利润 × 行业PE中位数 ÷ 总股本')
+                    add_paragraph(document, f'         = {norm_ni/10000:.2f}亿 × {ind_pe_med:.1f} ÷ {total_shares_wan:.0f}万股')
+                    add_paragraph(document, f'         = {target_price:.2f} 元')
+                else:
+                    add_paragraph(document, '• 数据不足，无法计算修正估值目标股价')
+
+                # ====== 前瞻PE预测 ======
+                projections = pe_result.get('forward_pe_projections', [])
+                if projections and current_price > 0:
+                    add_title(document, '2.4.4 前瞻PE预测', level=3)
+                    eg = pe_result.get('earnings_growth_used', 0)
+                    add_paragraph(document, f'基于行业净利润增速({eg*100:.1f}%)，预测未来PE变化及对应目标股价：')
+                    add_paragraph(document, '')
+
+                    fwd_headers = ['年份', '预测净利润(亿元)', '前瞻PE(倍)', '行业PE对应价(元)', '增长空间']
+                    fwd_rows = []
+                    for p in projections:
+                        yr = p['year']
+                        if yr in (1, 2, 3, 5, 7, 10):
+                            fwd_rows.append([
+                                f'第{yr}年',
+                                f'{p["projected_ni"]/10000:.2f}',
+                                f'{p["forward_pe"]:.1f}',
+                                f'{p["projected_price"]:.2f}',
+                                f'{p["upside_pct"]:+.1f}%',
+                            ])
+                    add_table_data(document, fwd_headers, fwd_rows)
+                    add_paragraph(document, '')
+                    add_paragraph(document, '注: 前瞻PE = 当前市值 ÷ 预测净利润; 行业PE对应价 = 预测净利润 × 行业PE中位数 ÷ 总股本')
+
+                # 保存到context
+                context['pe_estimation'] = pe_result
+
+                print(f"  [2.4] PE估值完成: 实际PE={actual_pe}, 修正PE={norm_pe}")
+            else:
+                add_paragraph(document, '• 无法识别行业分类，PE估值分析暂不可用')
+        else:
+            add_paragraph(document, '• 未配置Tushare Token，PE估值分析暂不可用')
+
+    except ImportError as e:
+        print(f"  [2.4] PE估值模块导入失败: {e}")
+        add_paragraph(document, f'• PE估值分析功能暂不可用 (导入失败: {e})')
+    except Exception as e:
+        print(f"  [2.4] PE估值分析失败: {e}")
+        import traceback
+        traceback.print_exc()
+        add_paragraph(document, f'• PE估值分析执行失败: {e}')
 
     add_section_break(document)
 

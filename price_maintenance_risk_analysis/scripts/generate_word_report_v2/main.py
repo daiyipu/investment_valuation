@@ -617,6 +617,116 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
     return document
 
 
+def generate_report_headless(stock_code, stock_name=None, issue_date=None, force=True):
+    """无头模式：运行完整分析管线，返回结构化决策结果，不保存Word文档。
+
+    Args:
+        stock_code: 股票代码 (如 '300735.SZ')
+        stock_name: 股票名称（可选，用于显示）
+        issue_date: 报价日 (YYYYMMDD格式，可选)
+        force: 强制使用过期数据（默认True，批量模式下跳过确认）
+
+    Returns:
+        dict with keys:
+            stock_code, stock_name,
+            decision_conclusion: dict from calculate_decision_conclusion(),
+            error: str or None
+    """
+    result = {
+        'stock_code': stock_code,
+        'stock_name': stock_name or stock_code,
+        'decision_conclusion': None,
+        'error': None,
+    }
+
+    try:
+        print(f"\n[headless] 分析 {stock_code} ({stock_name or ''})...")
+
+        # 加载配置
+        project_params, risk_params, market_data = load_placement_config(stock_code)
+        if not stock_name:
+            stock_name = project_params.get('company_name', stock_code)
+            result['stock_name'] = stock_name
+
+        # 自动生成市场数据（如果缺失）
+        market_data_file = os.path.join(DATA_DIR, f"{stock_code.replace('.', '_')}_market_data.json")
+        if not os.path.exists(market_data_file):
+            scripts_dir = os.path.join(PROJECT_DIR, 'scripts')
+            if scripts_dir not in sys.path:
+                sys.path.insert(0, scripts_dir)
+            import importlib
+            update_module = importlib.import_module('update_market_data')
+            updated_data = update_module.generate_market_data(stock_code, stock_name, issue_date)
+            if updated_data:
+                with open(market_data_file, 'w', encoding='utf-8') as f:
+                    json.dump(updated_data, f, ensure_ascii=False, indent=2)
+                project_params, risk_params, market_data = load_placement_config(stock_code)
+
+        # 加载行业数据
+        industry_data = _load_industry_data(stock_code)
+
+        # 锁定发行日价格
+        if issue_date:
+            _get_historical_price_and_ma20(stock_code, issue_date)
+
+        # 创建分析器
+        analyzer = PrivatePlacementRiskAnalyzer(
+            project_params['issue_price'],
+            project_params['issue_shares'],
+            project_params['lockup_period'],
+            project_params['current_price'],
+            project_params.get('risk_free_rate', 0.03),
+        )
+
+        # 创建空Document作为占位（不保存）
+        document = Document()
+
+        context = {
+            'stock_code': stock_code,
+            'stock_name': stock_name,
+            'project_params': project_params,
+            'risk_params': risk_params,
+            'market_data': market_data,
+            'industry_data': industry_data,
+            'analyzer': analyzer,
+            'document': document,
+            'font_prop': font_prop,
+            'IMAGES_DIR': IMAGES_DIR,
+            'DATA_DIR': DATA_DIR,
+            'OUTPUTS_DIR': OUTPUTS_DIR,
+            'results': {},
+        }
+
+        # 依次调用各章节
+        context = chapter01_overview.generate_chapter(context)
+        context = chapter02_valuation.generate_chapter(context)
+        context = chapter03_dcf.generate_chapter(context)
+        context = chapter04_sensitivity.generate_chapter(context)
+        context = chapter05_montecarlo.generate_chapter(context)
+        context = chapter06_scenario.generate_chapter(context)
+        context = chapter07_stress.generate_chapter(context)
+        context = chapter08_var.generate_chapter(context)
+        context = chapter09_01_evaluation.generate_chapter(context)
+        context = chapter09_advice.generate_chapter(context)
+
+        # 提取决策结论
+        decision = context.get('results', {}).get('decision_conclusion')
+        result['decision_conclusion'] = decision
+
+        if decision:
+            print(f"  → 决策: {decision['decision']}")
+        else:
+            print(f"  → 决策结论未生成")
+
+    except Exception as e:
+        import traceback
+        result['error'] = str(e)
+        print(f"  ✗ 分析失败: {e}")
+        traceback.print_exc()
+
+    return result
+
+
 def _load_industry_data(stock_code, auto_generate=True):
     """
     加载行业数据，支持自动生成和数据更新检查
