@@ -219,12 +219,17 @@ def generate_chapter(context):
                     peer_companies_val = pd.concat(peer_data_list, ignore_index=True)
 
                     # 过滤异常数据
-                    peer_companies_val = peer_companies_val[
+                    peer_filtered = peer_companies_val[
                         (peer_companies_val['pe_ttm'] > 0) &
                         (peer_companies_val['pe_ttm'] < 500) &
                         (peer_companies_val['pb'] > 0) &
                         (peer_companies_val['pb'] < 20)
                     ]
+                    # 如果过滤后为空（小行业成分股少），使用原始数据
+                    if peer_filtered.empty and not peer_companies_val.empty:
+                        print(f"  ⚠️ 行业成分股较少({len(peer_companies_val)}家)，使用未过滤数据")
+                        peer_filtered = peer_companies_val
+                    peer_companies_val = peer_filtered
 
                     # 重命名列并进行单位转换
                     peer_companies_val['market_cap'] = peer_companies_val['total_mv'] / 10000
@@ -237,7 +242,17 @@ def generate_chapter(context):
 
                     peer_companies_val = peer_companies_val[['name', 'code', 'pe', 'ps', 'pb', 'market_cap']]
                 else:
-                    raise ValueError("未获取到同行公司估值数据")
+                    # 无同行数据，用目标公司自身数据作为 fallback
+                    print(f"  ⚠️ 未获取到同行公司数据，使用目标公司自身数据")
+                    context['industry_data_warning'] = '行业成分股不足，无法进行同行对比分析，以下行业统计数据仅基于目标公司自身数据，仅供参考。'
+                    peer_companies_val = pd.DataFrame([{
+                        'name': stock_name,
+                        'code': stock_code,
+                        'pe': current_metrics_val.get('pe', 0),
+                        'ps': current_metrics_val.get('ps', 0),
+                        'pb': current_metrics_val.get('pb', 0),
+                        'market_cap': current_metrics_val.get('market_cap', 0),
+                    }])
 
             else:
                 raise ValueError("TUSHARE_TOKEN 未设置")
@@ -289,34 +304,37 @@ def generate_chapter(context):
         else:
             raise ValueError(f"无法获取相对估值数据且无缓存，请检查网络连接")
 
-    # 计算行业统计指标
+    # 计算行业统计指标（填充NaN，避免成分股过少时崩溃）
+    _pe = peer_companies_val['pe'].fillna(0)
+    _ps = peer_companies_val['ps'].fillna(0)
+    _pb = peer_companies_val['pb'].fillna(0)
     industry_stats_val = {
         'pe': {
-            'mean': peer_companies_val['pe'].mean(),
-            'median': peer_companies_val['pe'].median(),
-            'q1': peer_companies_val['pe'].quantile(0.25),
-            'q3': peer_companies_val['pe'].quantile(0.75),
-            'min': peer_companies_val['pe'].min(),
-            'max': peer_companies_val['pe'].max(),
-            'std': peer_companies_val['pe'].std()
+            'mean': float(_pe.mean()),
+            'median': float(_pe.median()),
+            'q1': float(_pe.quantile(0.25)),
+            'q3': float(_pe.quantile(0.75)),
+            'min': float(_pe.min()),
+            'max': float(_pe.max()),
+            'std': float(_pe.std()) if len(_pe) > 1 else 0.0
         },
         'ps': {
-            'mean': peer_companies_val['ps'].mean(),
-            'median': peer_companies_val['ps'].median(),
-            'q1': peer_companies_val['ps'].quantile(0.25),
-            'q3': peer_companies_val['ps'].quantile(0.75),
-            'min': peer_companies_val['ps'].min(),
-            'max': peer_companies_val['ps'].max(),
-            'std': peer_companies_val['ps'].std()
+            'mean': float(_ps.mean()),
+            'median': float(_ps.median()),
+            'q1': float(_ps.quantile(0.25)),
+            'q3': float(_ps.quantile(0.75)),
+            'min': float(_ps.min()),
+            'max': float(_ps.max()),
+            'std': float(_ps.std()) if len(_ps) > 1 else 0.0
         },
         'pb': {
-            'mean': peer_companies_val['pb'].mean(),
-            'median': peer_companies_val['pb'].median(),
-            'q1': peer_companies_val['pb'].quantile(0.25),
-            'q3': peer_companies_val['pb'].quantile(0.75),
-            'min': peer_companies_val['pb'].min(),
-            'max': peer_companies_val['pb'].max(),
-            'std': peer_companies_val['pb'].std()
+            'mean': float(_pb.mean()),
+            'median': float(_pb.median()),
+            'q1': float(_pb.quantile(0.25)),
+            'q3': float(_pb.quantile(0.75)),
+            'min': float(_pb.min()),
+            'max': float(_pb.max()),
+            'std': float(_pb.std()) if len(_pb) > 1 else 0.0
         }
     }
 
@@ -367,6 +385,11 @@ def generate_chapter(context):
          _fmt_dev(current_metrics_val['ps'], industry_stats_val['ps']['mean'])]
     ]
     add_table_data(document, valuation_headers, valuation_data)
+
+    # 行业数据不足警告
+    if context.get('industry_data_warning'):
+        add_paragraph(document, '')
+        add_paragraph(document, context['industry_data_warning'], bold=True)
 
     # 添加统计分析说明
     add_paragraph(document, '')

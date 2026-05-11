@@ -1,0 +1,814 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+SQLite 数据库管理器
+
+统一管理所有定增分析数据，替代原有的散乱 JSON 文件存储。
+"""
+
+import json
+import os
+import sqlite3
+from datetime import datetime, timedelta
+
+DB_FILENAME = 'valuation.db'
+
+
+class ValuationDB:
+    """定增分析数据库访问层。"""
+
+    def __init__(self, db_path=None):
+        if db_path is None:
+            # 默认 data/valuation.db
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            db_path = os.path.join(base_dir, 'data', DB_FILENAME)
+        self.db_path = db_path
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        self._ensure_db()
+
+    # ==================== 基础操作 ====================
+
+    def get_connection(self):
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        return conn
+
+    def _ensure_db(self):
+        """建表（如不存在）。"""
+        conn = self.get_connection()
+        conn.executescript(SCHEMA)
+        conn.commit()
+        conn.close()
+
+    # ==================== stocks ====================
+
+    def upsert_stock(self, stock_code, stock_name=None, **kwargs):
+        """插入或更新股票基本信息。"""
+        conn = self.get_connection()
+        existing = conn.execute(
+            "SELECT stock_code FROM stocks WHERE stock_code=?", (stock_code,)
+        ).fetchone()
+
+        fields = {'stock_name': stock_name}
+        for k in ('sw_l1_code', 'sw_l1_name', 'sw_l2_code', 'sw_l2_name',
+                   'sw_l3_code', 'sw_l3_name'):
+            if k in kwargs:
+                fields[k] = kwargs[k]
+
+        if existing:
+            sets = ', '.join(f"{k}=?" for k in fields)
+            vals = list(fields.values()) + [stock_code]
+            conn.execute(f"UPDATE stocks SET {sets}, updated_at=datetime('now') WHERE stock_code=?", vals)
+        else:
+            cols = ['stock_code'] + list(fields.keys())
+            placeholders = ','.join(['?'] * len(cols))
+            vals = [stock_code] + list(fields.values())
+            conn.execute(f"INSERT INTO stocks ({','.join(cols)}) VALUES ({placeholders})", vals)
+        conn.commit()
+        conn.close()
+
+    def get_stock(self, stock_code):
+        conn = self.get_connection()
+        row = conn.execute("SELECT * FROM stocks WHERE stock_code=?", (stock_code,)).fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    # ==================== placement_params ====================
+
+    def load_placement_params(self, stock_code):
+        """加载定增参数配置，返回 dict（兼容原 JSON 格式，含 historical_fcf_data）。"""
+        conn = self.get_connection()
+        row = conn.execute(
+            "SELECT * FROM placement_params WHERE stock_code=?", (stock_code,)
+        ).fetchone()
+        if row is None:
+            conn.close()
+            return None
+
+        result = dict(row)
+        # 移除元数据字段
+        result.pop('created_at', None)
+        result.pop('updated_at', None)
+
+        # 附加 historical_fcf_data
+        fcf_rows = conn.execute(
+            "SELECT * FROM historical_fcf WHERE stock_code=? ORDER BY year", (stock_code,)
+        ).fetchall()
+        if fcf_rows:
+            fcf_list = [dict(r) for r in fcf_rows]
+            for item in fcf_list:
+                item.pop('id', None)
+                item.pop('stock_code', None)
+            years = [r['year'] for r in fcf_list]
+            result['historical_fcf_data'] = {
+                'years': len(fcf_list),
+                'year_range': [min(years), max(years)],
+                'data': fcf_list,
+            }
+        else:
+            result['historical_fcf_data'] = {'years': 5, 'year_range': [2020, 2024], 'data': []}
+
+        # 添加 _notes
+        result['_notes'] = {
+            'financing_amount': '投资金额（元）- 固定1亿元',
+            'lockup_period': '锁定期（月）- 默认6个月',
+            'pricing_method': '定价方式',
+        }
+
+        conn.close()
+        return result
+
+    def save_placement_params(self, stock_code, params):
+        """保存定增参数配置（upsert）。"""
+        conn = self.get_connection()
+        self.upsert_stock(stock_code, params.get('stock_name'))
+
+        cols = [
+            'stock_code', 'financing_amount', 'lockup_period', 'pricing_method',
+            'premium_rate', 'risk_free_rate', 'net_assets', 'total_debt',
+            'net_income', 'revenue_growth', 'operating_margin', 'beta',
+        ]
+        vals = [params.get(c.split('.')[-1]) for c in cols]
+        vals[0] = stock_code  # 确保 stock_code 正确
+
+        conn.execute(f"""
+            INSERT INTO placement_params ({','.join(cols)})
+            VALUES ({','.join(['?'] * len(cols))})
+            ON CONFLICT(stock_code) DO UPDATE SET
+                financing_amount=excluded.financing_amount,
+                lockup_period=excluded.lockup_period,
+                pricing_method=excluded.pricing_method,
+                premium_rate=excluded.premium_rate,
+                risk_free_rate=excluded.risk_free_rate,
+                net_assets=excluded.net_assets,
+                total_debt=excluded.total_debt,
+                net_income=excluded.net_income,
+                revenue_growth=excluded.revenue_growth,
+                operating_margin=excluded.operating_margin,
+                beta=excluded.beta,
+                updated_at=datetime('now')
+        """, vals)
+
+        # 保存 historical_fcf_data（如果有）
+        hfcf = params.get('historical_fcf_data', {})
+        fcf_list = hfcf.get('data', [])
+        if fcf_list:
+            self.save_historical_fcf(stock_code, fcf_list, conn=conn)
+
+        conn.commit()
+        conn.close()
+
+    # ==================== historical_fcf ====================
+
+    def save_historical_fcf(self, stock_code, fcf_list, conn=None):
+        """批量 upsert 历史FCF数据。"""
+        close_after = False
+        if conn is None:
+            conn = self.get_connection()
+            close_after = True
+
+        for item in fcf_list:
+            conn.execute("""
+                INSERT INTO historical_fcf (stock_code, year, revenue, operate_profit,
+                    net_income, nopat, depreciation, capex, wc_change, fcf)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(stock_code, year) DO UPDATE SET
+                    revenue=excluded.revenue, operate_profit=excluded.operate_profit,
+                    net_income=excluded.net_income, nopat=excluded.nopat,
+                    depreciation=excluded.depreciation, capex=excluded.capex,
+                    wc_change=excluded.wc_change, fcf=excluded.fcf
+            """, (
+                stock_code, item.get('year'), item.get('revenue'),
+                item.get('operate_profit'), item.get('net_income'),
+                item.get('nopat'), item.get('depreciation'),
+                item.get('capex'), item.get('wc_change'), item.get('fcf'),
+            ))
+
+        if close_after:
+            conn.commit()
+            conn.close()
+
+    # ==================== market_data ====================
+
+    def load_market_data(self, stock_code):
+        """加载市场数据，返回 dict（兼容原 JSON 格式）。"""
+        conn = self.get_connection()
+        row = conn.execute("SELECT * FROM market_data WHERE stock_code=?", (stock_code,)).fetchone()
+        conn.close()
+        if row is None:
+            return None
+        result = dict(row)
+        # 反序列化 JSON 字段
+        for key in ('price_series', 'market_turnover'):
+            if result.get(key) and isinstance(result[key], str):
+                result[key] = json.loads(result[key])
+        return result
+
+    def save_market_data(self, stock_code, data):
+        """保存市场数据（upsert）。"""
+        conn = self.get_connection()
+        self.upsert_stock(stock_code, data.get('stock_name'))
+
+        # 序列化 JSON 字段
+        price_series = data.get('price_series', [])
+        market_turnover = data.get('market_turnover', {})
+        if isinstance(price_series, list):
+            price_series = json.dumps(price_series)
+        if isinstance(market_turnover, dict):
+            market_turnover = json.dumps(market_turnover)
+
+        conn.execute("""
+            INSERT INTO market_data (
+                stock_code, analysis_date, latest_trading_date, issue_date, invitation_date,
+                current_price, avg_price_all, median_price, price_std,
+                volatility_20d, volatility_60d, volatility_120d, volatility_250d,
+                annual_return_20d, annual_return_60d, annual_return_120d, annual_return_250d,
+                period_return_20d, period_return_60d, period_return_120d, period_return_250d,
+                ma_20, ma_30, ma_60, ma_120, ma_250,
+                win_rate_20d, win_rate_60d, win_rate_120d, win_rate_250d,
+                total_days, drift, volatility,
+                price_series, market_turnover,
+                data_source, generated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(stock_code) DO UPDATE SET
+                analysis_date=excluded.analysis_date,
+                latest_trading_date=excluded.latest_trading_date,
+                issue_date=excluded.issue_date,
+                invitation_date=excluded.invitation_date,
+                current_price=excluded.current_price,
+                avg_price_all=excluded.avg_price_all,
+                median_price=excluded.median_price,
+                price_std=excluded.price_std,
+                volatility_20d=excluded.volatility_20d,
+                volatility_60d=excluded.volatility_60d,
+                volatility_120d=excluded.volatility_120d,
+                volatility_250d=excluded.volatility_250d,
+                annual_return_20d=excluded.annual_return_20d,
+                annual_return_60d=excluded.annual_return_60d,
+                annual_return_120d=excluded.annual_return_120d,
+                annual_return_250d=excluded.annual_return_250d,
+                period_return_20d=excluded.period_return_20d,
+                period_return_60d=excluded.period_return_60d,
+                period_return_120d=excluded.period_return_120d,
+                period_return_250d=excluded.period_return_250d,
+                ma_20=excluded.ma_20, ma_30=excluded.ma_30,
+                ma_60=excluded.ma_60, ma_120=excluded.ma_120, ma_250=excluded.ma_250,
+                win_rate_20d=excluded.win_rate_20d,
+                win_rate_60d=excluded.win_rate_60d,
+                win_rate_120d=excluded.win_rate_120d,
+                win_rate_250d=excluded.win_rate_250d,
+                total_days=excluded.total_days,
+                drift=excluded.drift,
+                volatility=excluded.volatility,
+                price_series=excluded.price_series,
+                market_turnover=excluded.market_turnover,
+                data_source=excluded.data_source,
+                generated_at=excluded.generated_at
+        """, (
+            stock_code,
+            data.get('analysis_date'), data.get('latest_trading_date'),
+            data.get('issue_date'), data.get('invitation_date'),
+            data.get('current_price'), data.get('avg_price_all'),
+            data.get('median_price'), data.get('price_std'),
+            data.get('volatility_20d'), data.get('volatility_60d'),
+            data.get('volatility_120d'), data.get('volatility_250d'),
+            data.get('annual_return_20d'), data.get('annual_return_60d'),
+            data.get('annual_return_120d'), data.get('annual_return_250d'),
+            data.get('period_return_20d'), data.get('period_return_60d'),
+            data.get('period_return_120d'), data.get('period_return_250d'),
+            data.get('ma_20'), data.get('ma_30'), data.get('ma_60'),
+            data.get('ma_120'), data.get('ma_250'),
+            data.get('win_rate_20d'), data.get('win_rate_60d'),
+            data.get('win_rate_120d'), data.get('win_rate_250d'),
+            data.get('total_days'), data.get('drift'), data.get('volatility'),
+            price_series, market_turnover,
+            data.get('data_source', 'tushare_realtime'),
+            data.get('generated_at', datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
+        ))
+        conn.commit()
+        conn.close()
+
+    # ==================== industry_data ====================
+
+    def load_industry_data(self, stock_code):
+        conn = self.get_connection()
+        row = conn.execute("SELECT * FROM industry_data WHERE stock_code=?", (stock_code,)).fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def save_industry_data(self, stock_code, data):
+        conn = self.get_connection()
+        # 同时更新股票的行业分类信息
+        self.upsert_stock(stock_code,
+                          sw_l1_code=data.get('sw_l1_code'), sw_l1_name=data.get('sw_l1_name'),
+                          sw_l2_code=data.get('sw_l2_code'), sw_l2_name=data.get('sw_l2_name'),
+                          sw_l3_code=data.get('sw_l3_code'), sw_l3_name=data.get('sw_l3_name'))
+
+        conn.execute("""
+            INSERT INTO industry_data (
+                stock_code, index_code, industry_name,
+                sw_l1_code, sw_l1_name, sw_l2_code, sw_l2_name, sw_l3_code, sw_l3_name,
+                analysis_date, current_level,
+                volatility_20d, volatility_60d, volatility_120d, volatility_250d,
+                annual_return_20d, annual_return_60d, annual_return_120d, annual_return_250d,
+                period_return_20d, period_return_60d, period_return_120d, period_return_250d,
+                ma_20, ma_60, ma_120, ma_250,
+                win_rate_20d, win_rate_60d, win_rate_120d, win_rate_250d,
+                total_days, drift, volatility,
+                data_source, generated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(stock_code) DO UPDATE SET
+                index_code=excluded.index_code, industry_name=excluded.industry_name,
+                sw_l1_code=excluded.sw_l1_code, sw_l1_name=excluded.sw_l1_name,
+                sw_l2_code=excluded.sw_l2_code, sw_l2_name=excluded.sw_l2_name,
+                sw_l3_code=excluded.sw_l3_code, sw_l3_name=excluded.sw_l3_name,
+                analysis_date=excluded.analysis_date, current_level=excluded.current_level,
+                volatility_20d=excluded.volatility_20d, volatility_60d=excluded.volatility_60d,
+                volatility_120d=excluded.volatility_120d, volatility_250d=excluded.volatility_250d,
+                annual_return_20d=excluded.annual_return_20d, annual_return_60d=excluded.annual_return_60d,
+                annual_return_120d=excluded.annual_return_120d, annual_return_250d=excluded.annual_return_250d,
+                period_return_20d=excluded.period_return_20d, period_return_60d=excluded.period_return_60d,
+                period_return_120d=excluded.period_return_120d, period_return_250d=excluded.period_return_250d,
+                ma_20=excluded.ma_20, ma_60=excluded.ma_60, ma_120=excluded.ma_120, ma_250=excluded.ma_250,
+                win_rate_20d=excluded.win_rate_20d, win_rate_60d=excluded.win_rate_60d,
+                win_rate_120d=excluded.win_rate_120d, win_rate_250d=excluded.win_rate_250d,
+                total_days=excluded.total_days, drift=excluded.drift, volatility=excluded.volatility,
+                data_source=excluded.data_source, generated_at=excluded.generated_at
+        """, (
+            stock_code, data.get('index_code'), data.get('industry_name'),
+            data.get('sw_l1_code'), data.get('sw_l1_name'),
+            data.get('sw_l2_code'), data.get('sw_l2_name'),
+            data.get('sw_l3_code'), data.get('sw_l3_name'),
+            data.get('analysis_date'), data.get('current_level'),
+            data.get('volatility_20d'), data.get('volatility_60d'),
+            data.get('volatility_120d'), data.get('volatility_250d'),
+            data.get('annual_return_20d'), data.get('annual_return_60d'),
+            data.get('annual_return_120d'), data.get('annual_return_250d'),
+            data.get('period_return_20d'), data.get('period_return_60d'),
+            data.get('period_return_120d'), data.get('period_return_250d'),
+            data.get('ma_20'), data.get('ma_60'), data.get('ma_120'), data.get('ma_250'),
+            data.get('win_rate_20d'), data.get('win_rate_60d'),
+            data.get('win_rate_120d'), data.get('win_rate_250d'),
+            data.get('total_days'), data.get('drift'), data.get('volatility'),
+            data.get('data_source', 'tushare_sw_index'),
+            data.get('generated_at', datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
+        ))
+        conn.commit()
+        conn.close()
+
+    def is_industry_data_stale(self, stock_code, max_days=7):
+        """检查行业数据是否过期。"""
+        conn = self.get_connection()
+        row = conn.execute("SELECT generated_at FROM industry_data WHERE stock_code=?", (stock_code,)).fetchone()
+        conn.close()
+        if row is None:
+            return True
+        try:
+            gen_time = datetime.strptime(row['generated_at'][:10], '%Y-%m-%d')
+            return (datetime.now() - gen_time).days > max_days
+        except (ValueError, TypeError):
+            return True
+
+    # ==================== relative_valuation ====================
+
+    def is_cache_valid(self, stock_code):
+        """检查相对估值缓存是否有效（cache_date == 今天）。"""
+        conn = self.get_connection()
+        row = conn.execute(
+            "SELECT cache_date FROM relative_valuation WHERE stock_code=?", (stock_code,)
+        ).fetchone()
+        conn.close()
+        if row is None:
+            return False
+        today = datetime.now().strftime('%Y%m%d')
+        return row['cache_date'] == today
+
+    def load_relative_valuation(self, stock_code):
+        """加载相对估值缓存（含 peer_companies）。"""
+        conn = self.get_connection()
+        row = conn.execute(
+            "SELECT * FROM relative_valuation WHERE stock_code=?", (stock_code,)
+        ).fetchone()
+        if row is None:
+            conn.close()
+            return None
+
+        result = dict(row)
+        result.pop('created_at', None)
+
+        # 加载 peer_companies
+        peers = conn.execute(
+            "SELECT peer_name as name, peer_code as code, pe, ps, pb, market_cap "
+            "FROM peer_companies WHERE stock_code=?", (stock_code,)
+        ).fetchall()
+        result['peer_companies'] = [dict(p) for p in peers]
+        result['current_metrics'] = {
+            'pe': result.pop('current_pe'),
+            'pb': result.pop('current_pb'),
+            'ps': result.pop('current_ps'),
+        }
+        conn.close()
+        return result
+
+    def save_relative_valuation(self, stock_code, data):
+        """保存相对估值缓存。"""
+        conn = self.get_connection()
+        self.upsert_stock(stock_code)
+
+        metrics = data.get('current_metrics', {})
+        conn.execute("""
+            INSERT INTO relative_valuation (
+                stock_code, cache_date, trade_date,
+                current_pe, current_pb, current_ps,
+                sw_index_pe, sw_index_pb, sw_index_ps,
+                target_index_code, target_industry_l3
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(stock_code) DO UPDATE SET
+                cache_date=excluded.cache_date, trade_date=excluded.trade_date,
+                current_pe=excluded.current_pe, current_pb=excluded.current_pb,
+                current_ps=excluded.current_ps,
+                sw_index_pe=excluded.sw_index_pe, sw_index_pb=excluded.sw_index_pb,
+                sw_index_ps=excluded.sw_index_ps,
+                target_index_code=excluded.target_index_code,
+                target_industry_l3=excluded.target_industry_l3,
+                created_at=datetime('now')
+        """, (
+            stock_code, data.get('cache_date'), data.get('trade_date'),
+            metrics.get('pe'), metrics.get('pb'), metrics.get('ps'),
+            data.get('sw_index_pe'), data.get('sw_index_pb'), data.get('sw_index_ps'),
+            data.get('target_index_code'), data.get('target_industry_l3'),
+        ))
+
+        # 清除旧 peer_companies 并重新写入
+        conn.execute("DELETE FROM peer_companies WHERE stock_code=?", (stock_code,))
+        for p in data.get('peer_companies', []):
+            conn.execute("""
+                INSERT INTO peer_companies (stock_code, peer_name, peer_code, pe, ps, pb, market_cap)
+                VALUES (?,?,?,?,?,?,?)
+            """, (stock_code, p.get('name'), p.get('code'),
+                  p.get('pe'), p.get('ps'), p.get('pb'), p.get('market_cap')))
+
+        conn.commit()
+        conn.close()
+
+    # ==================== issue_date_locked ====================
+
+    def load_issue_date_locked(self, stock_code, issue_date):
+        conn = self.get_connection()
+        row = conn.execute(
+            "SELECT * FROM issue_date_locked WHERE stock_code=? AND issue_date=?",
+            (stock_code, issue_date),
+        ).fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def save_issue_date_locked(self, stock_code, issue_date, data):
+        conn = self.get_connection()
+        self.upsert_stock(stock_code)
+        conn.execute("""
+            INSERT INTO issue_date_locked (stock_code, issue_date, issue_date_price, ma_20,
+                current_price, analysis_date, locked_timestamp)
+            VALUES (?,?,?,?,?,?,?)
+            ON CONFLICT(stock_code, issue_date) DO UPDATE SET
+                issue_date_price=excluded.issue_date_price,
+                ma_20=excluded.ma_20,
+                current_price=excluded.current_price,
+                analysis_date=excluded.analysis_date,
+                locked_timestamp=excluded.locked_timestamp
+        """, (
+            stock_code, issue_date, data.get('issue_date_price'),
+            data.get('ma_20'), data.get('current_price'),
+            data.get('analysis_date'), data.get('locked_timestamp'),
+        ))
+        conn.commit()
+        conn.close()
+
+    def update_issue_date_current_price(self, stock_code, issue_date, price, analysis_date):
+        conn = self.get_connection()
+        conn.execute("""
+            UPDATE issue_date_locked SET current_price=?, analysis_date=?
+            WHERE stock_code=? AND issue_date=?
+        """, (price, analysis_date, stock_code, issue_date))
+        conn.commit()
+        conn.close()
+
+    # ==================== market_indices ====================
+
+    def load_market_indices(self, locked_date=None):
+        """加载市场指数数据。返回 dict，key 为指数名称。"""
+        conn = self.get_connection()
+        rows = conn.execute(
+            "SELECT * FROM market_indices WHERE locked_date=?",
+            (locked_date or '',),
+        ).fetchall()
+        conn.close()
+
+        result = {}
+        for row in rows:
+            r = dict(row)
+            name = r.pop('index_name')
+            r.pop('index_code', None)
+            r.pop('locked_date', None)
+            r.pop('created_at', None)
+            result[name] = r
+        return result if result else None
+
+    def save_market_indices(self, indices_data, locked_date=None):
+        """保存市场指数数据。indices_data: dict keyed by index_name."""
+        conn = self.get_connection()
+        ld = locked_date or ''
+        # 先清除同 locked_date 的旧数据
+        conn.execute("DELETE FROM market_indices WHERE locked_date=?", (ld,))
+
+        for name, data in indices_data.items():
+            # 用 index_name 作为 index_code（JSON 数据中无 index_code 字段）
+            idx_code = data.get('index_code') or name
+            conn.execute("""
+                INSERT OR REPLACE INTO market_indices (
+                    index_code, index_name, locked_date, current_level,
+                    volatility_20d, volatility_60d, volatility_120d, volatility_250d,
+                    return_20d, return_60d, return_120d, return_250d,
+                    period_log_return_20d, period_log_return_60d,
+                    period_log_return_120d, period_log_return_250d,
+                    ma_20, ma_60, ma_120, ma_250,
+                    win_rate_20d, win_rate_60d, win_rate_120d, win_rate_250d,
+                    data_date
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (
+                idx_code, name, ld, data.get('current_level'),
+                data.get('volatility_20d'), data.get('volatility_60d'),
+                data.get('volatility_120d'), data.get('volatility_250d'),
+                data.get('return_20d'), data.get('return_60d'),
+                data.get('return_120d'), data.get('return_250d'),
+                data.get('period_log_return_20d'), data.get('period_log_return_60d'),
+                data.get('period_log_return_120d'), data.get('period_log_return_250d'),
+                data.get('ma_20'), data.get('ma_60'), data.get('ma_120'), data.get('ma_250'),
+                data.get('win_rate_20d'), data.get('win_rate_60d'),
+                data.get('win_rate_120d'), data.get('win_rate_250d'),
+                data.get('data_date'),
+            ))
+
+        conn.commit()
+        conn.close()
+
+    # ==================== screening_results ====================
+
+    def save_screening_result(self, batch_id, stock_code, stock_name, result):
+        conn = self.get_connection()
+        self.upsert_stock(stock_code, stock_name)
+        decision = result.get('decision_conclusion') or {}
+        pr = decision.get('premium_range') or {}
+        conn.execute("""
+            INSERT INTO screening_results (
+                batch_id, stock_code, stock_name,
+                premium_min, premium_max, valid_thresholds,
+                step1_pass, step1_detail,
+                step2_pass, step2_detail,
+                step3_pass, step3_detail,
+                decision, summary, error
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            batch_id, stock_code, stock_name,
+            pr.get('min'), pr.get('max'), decision.get('valid_thresholds'),
+            1 if decision.get('step1', {}).get('pass') else 0,
+            decision.get('step1', {}).get('detail', ''),
+            1 if decision.get('step2', {}).get('pass') else 0,
+            decision.get('step2', {}).get('detail', ''),
+            1 if decision.get('step3', {}).get('pass') else 0,
+            decision.get('step3', {}).get('detail', ''),
+            decision.get('decision', ''),
+            decision.get('summary', ''),
+            result.get('error', ''),
+        ))
+        conn.commit()
+        conn.close()
+
+    def get_screening_results(self, batch_id):
+        conn = self.get_connection()
+        rows = conn.execute(
+            "SELECT * FROM screening_results WHERE batch_id=? ORDER BY id",
+            (batch_id,),
+        ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    def list_batches(self):
+        conn = self.get_connection()
+        rows = conn.execute("""
+            SELECT batch_id, COUNT(*) as cnt,
+                   SUM(CASE WHEN decision='建议参与本次定向增发' THEN 1 ELSE 0 END) as pass_cnt,
+                   MIN(created_at) as created_at
+            FROM screening_results
+            GROUP BY batch_id
+            ORDER BY created_at DESC
+        """).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    # ==================== 迁移工具 ====================
+
+    def migrate_from_json(self, data_dir):
+        """从现有 JSON 文件导入数据到数据库。"""
+        import glob
+
+        # placement_params
+        for f in sorted(glob.glob(os.path.join(data_dir, '*_placement_params.json'))):
+            basename = os.path.basename(f)
+            code = basename.replace('_placement_params.json', '').replace('_', '.', 1)
+            with open(f, 'r', encoding='utf-8') as fh:
+                params = json.load(fh)
+            print(f"  迁移 placement_params: {code}")
+            self.upsert_stock(code)
+            self.save_placement_params(code, params)
+
+        # market_data
+        for f in sorted(glob.glob(os.path.join(data_dir, '*_market_data.json'))):
+            basename = os.path.basename(f)
+            code = basename.replace('_market_data.json', '').replace('_', '.', 1)
+            with open(f, 'r', encoding='utf-8') as fh:
+                data = json.load(fh)
+            print(f"  迁移 market_data: {code}")
+            self.save_market_data(code, data)
+
+        # industry_data
+        for f in sorted(glob.glob(os.path.join(data_dir, '*_industry_data.json'))):
+            if '_backup_' in f:
+                continue
+            basename = os.path.basename(f)
+            code = basename.replace('_industry_data.json', '').replace('_', '.', 1)
+            with open(f, 'r', encoding='utf-8') as fh:
+                data = json.load(fh)
+            print(f"  迁移 industry_data: {code}")
+            self.save_industry_data(code, data)
+
+        # relative_valuation
+        for f in sorted(glob.glob(os.path.join(data_dir, '*_relative_valuation.json'))):
+            basename = os.path.basename(f)
+            code = basename.replace('_relative_valuation.json', '').replace('_', '.', 1)
+            with open(f, 'r', encoding='utf-8') as fh:
+                data = json.load(fh)
+            print(f"  迁移 relative_valuation: {code}")
+            self.save_relative_valuation(code, data)
+
+        # issue_date_locked
+        for f in sorted(glob.glob(os.path.join(data_dir, '*_issue_date_locked.json'))):
+            basename = os.path.basename(f)
+            code = basename.replace('_issue_date_locked.json', '').replace('_', '.', 1)
+            with open(f, 'r', encoding='utf-8') as fh:
+                data = json.load(fh)
+            issue_date = data.get('issue_date', '')
+            if issue_date:
+                print(f"  迁移 issue_date_locked: {code} @ {issue_date}")
+                self.save_issue_date_locked(code, issue_date, data)
+
+        # market_indices_scenario_data_v2.json
+        indices_file = os.path.join(data_dir, 'market_indices_scenario_data_v2.json')
+        if os.path.exists(indices_file):
+            with open(indices_file, 'r', encoding='utf-8') as fh:
+                data = json.load(fh)
+            print(f"  迁移 market_indices: {len(data)} 个指数")
+            self.save_market_indices(data)
+
+        print("\n迁移完成！")
+
+
+# ==================== Schema ====================
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS stocks (
+    stock_code   TEXT PRIMARY KEY,
+    stock_name   TEXT,
+    sw_l1_code   TEXT, sw_l1_name   TEXT,
+    sw_l2_code   TEXT, sw_l2_name   TEXT,
+    sw_l3_code   TEXT, sw_l3_name   TEXT,
+    created_at   TEXT DEFAULT (datetime('now')),
+    updated_at   TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS placement_params (
+    stock_code       TEXT PRIMARY KEY REFERENCES stocks(stock_code),
+    financing_amount INTEGER DEFAULT 100000000,
+    lockup_period    INTEGER DEFAULT 6,
+    pricing_method   TEXT DEFAULT 'ma20_discount_90',
+    premium_rate     REAL DEFAULT -0.10,
+    risk_free_rate   REAL DEFAULT 0.03,
+    net_assets       REAL DEFAULT 0,
+    total_debt       REAL DEFAULT 0,
+    net_income       REAL DEFAULT 0,
+    revenue_growth   REAL DEFAULT 0.15,
+    operating_margin REAL DEFAULT 0.15,
+    beta             REAL DEFAULT 1.0,
+    created_at       TEXT DEFAULT (datetime('now')),
+    updated_at       TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS historical_fcf (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    stock_code  TEXT NOT NULL REFERENCES stocks(stock_code),
+    year        INTEGER NOT NULL,
+    revenue     REAL, operate_profit REAL, net_income REAL,
+    nopat       REAL, depreciation  REAL, capex      REAL,
+    wc_change   REAL, fcf           REAL,
+    UNIQUE(stock_code, year)
+);
+
+CREATE TABLE IF NOT EXISTS market_data (
+    stock_code       TEXT PRIMARY KEY REFERENCES stocks(stock_code),
+    analysis_date    TEXT,
+    latest_trading_date TEXT,
+    issue_date       TEXT, invitation_date TEXT,
+    current_price    REAL, avg_price_all REAL, median_price REAL, price_std REAL,
+    volatility_20d   REAL, volatility_60d  REAL, volatility_120d REAL, volatility_250d REAL,
+    annual_return_20d REAL, annual_return_60d REAL, annual_return_120d REAL, annual_return_250d REAL,
+    period_return_20d REAL, period_return_60d REAL, period_return_120d REAL, period_return_250d REAL,
+    ma_20 REAL, ma_30 REAL, ma_60 REAL, ma_120 REAL, ma_250 REAL,
+    win_rate_20d REAL, win_rate_60d REAL, win_rate_120d REAL, win_rate_250d REAL,
+    total_days INTEGER,
+    drift      REAL, volatility REAL,
+    price_series     TEXT,
+    market_turnover  TEXT,
+    data_source      TEXT DEFAULT 'tushare_realtime',
+    generated_at     TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS industry_data (
+    stock_code    TEXT PRIMARY KEY REFERENCES stocks(stock_code),
+    index_code    TEXT,
+    industry_name TEXT,
+    sw_l1_code TEXT, sw_l1_name TEXT,
+    sw_l2_code TEXT, sw_l2_name TEXT,
+    sw_l3_code TEXT, sw_l3_name TEXT,
+    analysis_date  TEXT, current_level REAL,
+    volatility_20d REAL, volatility_60d REAL, volatility_120d REAL, volatility_250d REAL,
+    annual_return_20d REAL, annual_return_60d REAL, annual_return_120d REAL, annual_return_250d REAL,
+    period_return_20d REAL, period_return_60d REAL, period_return_120d REAL, period_return_250d REAL,
+    ma_20 REAL, ma_60 REAL, ma_120 REAL, ma_250 REAL,
+    win_rate_20d REAL, win_rate_60d REAL, win_rate_120d REAL, win_rate_250d REAL,
+    total_days INTEGER, drift REAL, volatility REAL,
+    data_source TEXT DEFAULT 'tushare_sw_index',
+    generated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS relative_valuation (
+    stock_code        TEXT PRIMARY KEY REFERENCES stocks(stock_code),
+    cache_date        TEXT NOT NULL,
+    trade_date        TEXT,
+    current_pe        REAL, current_pb REAL, current_ps REAL,
+    sw_index_pe       REAL, sw_index_pb REAL, sw_index_ps REAL,
+    target_index_code TEXT, target_industry_l3 TEXT,
+    created_at        TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS peer_companies (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    stock_code  TEXT NOT NULL REFERENCES stocks(stock_code),
+    peer_name   TEXT, peer_code TEXT,
+    pe REAL, ps REAL, pb REAL, market_cap REAL
+);
+
+CREATE TABLE IF NOT EXISTS issue_date_locked (
+    stock_code      TEXT NOT NULL REFERENCES stocks(stock_code),
+    issue_date      TEXT NOT NULL,
+    issue_date_price REAL,
+    ma_20           REAL,
+    current_price   REAL,
+    analysis_date   TEXT,
+    locked_timestamp TEXT,
+    PRIMARY KEY (stock_code, issue_date)
+);
+
+CREATE TABLE IF NOT EXISTS market_indices (
+    index_code  TEXT NOT NULL,
+    index_name  TEXT NOT NULL,
+    locked_date TEXT DEFAULT '',
+    current_level REAL,
+    volatility_20d REAL, volatility_60d REAL, volatility_120d REAL, volatility_250d REAL,
+    return_20d REAL, return_60d REAL, return_120d REAL, return_250d REAL,
+    period_log_return_20d REAL, period_log_return_60d REAL,
+    period_log_return_120d REAL, period_log_return_250d REAL,
+    ma_20 REAL, ma_60 REAL, ma_120 REAL, ma_250 REAL,
+    win_rate_20d REAL, win_rate_60d REAL, win_rate_120d REAL, win_rate_250d REAL,
+    data_date   TEXT,
+    created_at  TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (index_code, locked_date)
+);
+
+CREATE TABLE IF NOT EXISTS screening_results (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id        TEXT NOT NULL,
+    stock_code      TEXT REFERENCES stocks(stock_code),
+    stock_name      TEXT,
+    premium_min     REAL, premium_max   REAL,
+    valid_thresholds INTEGER,
+    step1_pass      INTEGER, step1_detail TEXT,
+    step2_pass      INTEGER, step2_detail TEXT,
+    step3_pass      INTEGER, step3_detail TEXT,
+    decision        TEXT,
+    summary         TEXT,
+    error           TEXT,
+    created_at      TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_screening_batch ON screening_results(batch_id);
+"""

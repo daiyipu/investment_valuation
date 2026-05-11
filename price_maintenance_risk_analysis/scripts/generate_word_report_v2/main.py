@@ -617,6 +617,38 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
     return document
 
 
+def _ensure_market_data(stock_code, stock_name, market_data_file, issue_date=None):
+    """确保市场数据文件存在且包含 ma_20，缺失或无效时自动重新生成。"""
+    need_generate = True
+
+    if os.path.exists(market_data_file):
+        try:
+            with open(market_data_file, 'r', encoding='utf-8') as f:
+                existing = json.load(f)
+            if existing and existing.get('ma_20'):
+                need_generate = False
+        except Exception:
+            pass
+
+    if need_generate:
+        scripts_dir = os.path.join(PROJECT_DIR, 'scripts')
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        import importlib
+        update_module = importlib.import_module('update_market_data')
+        updated_data = update_module.generate_market_data(
+            stock_code, stock_name or stock_code, issue_date,
+        )
+        if updated_data:
+            with open(market_data_file, 'w', encoding='utf-8') as f:
+                json.dump(updated_data, f, ensure_ascii=False, indent=2)
+            print(f"  市场数据已自动生成")
+        else:
+            raise ValueError(
+                f"无法生成 {stock_code} 的市场数据，请检查Tushare API配置"
+            )
+
+
 def generate_report_headless(stock_code, stock_name=None, issue_date=None, force=True):
     """无头模式：运行完整分析管线，返回结构化决策结果，不保存Word文档。
 
@@ -642,28 +674,21 @@ def generate_report_headless(stock_code, stock_name=None, issue_date=None, force
     try:
         print(f"\n[headless] 分析 {stock_code} ({stock_name or ''})...")
 
+        # 确保 market_data 文件存在且有效（必须在 load_placement_config 之前）
+        market_data_file = os.path.join(DATA_DIR, f"{stock_code.replace('.', '_')}_market_data.json")
+        _ensure_market_data(stock_code, stock_name, market_data_file, issue_date)
+
         # 加载配置
         project_params, risk_params, market_data = load_placement_config(stock_code)
         if not stock_name:
             stock_name = project_params.get('company_name', stock_code)
             result['stock_name'] = stock_name
 
-        # 自动生成市场数据（如果缺失）
-        market_data_file = os.path.join(DATA_DIR, f"{stock_code.replace('.', '_')}_market_data.json")
-        if not os.path.exists(market_data_file):
-            scripts_dir = os.path.join(PROJECT_DIR, 'scripts')
-            if scripts_dir not in sys.path:
-                sys.path.insert(0, scripts_dir)
-            import importlib
-            update_module = importlib.import_module('update_market_data')
-            updated_data = update_module.generate_market_data(stock_code, stock_name, issue_date)
-            if updated_data:
-                with open(market_data_file, 'w', encoding='utf-8') as f:
-                    json.dump(updated_data, f, ensure_ascii=False, indent=2)
-                project_params, risk_params, market_data = load_placement_config(stock_code)
-
-        # 加载行业数据
+        # 加载行业数据（失败时用空dict，不阻塞后续分析）
         industry_data = _load_industry_data(stock_code)
+        if industry_data is None:
+            print(f"  ⚠️ 行业数据加载失败，将跳过行业相关分析")
+            industry_data = {}
 
         # 锁定发行日价格
         if issue_date:
@@ -697,17 +722,24 @@ def generate_report_headless(stock_code, stock_name=None, issue_date=None, force
             'results': {},
         }
 
-        # 依次调用各章节
-        context = chapter01_overview.generate_chapter(context)
-        context = chapter02_valuation.generate_chapter(context)
-        context = chapter03_dcf.generate_chapter(context)
-        context = chapter04_sensitivity.generate_chapter(context)
-        context = chapter05_montecarlo.generate_chapter(context)
-        context = chapter06_scenario.generate_chapter(context)
-        context = chapter07_stress.generate_chapter(context)
-        context = chapter08_var.generate_chapter(context)
-        context = chapter09_01_evaluation.generate_chapter(context)
-        context = chapter09_advice.generate_chapter(context)
+        # 依次调用各章节（单章节失败不阻塞后续章节）
+        chapters = [
+            ('Ch1 概况', chapter01_overview.generate_chapter),
+            ('Ch2 相对估值', chapter02_valuation.generate_chapter),
+            ('Ch3 DCF估值', chapter03_dcf.generate_chapter),
+            ('Ch4 敏感性', chapter04_sensitivity.generate_chapter),
+            ('Ch5 蒙特卡洛', chapter05_montecarlo.generate_chapter),
+            ('Ch6 情景分析', chapter06_scenario.generate_chapter),
+            ('Ch7 压力测试', chapter07_stress.generate_chapter),
+            ('Ch8 VaR', chapter08_var.generate_chapter),
+            ('Ch9.1 评估汇总', chapter09_01_evaluation.generate_chapter),
+            ('Ch9 风控建议', chapter09_advice.generate_chapter),
+        ]
+        for ch_name, ch_fn in chapters:
+            try:
+                context = ch_fn(context)
+            except Exception as ch_err:
+                print(f"  ⚠️ {ch_name} 失败: {ch_err}")
 
         # 提取决策结论
         decision = context.get('results', {}).get('decision_conclusion')
