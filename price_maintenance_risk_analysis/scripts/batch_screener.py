@@ -45,7 +45,7 @@ def _analyze_one(stock_code, stock_name, headless_fn):
         '有效阈值数': decision.get('valid_thresholds', '-'),
         '①历史数据场景': ('✓ 通过' if decision.get('step1', {}).get('pass') else '✗ 未通过') if decision else '-',
         '②预期估值场景': ('✓ 通过' if decision.get('step2', {}).get('pass') else '✗ 未通过') if decision else '-',
-        '③量化方法': ('✓ 通过' if decision.get('step3', {}).get('pass') else '✗ 未通过') if decision else '-',
+        '③其他场景': ('✓ 通过' if decision.get('step3', {}).get('pass') else '✗ 未通过') if decision else '-',
         '定增决策': decision.get('decision', '分析失败') if decision else '分析失败',
         '决策详情': decision.get('summary', error or '无结果') if decision else (error or '无结果'),
     }
@@ -69,10 +69,25 @@ def run_batch_screening(stock_list, output_path=None):
     # 延迟导入
     from main import generate_report_headless
 
+    # 生成批次ID
+    from datetime import datetime
+    batch_id = datetime.now().strftime('%Y%m%d_%H%M%S')
+
     results = []
+    raw_results = []  # 保存原始headless结果用于DB
     for idx, (code, name) in enumerate(stock_list, 1):
         print(f'[{idx}/{total}] {code} {name}')
-        results.append(_analyze_one(code, name, generate_report_headless))
+        headless_result = generate_report_headless(code, name)
+        raw_results.append(headless_result)
+        results.append(_analyze_one(code, name, lambda c, n: headless_result))
+
+        # 保存到DB
+        try:
+            from utils.db_manager import ValuationDB
+            db = ValuationDB()
+            db.save_screening_result(batch_id, code, name, headless_result)
+        except Exception:
+            pass
 
     # 写入 Excel
     df = pd.DataFrame(results)

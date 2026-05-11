@@ -517,24 +517,39 @@ def generate_chapter(context):
     add_paragraph(document, '通过组合不同漂移率、波动率和溢价率水平，生成3×3×5=45个情景，全面评估市场环境对定增收益的影响。')
     add_paragraph(document, '')
 
-    # 加载指数数据
+    # 加载指数数据（优先DB，回退文件）
     indices_data_available = False
     index_vol_values = []
     index_return_values = []
+    indices_data_loaded = None
 
     try:
-        indices_data_file = os.path.join(DATA_DIR, 'market_indices_scenario_data_v2.json')
-        if os.path.exists(indices_data_file):
-            with open(indices_data_file, 'r', encoding='utf-8') as f:
-                indices_data_loaded = json.load(f)
+        # 优先从DB加载
+        try:
+            from utils.db_manager import ValuationDB
+            db = ValuationDB()
+            # 先尝试锁定数据（如有发行日）
+            locked_date = project_params.get('issue_date')
+            indices_data_loaded = db.load_market_indices(locked_date=locked_date)
+            if not indices_data_loaded:
+                indices_data_loaded = db.load_market_indices()
+        except Exception:
+            pass
 
-            # 检查是否为锁定数据（通过第一个指数的 locked_issue_date 字段判断）
+        # DB无数据，回退到JSON文件
+        if not indices_data_loaded:
+            indices_data_file = os.path.join(DATA_DIR, 'market_indices_scenario_data_v2.json')
+            if os.path.exists(indices_data_file):
+                with open(indices_data_file, 'r', encoding='utf-8') as f:
+                    indices_data_loaded = json.load(f)
+
+        if indices_data_loaded:
+            # 检查是否为锁定数据
             first_index = next(iter(indices_data_loaded.values())) if indices_data_loaded else {}
             is_locked_data = 'locked_issue_date' in first_index and first_index['locked_issue_date']
 
             if is_locked_data:
                 print(f"  使用锁定指数数据（发行日: {first_index.get('locked_issue_date')}）")
-                print(f"  数据截止日: {first_index.get('locked_data_date')}")
             else:
                 print(f"  使用通用指数数据（最新日期）")
 
@@ -546,18 +561,15 @@ def generate_chapter(context):
                     index_vol_values.append(indices_data_loaded[index_name]['volatility_120d'])
                     # 优先使用区间对数收益率字段，如果不存在则从年化收益率反推
                     if 'period_log_return_120d' in indices_data_loaded[index_name]:
-                        # 新数据结构：直接使用区间对数收益率
                         index_return_values.append(indices_data_loaded[index_name]['period_log_return_120d'])
                     else:
-                        # 旧数据结构：从年化对数收益率反推
                         annual_log_return = indices_data_loaded[index_name]['return_120d']
                         period_log_return = annual_log_return * (120.0 / 250.0)
                         index_return_values.append(period_log_return)
 
             if index_vol_values and index_return_values:
                 indices_data_available = True
-                print(f" 已加载指数数据: {indices_data_file}")
-                print(f"   涵盖指数: {', '.join(major_indices)}")
+                print(f" 已加载指数数据，涵盖指数: {', '.join(major_indices)}")
     except Exception as e:
         print(f" 无法加载指数数据，使用默认值: {e}")
 
@@ -847,8 +859,9 @@ def generate_chapter(context):
 
                     add_paragraph(document, '')
                     add_paragraph(document, ' 行业PE情景分析结论：')
-                    best_scenario = max(industry_pe_scenario_results, key=lambda x: x['profit_prob'])
-                    worst_scenario = min(industry_pe_scenario_results, key=lambda x: x['profit_prob'])
+                    sorted_ind_pe = sorted(industry_pe_scenario_results, key=lambda x: (x['profit_prob'], x['median_return']), reverse=True)
+                    best_scenario = sorted_ind_pe[0]
+                    worst_scenario = sorted_ind_pe[-1]
                     add_paragraph(document, f'• 最优情景：{best_scenario["scenario"]["name"]}，盈利概率{best_scenario["profit_prob"]:.1f}%，中位数收益{best_scenario["median_return"]*100:+.1f}%')
                     add_paragraph(document, f'• 最差情景：{worst_scenario["scenario"]["name"]}，盈利概率{worst_scenario["profit_prob"]:.1f}%，中位数收益{worst_scenario["median_return"]*100:+.1f}%')
 
@@ -1022,8 +1035,9 @@ def generate_chapter(context):
 
                     add_paragraph(document, '')
                     add_paragraph(document, ' 个股PE情景分析结论：')
-                    best_scenario = max(stock_pe_scenario_results, key=lambda x: x['profit_prob'])
-                    worst_scenario = min(stock_pe_scenario_results, key=lambda x: x['profit_prob'])
+                    sorted_stock_pe = sorted(stock_pe_scenario_results, key=lambda x: (x['profit_prob'], x['median_return']), reverse=True)
+                    best_scenario = sorted_stock_pe[0]
+                    worst_scenario = sorted_stock_pe[-1]
                     add_paragraph(document, f'• 最优情景：{best_scenario["scenario"]["name"]}，盈利概率{best_scenario["profit_prob"]:.1f}%，中位数收益{best_scenario["median_return"]*100:+.1f}%')
                     add_paragraph(document, f'• 最差情景：{worst_scenario["scenario"]["name"]}，盈利概率{worst_scenario["profit_prob"]:.1f}%，中位数收益{worst_scenario["median_return"]*100:+.1f}%')
 
@@ -1313,8 +1327,10 @@ def generate_chapter(context):
 
                         add_paragraph(document, '')
                         add_paragraph(document, ' 修正PE估值情景分析结论：')
-                        best_pe = max(pe_scenario_results, key=lambda x: x['profit_prob'])
-                        worst_pe = min(pe_scenario_results, key=lambda x: x['profit_prob'])
+                        # 综合排序：先按盈利概率降序，再按中位数收益降序
+                        sorted_pe_conclusion = sorted(pe_scenario_results, key=lambda x: (x['profit_prob'], x['median_return']), reverse=True)
+                        best_pe = sorted_pe_conclusion[0]
+                        worst_pe = sorted_pe_conclusion[-1]
                         add_paragraph(document, f'• 最优情景：{best_pe["scenario"]["name"]}，盈利概率{best_pe["profit_prob"]:.1f}%，中位数收益{best_pe["median_return"]*100:+.1f}%')
                         add_paragraph(document, f'• 最差情景：{worst_pe["scenario"]["name"]}，盈利概率{worst_pe["profit_prob"]:.1f}%，中位数收益{worst_pe["median_return"]*100:+.1f}%')
 

@@ -9,19 +9,25 @@ import os
 from typing import Dict, Optional, Tuple
 
 
-def create_default_config(stock_code: str, placement_file: str) -> Dict:
+def _get_db():
+    """获取数据库实例（延迟导入避免循环依赖）。"""
+    from utils.db_manager import ValuationDB
+    return ValuationDB()
+
+
+def create_default_config(stock_code: str, placement_file: str = None) -> Dict:
     """
-    自动生成默认配置文件
+    自动生成默认配置（写入DB）
 
     参数:
         stock_code: 股票代码
-        placement_file: 配置文件路径
+        placement_file: 兼容参数，不再使用
 
     返回:
         默认配置字典
     """
     default_config = {
-        "financing_amount": 100000000,  # 固定1亿元，用于风险评估
+        "financing_amount": 100000000,
         "lockup_period": 6,
         "pricing_method": "ma20_discount_90",
         "premium_rate": -0.10,
@@ -48,14 +54,12 @@ def create_default_config(stock_code: str, placement_file: str) -> Dict:
         }
     }
 
-    # 确保目录存在
-    os.makedirs(os.path.dirname(placement_file), exist_ok=True)
+    # 写入DB
+    db = _get_db()
+    db.upsert_stock(stock_code)
+    db.save_placement_params(stock_code, default_config)
 
-    # 保存默认配置
-    with open(placement_file, 'w', encoding='utf-8') as f:
-        json.dump(default_config, f, indent=2, ensure_ascii=False)
-
-    print(f"✅ 自动生成默认配置: {placement_file}")
+    print(f"✅ 自动生成默认配置: {stock_code}")
     print(f"⚠️  配置说明：投资金额已固定为1亿元（用于风险评估），无需手动修改")
 
     return default_config
@@ -71,7 +75,7 @@ def load_placement_config(
 
     参数:
         stock_code: 股票代码，如 '300735.SZ'
-        data_dir: 数据文件所在目录（None时自动检测）
+        data_dir: 数据文件所在目录（兼容参数，DB模式下不再使用）
         prefer_market_data: 是否优先使用市场数据（如果存在）
 
     返回:
@@ -85,49 +89,32 @@ def load_placement_config(
         >>> print(f"波动率: {risk_params['volatility']*100:.2f}%")
         >>> print(f"收益率: {risk_params['drift']*100:.2f}%")
     """
-    # 自动检测数据目录
-    if data_dir is None:
-        # 优先使用统一的data目录（price_maintenance_risk_analysis/data）
-        # 尝试多个可能的路径，优先级从高到低
-        possible_dirs = [
-            'data',           # price_maintenance_risk_analysis/data (当在项目根目录时)
-            '../data',        # price_maintenance_risk_analysis/data (当在scripts目录时)
-            '.',              # 当前目录
-            '..'              # 父目录（兼容性）
-        ]
-        for test_dir in possible_dirs:
-            test_file = os.path.join(test_dir, f"{stock_code.replace('.', '_')}_placement_params.json")
-            if os.path.exists(test_file):
-                data_dir = test_dir
-                break
+    db = _get_db()
 
-        if data_dir is None:
-            data_dir = 'data'  # 默认使用data目录
-
-    # 统一文件名格式
-    placement_file = os.path.join(data_dir, f"{stock_code.replace('.', '_')}_placement_params.json")
-
-    # 1. 加载定增参数（如果不存在，自动创建默认配置）
-    if not os.path.exists(placement_file):
-        placement_params = create_default_config(stock_code, placement_file)
+    # 1. 从DB加载定增参数（如果不存在，自动创建默认配置）
+    placement_params = db.load_placement_params(stock_code)
+    if placement_params is None:
+        placement_params = create_default_config(stock_code)
     else:
-        with open(placement_file, 'r', encoding='utf-8') as f:
-            placement_params = json.load(f)
-        print(f"✅ 已加载定增参数: {placement_file}")
+        print(f"✅ 已加载定增参数(DB): {stock_code}")
 
-    # 2. 尝试加载市场数据（如果启用）
+    # 2. 从DB加载市场数据
     market_data = None
     if prefer_market_data:
-        try:
-            # 尝试多种导入方式以适应不同的运行上下文
+        market_data = db.load_market_data(stock_code)
+        if market_data:
+            print(f"✅ 已加载市场数据(DB): {stock_code}")
+        else:
+            print(f"⚠️ DB中无市场数据，尝试从加载器获取")
             try:
-                from utils.market_data_loader import load_market_data
-            except ImportError:
-                from market_data_loader import load_market_data
-            market_data = load_market_data(stock_code, data_dir=data_dir)
-        except Exception as e:
-            print(f"⚠️ 市场数据加载失败: {e}")
-            print(f"   将使用默认值")
+                try:
+                    from utils.market_data_loader import load_market_data
+                except ImportError:
+                    from market_data_loader import load_market_data
+                market_data = load_market_data(stock_code, data_dir=data_dir)
+            except Exception as e:
+                print(f"⚠️ 市场数据加载失败: {e}")
+                print(f"   将使用默认值")
 
     # 3. 计算或获取发行价
     pricing_ma20 = None  # 用于定价的MA20（整个报告统一使用）

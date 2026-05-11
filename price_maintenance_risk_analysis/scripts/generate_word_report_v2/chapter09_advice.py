@@ -113,7 +113,7 @@ def calculate_decision_conclusion(thresholds, qualified_by_category=None,
     s3_status = '✓ 通过' if step3_pass else '✗ 未通过'
     lines.append(f'①历史数据场景：{step1_detail} → {s1_status}')
     lines.append(f'②预期估值场景：{step2_detail} → {s2_status}')
-    lines.append(f'③量化方法：{step3_detail} → {s3_status}')
+    lines.append(f'③其他场景：{step3_detail} → {s3_status}')
     lines.append(f'结论：{decision}')
     summary = '\n'.join(lines)
 
@@ -2305,7 +2305,7 @@ def generate_chapter(context):
         s3_status = '✓ 通过' if s3['pass'] else '✗ 未通过'
         add_paragraph(document, f'① 历史数据场景：{s1["detail"]} → {s1_status}（需≥2个）')
         add_paragraph(document, f'② 预期估值场景：{s2["detail"]} → {s2_status}（需≥1个）')
-        add_paragraph(document, f'③ 反向推算/蒙特卡洛/参数构造：{s3["detail"]} → {s3_status}（需≥2个）')
+        add_paragraph(document, f'③ 其他场景：{s3["detail"]} → {s3_status}（需≥2个）')
         add_paragraph(document, '')
 
         if all([s1['pass'], s2['pass'], s3['pass']]):
@@ -2317,7 +2317,7 @@ def generate_chapter(context):
             if not s2['pass']:
                 failed_steps.append('②预期估值场景不足')
             if not s3['pass']:
-                failed_steps.append('③量化方法不足')
+                failed_steps.append('③其他场景不足')
             add_paragraph(document, f'综合结论：{"、".join(failed_steps)}，不建议本阶段参与该企业的本笔定向增发。', bold=True)
     else:
         add_paragraph(document, '综合结论：有效阈值数量不足（少于2个），不建议本阶段参与该企业的本笔定向增发。', bold=True)

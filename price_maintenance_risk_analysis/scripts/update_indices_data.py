@@ -15,6 +15,7 @@
 
 import json
 import os
+import sys
 import numpy as np
 from datetime import datetime, timedelta
 import argparse
@@ -229,15 +230,24 @@ def rebuild_locked_indices_data(stock_code, issue_date):
             print(f"  ❌ 计算失败: {e}")
             continue
 
-    # 保存锁定数据（覆盖通用数据文件）
+    # 保存锁定数据到DB和文件
     if results:
-        # 获取脚本所在目录的绝对路径
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        # data目录在项目根目录下（scripts的父目录）
         data_dir = os.path.join(os.path.dirname(script_dir), 'data')
-        # 覆盖通用数据文件，添加锁定标记
-        locked_file = os.path.join(data_dir, 'market_indices_scenario_data_v2.json')
 
+        # 保存到DB
+        try:
+            sys.path.insert(0, os.path.dirname(script_dir))
+            from utils.db_manager import ValuationDB
+            db = ValuationDB()
+            db.save_market_indices(results, locked_date=issue_date)
+            print()
+            print(f"✅ 已保存锁定指数数据到DB")
+        except Exception as e:
+            print(f"⚠️ 保存到DB失败: {e}")
+
+        # 同时保存到文件（兼容性）
+        locked_file = os.path.join(data_dir, 'market_indices_scenario_data_v2.json')
         with open(locked_file, 'w', encoding='utf-8') as f:
             json.dump(results, f, indent=2, ensure_ascii=False)
 
@@ -246,7 +256,6 @@ def rebuild_locked_indices_data(stock_code, issue_date):
         print(f"   发行日: {issue_date}")
         print(f"   数据截止日: {data_end_date}")
         print(f"   包含指数数量: {len(results)}")
-        print(f"   ⚠️ 注意：已覆盖通用数据文件，所有分析将使用锁定数据")
 
         return results
     else:
@@ -365,8 +374,19 @@ def rebuild_indices_data():
             print(f"  ❌ 计算失败: {e}")
             continue
 
-    # 保存结果
+    # 保存结果到DB和文件
     if results:
+        # 保存到DB
+        try:
+            from utils.db_manager import ValuationDB
+            db = ValuationDB()
+            db.save_market_indices(results)
+            print()
+            print(f"✅ 已保存 {len(results)} 个指数数据到DB")
+        except Exception as e:
+            print(f"⚠️ 保存到DB失败: {e}")
+
+        # 同时保存到文件
         output_file = 'market_indices_scenario_data_v2.json'
         save_path = os.path.join('..', 'data', output_file)
 

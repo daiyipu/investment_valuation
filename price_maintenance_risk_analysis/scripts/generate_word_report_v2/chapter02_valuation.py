@@ -57,14 +57,35 @@ def generate_chapter(context):
     add_title(document, '2.1 估值指标对比', level=2)
 
     # 使用 Tushare 数据获取估值指标
-    # 优先读取本地缓存（仅当天创建的有效）
+    # 优先从DB读取缓存（仅当天创建的有效）
     _cache_loaded = False
     today_str = datetime.now().strftime('%Y%m%d')
-    if os.path.exists(cache_file):
+
+    try:
+        from utils.db_manager import ValuationDB
+        db = ValuationDB()
+        if db.is_cache_valid(stock_code):
+            cached = db.load_relative_valuation(stock_code)
+            if cached:
+                current_metrics_val = cached.get('current_metrics', {})
+                peer_data = cached.get('peer_companies', [])
+                peer_companies_val = pd.DataFrame(peer_data) if peer_data else pd.DataFrame()
+                sw_index_pe = cached.get('sw_index_pe')
+                sw_index_pb = cached.get('sw_index_pb')
+                sw_index_ps = cached.get('sw_index_ps')
+                target_index_code = cached.get('target_index_code')
+                target_industry_l3 = cached.get('target_industry_l3')
+                trade_date = cached.get('trade_date')
+                print(f"  使用DB缓存的相对估值数据（交易日期: {trade_date}）")
+                _cache_loaded = True
+    except Exception:
+        pass
+
+    # 回退到JSON文件缓存
+    if not _cache_loaded and os.path.exists(cache_file):
         try:
             with open(cache_file, 'r', encoding='utf-8') as f:
                 cached = json.load(f)
-            # 只使用当天创建的缓存
             if cached.get('cache_date') == today_str:
                 current_metrics_val = cached['current_metrics']
                 peer_companies_val = pd.DataFrame(cached['peer_companies'])
@@ -74,7 +95,7 @@ def generate_chapter(context):
                 target_index_code = cached.get('target_index_code')
                 target_industry_l3 = cached.get('target_industry_l3')
                 trade_date = cached.get('trade_date')
-                print(f"  使用缓存的相对估值数据（交易日期: {trade_date}）")
+                print(f"  使用文件缓存的相对估值数据（交易日期: {trade_date}）")
                 _cache_loaded = True
         except (json.JSONDecodeError, KeyError):
             pass
@@ -257,7 +278,7 @@ def generate_chapter(context):
             else:
                 raise ValueError("TUSHARE_TOKEN 未设置")
 
-            # API 成功，保存缓存
+            # API 成功，保存缓存到DB和文件
             try:
                 cache_data = {
                     'cache_date': today_str,
@@ -270,6 +291,15 @@ def generate_chapter(context):
                     'target_index_code': target_index_code,
                     'target_industry_l3': target_industry_l3,
                 }
+                # 保存到DB
+                try:
+                    from utils.db_manager import ValuationDB
+                    db = ValuationDB()
+                    db.save_relative_valuation(stock_code, cache_data)
+                    print(f"  已缓存相对估值数据到DB")
+                except Exception:
+                    pass
+                # 同时保存到文件（兼容性）
                 with open(cache_file, 'w', encoding='utf-8') as f:
                     json.dump(cache_data, f, ensure_ascii=False, indent=2)
                 print(f"  已缓存相对估值数据到 {os.path.basename(cache_file)}")

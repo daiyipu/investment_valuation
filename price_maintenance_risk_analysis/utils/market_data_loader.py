@@ -18,47 +18,54 @@ def load_market_data(stock_code: str, data_dir: str = None, data_type: str = 'st
 
     参数:
         stock_code: 股票代码，如 '300735.SZ' 或 '300735_SZ'
-        data_dir: 数据文件所在目录，默认为None时自动检测
+        data_dir: 数据文件所在目录（兼容参数，DB模式下不再使用）
         data_type: 数据类型 ('stock' 或 'industry')
 
     返回:
         包含市场数据的字典，如果文件不存在则返回None
-
-    使用示例:
-        >>> market_data = load_market_data('300735.SZ')
-        >>> if market_data:
-        ...     volatility = market_data['volatility']
-        ...     drift = market_data['drift']
-        ...     print(f"波动率: {volatility*100:.2f}%")
-        ...     print(f"收益率: {drift*100:.2f}%")
-
-        >>> industry_data = load_market_data('300735.SZ', data_type='industry')
     """
-    # 自动检测数据目录
+    # 优先从DB加载
+    try:
+        from utils.db_manager import ValuationDB
+        db = ValuationDB()
+    except ImportError:
+        db = None
+
+    if data_type == 'industry' and db:
+        data = db.load_industry_data(stock_code)
+        if data:
+            print(f"✅ 已加载行业数据(DB): {stock_code}")
+            print(f"   行业: {data.get('sw_l1_name', 'N/A')}", end='')
+            if data.get('sw_l2_name'):
+                print(f" -> {data.get('sw_l2_name', 'N/A')}")
+            else:
+                print()
+            print(f"   指数代码: {data.get('index_code', 'N/A')}")
+            print(f"   当前点位: {data.get('current_level', 0):.2f}")
+            return data
+
+    if data_type == 'stock' and db:
+        data = db.load_market_data(stock_code)
+        if data:
+            print(f"✅ 已加载市场数据(DB): {stock_code}")
+            print(f"   当前价格: {data.get('current_price', 0):.2f} 元")
+            return data
+
+    # DB中无数据，回退到JSON文件（兼容性）
     if data_dir is None:
-        # 尝试多个可能的路径
-        possible_dirs = [
-            'data',           # 当在项目根目录时
-            '../data',        # 当在scripts目录时
-            '.',              # 当前目录
-            '..'              # 父目录
-        ]
+        possible_dirs = ['data', '../data', '.', '..']
         for test_dir in possible_dirs:
-            # 统一文件名格式（将点替换为下划线）
             if data_type == 'industry':
                 filename = stock_code.replace('.', '_') + '_industry_data.json'
             else:
                 filename = stock_code.replace('.', '_') + '_market_data.json'
-
             test_file = os.path.join(test_dir, filename)
             if os.path.exists(test_file):
                 data_dir = test_dir
                 break
-
         if data_dir is None:
-            data_dir = '../data'  # 默认值
+            data_dir = '../data'
 
-    # 统一文件名格式（将点替换为下划线）
     if data_type == 'industry':
         filename = stock_code.replace('.', '_') + '_industry_data.json'
     else:
@@ -67,11 +74,7 @@ def load_market_data(stock_code: str, data_dir: str = None, data_type: str = 'st
     filepath = os.path.join(data_dir, filename)
 
     if not os.path.exists(filepath):
-        print(f"⚠️ 市场数据文件不存在: {filepath}")
-        if data_type == 'stock':
-            print(f"   提示: 系统会自动生成市场数据，或手动运行: python scripts/update_market_data.py")
-        else:
-            print(f"   提示: 请先运行 update_market_data.py 生成行业数据")
+        print(f"⚠️ 市场数据不存在(DB和文件均无): {stock_code}")
         return None
 
     try:
@@ -79,19 +82,9 @@ def load_market_data(stock_code: str, data_dir: str = None, data_type: str = 'st
             market_data = json.load(f)
 
         if data_type == 'industry':
-            print(f"✅ 已加载行业数据: {filepath}")
-            print(f"   行业: {market_data.get('sw_l1_name', 'N/A')}", end='')
-            if market_data.get('sw_l2_name'):
-                print(f" -> {market_data.get('sw_l2_name', 'N/A')}")
-            else:
-                print()
-            print(f"   指数代码: {market_data.get('index_code', 'N/A')}")
-            print(f"   当前点位: {market_data.get('current_level', 0):.2f}")
+            print(f"✅ 已加载行业数据(文件): {filepath}")
         else:
-            print(f"✅ 已加载市场数据: {filepath}")
-            print(f"   股票: {market_data.get('stock_name', 'N/A')} ({market_data.get('stock_code', 'N/A')})")
-            print(f"   分析日期: {market_data.get('analysis_date', 'N/A')}")
-            print(f"   当前价格: {market_data.get('current_price', 0):.2f} 元")
+            print(f"✅ 已加载市场数据(文件): {filepath}")
 
         return market_data
 
@@ -172,34 +165,36 @@ def load_market_indices_data(data_dir: str = '..') -> Optional[Dict]:
     加载市场指数数据（波动率、收益率等）
 
     参数:
-        data_dir: 数据文件所在目录，默认为上级目录
+        data_dir: 数据文件所在目录（兼容参数，DB模式下不再使用）
 
     返回:
         包含指数数据的字典，如果文件不存在则返回None
-
-    使用示例:
-        >>> indices_data = load_market_indices_data()
-        >>> if indices_data:
-        ...     hs300_data = indices_data['沪深300']
-        ...     print(f"沪深300波动率: {hs300_data['volatility']*100:.2f}%")
-        ...     print(f"沪深300收益率: {hs300_data['drift']*100:.2f}%")
     """
-    filepath = os.path.join(data_dir, 'market_indices_scenario_data.json')
+    # 优先从DB加载
+    try:
+        from utils.db_manager import ValuationDB
+        db = ValuationDB()
+        data = db.load_market_indices()
+        if data:
+            print(f"✅ 已加载指数数据(DB)，指数数量: {len(data)}")
+            return data
+    except Exception:
+        pass
 
+    # 回退到JSON文件
+    filepath = os.path.join(data_dir, 'market_indices_scenario_data.json')
     if not os.path.exists(filepath):
-        print(f"⚠️ 指数数据文件不存在: {filepath}")
-        print(f"   提示: 请运行 python scripts/update_indices_data.py 生成市场指数数据")
+        # 也尝试v2文件
+        filepath = os.path.join(data_dir, 'market_indices_scenario_data_v2.json')
+    if not os.path.exists(filepath):
+        print(f"⚠️ 指数数据不存在(DB和文件均无)")
         return None
 
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
             indices_data = json.load(f)
-
-        print(f"✅ 已加载指数数据: {filepath}")
-        print(f"   指数数量: {len(indices_data)}")
-
+        print(f"✅ 已加载指数数据(文件): {filepath}")
         return indices_data
-
     except Exception as e:
         print(f"❌ 加载指数数据失败: {e}")
         return None
@@ -268,16 +263,11 @@ def get_index_risk_params(indices_data: Dict, index_name: str = '沪深300',
 
 def save_market_indices_data(indices_results: Dict, data_dir: str = '..'):
     """
-    保存市场指数分析结果到JSON文件（统一的数据导出接口）
+    保存市场指数分析结果到DB和JSON文件（统一的数据导出接口）
 
     参数:
         indices_results: analyze_all_indices()或批量分析返回的结果字典
         data_dir: 数据保存目录
-
-    使用示例:
-        >>> from utils.market_data_loader import save_market_indices_data
-        >>> # 在notebook中分析完指数后
-        >>> save_market_indices_data(all_indices_results)
     """
     # 创建简化版数据结构，供情景分析使用
     scenario_indices_data = {}
@@ -314,12 +304,24 @@ def save_market_indices_data(indices_results: Dict, data_dir: str = '..'):
             'win_rate_250d': result['returns'].get('250日', {}).get('win_rate', result['returns']['120日']['win_rate']),
         }
 
-    # 保存为JSON文件
-    output_file = os.path.join(data_dir, 'market_indices_scenario_data.json')
-    with open(output_file, 'w', encoding='utf-8') as f:
-        json.dump(scenario_indices_data, f, indent=2, ensure_ascii=False)
+    # 保存到DB
+    try:
+        from utils.db_manager import ValuationDB
+        db = ValuationDB()
+        db.save_market_indices(scenario_indices_data)
+        print(f"💾 指数数据已保存(DB)")
+    except Exception as e:
+        print(f"⚠️ 保存指数数据到DB失败: {e}")
 
-    print(f"💾 指数数据已保存: {output_file}")
+    # 同时保存为JSON文件（兼容性）
+    output_file = os.path.join(data_dir, 'market_indices_scenario_data.json')
+    try:
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(scenario_indices_data, f, indent=2, ensure_ascii=False)
+        print(f"💾 指数数据已保存(文件): {output_file}")
+    except Exception:
+        pass
+
     print(f"   指数数量: {len(scenario_indices_data)}")
 
 

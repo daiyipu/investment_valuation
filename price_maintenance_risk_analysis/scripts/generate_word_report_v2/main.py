@@ -70,7 +70,7 @@ def _get_historical_price_and_ma20(stock_code, issue_date_str, force_regenerate=
     """
     获取指定日期的股票价格和MA20（基于发行日）
 
-    重要：一旦发行日确定，MA20等基准数据将被锁定保存，后续只更新当前价格
+    重要：一旦发行日确定，MA20等基准数据将被锁定保存到DB，后续只更新当前价格
 
     参数:
         stock_code: 股票代码
@@ -83,26 +83,22 @@ def _get_historical_price_and_ma20(stock_code, issue_date_str, force_regenerate=
     try:
         import sys
         import os
-        import json
         from datetime import datetime
-        # 添加scripts目录到路径
         scripts_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'scripts')
         if scripts_dir not in sys.path:
             sys.path.insert(0, scripts_dir)
 
-        # 定义锁定数据文件路径
-        locked_data_file = os.path.join(DATA_DIR, f"{stock_code.replace('.', '_')}_issue_date_locked.json")
+        try:
+            from utils.db_manager import ValuationDB
+            db = ValuationDB()
+        except ImportError:
+            db = None
 
-        # 检查是否存在锁定的发行日数据
-        if os.path.exists(locked_data_file) and not force_regenerate:
-            print(f"  发现已锁定的发行日数据文件: {locked_data_file}")
-            with open(locked_data_file, 'r', encoding='utf-8') as f:
-                locked_data = json.load(f)
-
-            # 验证锁定数据的发行日是否匹配
-            locked_issue_date = locked_data.get('issue_date')
-            if locked_issue_date == issue_date_str:
-                print(f"  ✅ 使用已锁定的发行日数据（发行日：{issue_date_str}）")
+        # 检查DB中是否存在锁定的发行日数据
+        if db and not force_regenerate:
+            locked_data = db.load_issue_date_locked(stock_code, issue_date_str)
+            if locked_data:
+                print(f"  ✅ 使用已锁定的发行日数据(DB)（发行日：{issue_date_str}）")
                 ma20_price = locked_data.get('ma_20')
                 bidding_date_price = locked_data.get('issue_date_price')
 
@@ -111,30 +107,18 @@ def _get_historical_price_and_ma20(stock_code, issue_date_str, force_regenerate=
                 from update_market_data import fetch_latest_data
                 latest_data = fetch_latest_data(stock_code)
                 if latest_data is not None and not latest_data.empty:
-                    # 获取最新数据（使用最后一行，不是第一行）
-                    current_price = latest_data.iloc[-1]['close']  # 使用最后一行的收盘价
+                    current_price = latest_data.iloc[-1]['close']
                     analysis_date = latest_data.iloc[-1]['trade_date']
                     print(f"  当前价格已更新至：{analysis_date} - {current_price:.2f}元")
-
-                    # 更新锁定数据中的当前价格，不改变MA20等基准数据
-                    locked_data['current_price'] = float(current_price)
-                    locked_data['analysis_date'] = analysis_date
-
-                    # 保存更新后的锁定数据
-                    with open(locked_data_file, 'w', encoding='utf-8') as f:
-                        json.dump(locked_data, f, ensure_ascii=False, indent=2)
+                    db.update_issue_date_current_price(stock_code, issue_date_str, float(current_price), analysis_date)
                 else:
                     print(f"  ⚠️ 无法获取最新价格，保持锁定数据中的当前价格：{locked_data.get('current_price', 'N/A')}元")
 
                 return bidding_date_price, ma20_price
-            else:
-                print(f"  ⚠️ 锁定数据的发行日({locked_issue_date})与指定发行日({issue_date_str})不匹配")
-                print(f"  将重新生成锁定数据...")
 
-        # 导入数据更新模块
+        # DB中无数据或需要重新生成
         from update_market_data import generate_market_data, fetch_latest_data
 
-        # 使用update_market_data生成市场数据（基于发行日）
         print(f"  基于发行日{issue_date_str}生成市场数据...")
         market_data = generate_market_data(stock_code, stock_code, issue_date_str)
 
@@ -142,24 +126,29 @@ def _get_historical_price_and_ma20(stock_code, issue_date_str, force_regenerate=
             return None, None
 
         ma20_price = market_data.get('ma_20')
-        bidding_date_price = market_data.get('current_price')  # 发行日当天的价格
+        bidding_date_price = market_data.get('current_price')
 
-        # 创建锁定数据结构
         locked_data = {
             'issue_date': issue_date_str,
             'issue_date_price': bidding_date_price,
             'ma_20': ma20_price,
-            'current_price': bidding_date_price,  # 初始时当前价格等于发行日价格
+            'current_price': bidding_date_price,
             'analysis_date': issue_date_str,
             'stock_code': stock_code,
             'locked_timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
 
-        # 保存锁定数据
-        with open(locked_data_file, 'w', encoding='utf-8') as f:
-            json.dump(locked_data, f, ensure_ascii=False, indent=2)
+        # 保存到DB
+        if db:
+            db.save_issue_date_locked(stock_code, issue_date_str, locked_data)
+            print(f"  ✅ 发行日数据已锁定保存(DB)")
+        else:
+            # 回退到文件
+            locked_data_file = os.path.join(DATA_DIR, f"{stock_code.replace('.', '_')}_issue_date_locked.json")
+            with open(locked_data_file, 'w', encoding='utf-8') as f:
+                json.dump(locked_data, f, ensure_ascii=False, indent=2)
+            print(f"  ✅ 发行日数据已锁定保存(文件)")
 
-        print(f"  ✅ 发行日数据已锁定保存：{locked_data_file}")
         print(f"     发行日：{issue_date_str}")
         print(f"     MA20价格：{ma20_price:.2f}元")
         print(f"     发行日价格：{bidding_date_price:.2f}元")
@@ -427,97 +416,67 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
 
     if not is_fresh:
         print("="*70)
-        print(" 警告：数据已过期，建议更新后重新生成报告！")
+        print(" 警告：数据已过期，自动更新数据...")
         print("="*70)
 
-        if force:
-            print(" 强制模式：跳过确认，继续使用过期数据生成报告...")
-            print("="*70)
-        else:
-            user_input = input("\n是否继续使用过期数据生成报告？(yes/no): ").strip().lower()
-            if user_input not in ['yes', 'y', '是']:
-                # 询问是否需要自动更新数据
-                update_input = input("\n是否需要自动更新数据？(yes/no): ").strip().lower()
-                if update_input in ['yes', 'y', '是']:
-                    print("\n开始自动更新数据...")
-                    print("="*70)
+        # 自动更新数据（force模式或交互模式均自动更新）
+        try:
+            import subprocess
 
-                    # 导入更新脚本并执行
-                    try:
-                        import sys
-                        import subprocess
+            # 更新市场指数数据
+            update_indices_script = os.path.join(PROJECT_DIR, 'scripts', 'update_indices_data.py')
 
-                        # 更新市场指数数据
-                        update_indices_script = os.path.join(PROJECT_DIR, 'scripts', 'update_indices_data.py')
+            if os.path.exists(update_indices_script):
+                print(" 1. 更新市场指数数据...")
+                result = subprocess.run([sys.executable, update_indices_script],
+                                      capture_output=True,
+                                      text=True,
+                                      timeout=300)
 
-                        if os.path.exists(update_indices_script):
-                            print("1️⃣ 更新市场指数数据...")
-                            result = subprocess.run([sys.executable, update_indices_script],
-                                                  capture_output=True,
-                                                  text=True,
-                                                  timeout=300)  # 5分钟超时
-
-                            if result.returncode == 0:
-                                print("市场指数数据更新成功！")
-                                print(result.stdout)
-                            else:
-                                print("市场指数数据更新失败！")
-                                print(result.stderr)
-
-                        # 更新个股市场数据
-                        print("2️⃣ 更新个股市场数据...")
-                        sys.path.insert(0, os.path.join(PROJECT_DIR, 'scripts'))
-                        from update_market_data import generate_market_data
-
-                        # 使用当前股票代码和名称更新市场数据
-                        updated_market_data = generate_market_data(stock_code, stock_name, issue_date)
-
-                        if updated_market_data:
-                            # 保存到文件
-                            market_data_file = os.path.join(DATA_DIR, f"{stock_code.replace('.', '_')}_market_data.json")
-                            with open(market_data_file, 'w', encoding='utf-8') as f:
-                                json.dump(updated_market_data, f, ensure_ascii=False, indent=2)
-                            print(f"✅ 个股市场数据更新成功！已保存到: {market_data_file}")
-                            print("数据更新成功！")
-
-                            # 重新加载数据
-                            print("\n重新加载更新后的数据...")
-                            project_params, risk_params, market_data = load_placement_config(stock_code)
-                            industry_data = _load_industry_data(stock_code)
-
-                            # 检查更新后的数据新鲜度
-                            is_fresh_updated, data_msg_updated = check_data_freshness(market_data)
-                            print(f" {data_msg_updated}")
-
-                            if is_fresh_updated:
-                                print("数据已更新到最新，现在生成报告...")
-                            else:
-                                print("数据更新后仍未达到最新，但已有改善")
-                                continue_input = input("\n是否继续生成报告？(yes/no): ").strip().lower()
-                                if continue_input not in ['yes', 'y', '是']:
-                                    print("报告生成已取消。")
-                                    sys.exit(0)
-                        else:
-                            print("个股市场数据更新失败！")
-                            print("\n请手动运行以下命令更新数据：")
-                            print(f"  python scripts/update_market_data.py --stock {stock_code} --name {stock_name}")
-                            sys.exit(1)
-
-                    except subprocess.TimeoutExpired:
-                        print("数据更新超时（超过5分钟）")
-                        print("请手动运行以下命令更新数据：")
-                        print("  python scripts/update_indices_data.py")
-                        sys.exit(1)
-                    except Exception as e:
-                        print(f"数据更新过程出错：{e}")
-                        print("请手动运行以下命令更新数据：")
-                        print("  python scripts/update_indices_data.py")
-                        sys.exit(1)
+                if result.returncode == 0:
+                    print(" 市场指数数据更新成功！")
                 else:
-                    print("报告生成已取消。")
-                    print("请运行以下命令更新数据后重新生成：")
-                    print("  python scripts/update_indices_data.py")
-                    sys.exit(0)
+                    print(f" 市场指数数据更新失败: {result.stderr[:200]}")
+
+            # 更新个股市场数据
+            print(" 2. 更新个股市场数据...")
+            scripts_dir = os.path.join(PROJECT_DIR, 'scripts')
+            if scripts_dir not in sys.path:
+                sys.path.insert(0, scripts_dir)
+            from update_market_data import generate_market_data
+
+            updated_market_data = generate_market_data(stock_code, stock_name, issue_date)
+
+            if updated_market_data:
+                # 保存到DB
+                try:
+                    from utils.db_manager import ValuationDB
+                    db = ValuationDB()
+                    db.save_market_data(stock_code, updated_market_data)
+                except Exception:
+                    pass
+                # 同时保存到文件（兼容性）
+                market_data_file = os.path.join(DATA_DIR, f"{stock_code.replace('.', '_')}_market_data.json")
+                with open(market_data_file, 'w', encoding='utf-8') as f:
+                    json.dump(updated_market_data, f, ensure_ascii=False, indent=2)
+
+                print(f" 个股市场数据更新成功！")
+
+                # 重新加载数据
+                print("\n 重新加载更新后的数据...")
+                project_params, risk_params, market_data = load_placement_config(stock_code)
+                industry_data = _load_industry_data(stock_code)
+
+                is_fresh_updated, data_msg_updated = check_data_freshness(market_data)
+                print(f" {data_msg_updated}")
+            else:
+                print(" 个股市场数据更新失败！使用现有数据继续...")
+        except subprocess.TimeoutExpired:
+            print(" 数据更新超时，使用现有数据继续...")
+        except Exception as e:
+            print(f" 数据更新出错: {e}，使用现有数据继续...")
+
+        print("="*70)
 
     # 创建分析器（注意参数顺序：issue_price, issue_shares, lockup_period, current_price, risk_free_rate）
     analyzer = PrivatePlacementRiskAnalyzer(
@@ -618,35 +577,61 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
 
 
 def _ensure_market_data(stock_code, stock_name, market_data_file, issue_date=None):
-    """确保市场数据文件存在且包含 ma_20，缺失或无效时自动重新生成。"""
-    need_generate = True
+    """确保市场数据存在且包含 ma_20，缺失或无效时自动重新生成。"""
+    # 先尝试从DB加载
+    try:
+        from utils.db_manager import ValuationDB
+        db = ValuationDB()
+        existing = db.load_market_data(stock_code)
+        if existing and existing.get('ma_20'):
+            print(f"  市场数据(DB)已存在，无需重新生成")
+            return
+    except Exception:
+        pass
 
+    # DB中无有效数据，检查文件
     if os.path.exists(market_data_file):
         try:
             with open(market_data_file, 'r', encoding='utf-8') as f:
                 existing = json.load(f)
             if existing and existing.get('ma_20'):
-                need_generate = False
+                # 文件有数据但DB没有，导入到DB
+                try:
+                    from utils.db_manager import ValuationDB
+                    db = ValuationDB()
+                    db.save_market_data(stock_code, existing)
+                    print(f"  市场数据已从文件导入DB")
+                except Exception:
+                    pass
+                return
         except Exception:
             pass
 
-    if need_generate:
-        scripts_dir = os.path.join(PROJECT_DIR, 'scripts')
-        if scripts_dir not in sys.path:
-            sys.path.insert(0, scripts_dir)
-        import importlib
-        update_module = importlib.import_module('update_market_data')
-        updated_data = update_module.generate_market_data(
-            stock_code, stock_name or stock_code, issue_date,
+    # 需要重新生成
+    scripts_dir = os.path.join(PROJECT_DIR, 'scripts')
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    import importlib
+    update_module = importlib.import_module('update_market_data')
+    updated_data = update_module.generate_market_data(
+        stock_code, stock_name or stock_code, issue_date,
+    )
+    if updated_data:
+        # 保存到DB
+        try:
+            from utils.db_manager import ValuationDB
+            db = ValuationDB()
+            db.save_market_data(stock_code, updated_data)
+        except Exception:
+            pass
+        # 同时保存到文件（兼容性）
+        with open(market_data_file, 'w', encoding='utf-8') as f:
+            json.dump(updated_data, f, ensure_ascii=False, indent=2)
+        print(f"  市场数据已自动生成")
+    else:
+        raise ValueError(
+            f"无法生成 {stock_code} 的市场数据，请检查Tushare API配置"
         )
-        if updated_data:
-            with open(market_data_file, 'w', encoding='utf-8') as f:
-                json.dump(updated_data, f, ensure_ascii=False, indent=2)
-            print(f"  市场数据已自动生成")
-        else:
-            raise ValueError(
-                f"无法生成 {stock_code} 的市场数据，请检查Tushare API配置"
-            )
 
 
 def generate_report_headless(stock_code, stock_name=None, issue_date=None, force=True):
@@ -773,102 +758,92 @@ def _load_industry_data(stock_code, auto_generate=True):
     import json
     from datetime import datetime, timedelta
 
+    try:
+        from utils.db_manager import ValuationDB
+        db = ValuationDB()
+    except ImportError:
+        db = None
+
+    # 优先从DB加载
+    if db:
+        industry_data = db.load_industry_data(stock_code)
+        if industry_data:
+            # 检查数据新鲜度
+            generated_at = industry_data.get('generated_at', '')
+            if generated_at:
+                try:
+                    data_time = datetime.strptime(generated_at[:10], '%Y-%m-%d')
+                    data_age = (datetime.now() - data_time).days
+                    if data_age > 7:
+                        print(f" ⚠️ 行业数据已过期 {data_age} 天（生成时间: {generated_at}）")
+                        if auto_generate:
+                            print(f" 📥 自动更新行业数据...")
+                            try:
+                                scripts_dir = os.path.join(PROJECT_DIR, 'scripts')
+                                if scripts_dir not in sys.path:
+                                    sys.path.insert(0, scripts_dir)
+                                from update_market_data import generate_industry_data
+                                new_data = generate_industry_data(stock_code)
+                                if new_data:
+                                    db.save_industry_data(stock_code, new_data)
+                                    print(f" ✅ 行业数据更新成功！")
+                                    return new_data
+                                else:
+                                    print(f" ⚠️ 行业数据更新失败，使用旧数据")
+                            except Exception as e:
+                                print(f" ❌ 自动更新行业数据失败: {e}，使用旧数据")
+                    else:
+                        print(f" ✅ 已加载行业数据(DB): {stock_code}")
+                except (ValueError, TypeError):
+                    print(f" ✅ 已加载行业数据(DB): {stock_code}")
+            else:
+                print(f" ✅ 已加载行业数据(DB): {stock_code}")
+            return industry_data
+
+    # DB中无数据，尝试文件
     industry_data_file = os.path.join(DATA_DIR, f"{stock_code.replace('.', '_')}_industry_data.json")
 
-    # 检查文件是否存在
-    if not os.path.exists(industry_data_file):
-        print(f" ⚠️ 未找到行业数据文件: {industry_data_file}")
+    if os.path.exists(industry_data_file):
+        with open(industry_data_file, 'r', encoding='utf-8') as f:
+            industry_data = json.load(f)
 
-        if auto_generate:
-            print(f" 📥 自动生成行业数据...")
+        # 导入到DB
+        if db and industry_data:
             try:
-                # 导入数据生成模块
-                scripts_dir = os.path.join(PROJECT_DIR, 'scripts')
-                if scripts_dir not in sys.path:
-                    sys.path.insert(0, scripts_dir)
+                db.save_industry_data(stock_code, industry_data)
+                print(f" ✅ 行业数据已从文件导入DB")
+            except Exception:
+                pass
 
-                from update_market_data import generate_industry_data
+        print(f" ✅ 已加载行业数据(文件): {industry_data_file}")
+        return industry_data
 
-                # 生成行业数据
-                industry_data = generate_industry_data(stock_code)
-
-                if industry_data:
-                    # 保存到文件
-                    with open(industry_data_file, 'w', encoding='utf-8') as f:
-                        json.dump(industry_data, f, ensure_ascii=False, indent=2)
-                    print(f" ✅ 行业数据生成成功！已保存到: {industry_data_file}")
-                    print(f"    行业: {industry_data.get('sw_l1_name', 'N/A')}")
-                    print(f"    指数代码: {industry_data.get('index_code', 'N/A')}")
-                    print(f"    当前点位: {industry_data.get('current_level', 0):.2f}")
-                    return industry_data
-                else:
-                    print(f" ❌ 行业数据生成失败！")
-                    return None
-
-            except Exception as e:
-                print(f" ❌ 自动生成行业数据失败: {e}")
-                print(f"    请手动运行以下命令生成数据：")
-                print(f"    python scripts/update_market_data.py --stock {stock_code}")
-                return None
-        else:
-            return None
-
-    # 文件存在，加载数据
-    with open(industry_data_file, 'r', encoding='utf-8') as f:
-        industry_data = json.load(f)
-
-    # 检查数据新鲜度
-    generated_at = industry_data.get('generated_at', '')
-    analysis_date = industry_data.get('analysis_date', '')
-
-    if generated_at:
+    # 既无DB数据也无文件，自动生成
+    if auto_generate:
+        print(f" ⚠️ 未找到行业数据，自动生成...")
         try:
-            # 解析生成时间
-            data_time = datetime.strptime(generated_at, '%Y-%m-%d %H:%M:%S')
-            current_time = datetime.now()
-
-            # 计算数据年龄（天数）
-            data_age = (current_time - data_time).days
-
-            # 如果数据超过7天，建议更新
-            if data_age > 7:
-                print(f" ⚠️ 行业数据已过期 {data_age} 天（生成时间: {generated_at}）")
-
-                if auto_generate:
-                    print(f" 📥 自动更新行业数据...")
-                    try:
-                        from update_market_data import generate_industry_data
-
-                        # 生成新的行业数据
-                        new_industry_data = generate_industry_data(stock_code)
-
-                        if new_industry_data:
-                            # 备份旧文件
-                            backup_file = industry_data_file.replace('.json', f'_backup_{current_time.strftime("%Y%m%d_%H%M%S")}.json')
-                            import shutil
-                            shutil.copy2(industry_data_file, backup_file)
-                            print(f"    已备份旧数据到: {backup_file}")
-
-                            # 保存新数据
-                            with open(industry_data_file, 'w', encoding='utf-8') as f:
-                                json.dump(new_industry_data, f, ensure_ascii=False, indent=2)
-                            print(f" ✅ 行业数据更新成功！")
-                            print(f"    更新时间: {new_industry_data.get('generated_at', 'N/A')}")
-                            return new_industry_data
-                        else:
-                            print(f" ⚠️ 行业数据更新失败，使用旧数据")
-                            return industry_data
-
-                    except Exception as e:
-                        print(f" ❌ 自动更新行业数据失败: {e}，使用旧数据")
-                        return industry_data
-                else:
-                    print(f"    建议运行: python scripts/update_market_data.py --stock {stock_code}")
+            scripts_dir = os.path.join(PROJECT_DIR, 'scripts')
+            if scripts_dir not in sys.path:
+                sys.path.insert(0, scripts_dir)
+            from update_market_data import generate_industry_data
+            industry_data = generate_industry_data(stock_code)
+            if industry_data:
+                # 保存到DB
+                if db:
+                    db.save_industry_data(stock_code, industry_data)
+                # 同时保存到文件（兼容性）
+                with open(industry_data_file, 'w', encoding='utf-8') as f:
+                    json.dump(industry_data, f, ensure_ascii=False, indent=2)
+                print(f" ✅ 行业数据生成成功！")
+                return industry_data
+            else:
+                print(f" ❌ 行业数据生成失败！")
+                return None
         except Exception as e:
-            print(f" ⚠️ 无法解析数据生成时间: {generated_at}，使用现有数据")
-
-    print(f" ✅ 已加载行业数据: {industry_data_file}")
-    return industry_data
+            print(f" ❌ 自动生成行业数据失败: {e}")
+            return None
+    else:
+        return None
 
 
 def save_report(document, stock_code, stock_name):

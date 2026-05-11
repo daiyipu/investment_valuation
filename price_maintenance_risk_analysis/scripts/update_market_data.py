@@ -709,44 +709,18 @@ def print_market_data_summary(market_data):
 
 def update_placement_params_issue_price(stock_code, ma20, data_dir):
     """
-    根据MA20更新placement_params.json中的issue_price
+    根据MA20更新placement_params中的issue_price
 
     参数:
         stock_code: 股票代码
         ma20: MA20价格
-        data_dir: 数据目录
+        data_dir: 数据目录（兼容参数）
     """
     try:
-        placement_file = os.path.join(data_dir, f"{stock_code.replace('.', '_')}_placement_params.json")
-
-        if not os.path.exists(placement_file):
-            print(f"⚠️ 未找到 {placement_file}")
-            print(f"   路径说明: placement_params.json文件不存在")
-            print(f"   建议: 运行一次报告生成脚本，会自动创建该文件")
-            print(f"   跳过发行价更新")
-            return
-
-        # 读取placement_params.json
-        with open(placement_file, 'r', encoding='utf-8') as f:
-            placement_params = json.load(f)
-
-        # 计算新的发行价（MA20的9折，即10%折价）
         new_issue_price = ma20 * 0.9
-        old_issue_price = placement_params.get('issue_price')
-
-        # 更新issue_price和price_source
-        placement_params['issue_price'] = new_issue_price
-        placement_params['price_source'] = 'MA20的9折'
-
-        # 保存
-        with open(placement_file, 'w', encoding='utf-8') as f:
-            json.dump(placement_params, f, indent=2, ensure_ascii=False)
-
-        print(f"✅ 已更新发行价:")
-        print(f"   旧发行价: {old_issue_price:.2f} 元")
-        print(f"   新发行价: {new_issue_price:.2f} 元（MA20: {ma20:.2f} × 0.9）")
+        print(f"✅ 计算发行价: {new_issue_price:.2f} 元（MA20: {ma20:.2f} × 0.9）")
         print(f"   折价率: -10.0%")
-        print(f"   文件: {placement_file}")
+        # 注意：新系统不再需要手动更新issue_price，由config_loader自动计算
 
     except Exception as e:
         print(f"⚠️ 更新发行价失败: {e}")
@@ -1635,45 +1609,37 @@ def generate_industry_data(stock_code, days=500):
 
 def update_placement_params_with_fcf(stock_code, ma20, data_dir):
     """
-    更新placement_params.json，添加历史FCF数据
+    更新placement_params，添加历史FCF数据（保存到DB）
 
     参数:
         stock_code: 股票代码
         ma20: MA20价格
-        data_dir: 数据目录
+        data_dir: 数据目录（兼容参数）
     """
     try:
-        placement_file = os.path.join(data_dir, f"{stock_code.replace('.', '_')}_placement_params.json")
-
-        if not os.path.exists(placement_file):
-            print(f"⚠️ 未找到 {placement_file}，跳过FCF数据更新")
-            return
-
-        # 读取placement_params.json
-        with open(placement_file, 'r', encoding='utf-8') as f:
-            placement_params = json.load(f)
-
         # 添加历史FCF数据（使用修复后的FCF计算方法）
         print(f"📊 获取历史FCF数据...")
         financial = TushareFinancialData(stock_code)
         historical_fcf = financial.get_historical_fcf_for_dcf(max_years=15)
 
         if historical_fcf and historical_fcf.get('data'):
-            placement_params['historical_fcf_data'] = historical_fcf
-            print(f"✅ 已添加 {len(historical_fcf['data'])} 年历史FCF数据")
+            print(f"✅ 已获取 {len(historical_fcf['data'])} 年历史FCF数据")
 
             # 显示最近几年的FCF
             print(f"   最近几年FCF（亿元）:")
             for item in historical_fcf['data'][-5:]:
                 print(f"   {item['year']}: {item['fcf']:.2f}")
+
+            # 保存到DB
+            try:
+                from utils.db_manager import ValuationDB
+                db = ValuationDB()
+                db.save_historical_fcf(stock_code, historical_fcf['data'])
+                print(f"✅ 已保存FCF数据到DB: {stock_code}")
+            except Exception as e:
+                print(f"⚠️ 保存FCF到DB失败: {e}")
         else:
             print(f"⚠️ 未获取到历史FCF数据")
-
-        # 保存
-        with open(placement_file, 'w', encoding='utf-8') as f:
-            json.dump(placement_params, f, indent=2, ensure_ascii=False)
-
-        print(f"✅ 已更新FCF数据到: {placement_file}")
 
     except Exception as e:
         print(f"⚠️ 更新FCF数据失败: {e}")
@@ -1702,103 +1668,70 @@ if __name__ == '__main__':
         # 打印摘要
         print_market_data_summary(market_data)
 
-        # 保存文件到项目根目录的data目录
-        filename = f"{stock_code.replace('.', '_')}_market_data.json"
-
-        # 获取脚本所在目录的绝对路径
+        # 保存到DB
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        # data目录是项目根目录下的data文件夹
         data_dir = os.path.join(os.path.dirname(script_dir), 'data')
-
-        # 确保data目录存在
         os.makedirs(data_dir, exist_ok=True)
 
-        # 保存到data目录
-        filepath = os.path.join(data_dir, filename)
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(market_data, f, ensure_ascii=False, indent=2)
-        print(f"\n✅ 已保存市场数据到: {filepath}")
+        try:
+            sys.path.insert(0, os.path.dirname(script_dir))
+            from utils.db_manager import ValuationDB
+            db = ValuationDB()
+            db.save_market_data(stock_code, market_data)
+            print(f"\n✅ 已保存市场数据到DB: {stock_code}")
+        except Exception as e:
+            print(f"⚠️ 保存市场数据到DB失败: {e}")
+            # 回退到JSON文件
+            filepath = os.path.join(data_dir, f"{stock_code.replace('.', '_')}_market_data.json")
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(market_data, f, ensure_ascii=False, indent=2)
+            print(f"✅ 已保存市场数据到文件: {filepath}")
 
-        # 注意：不再更新placement_params.json中的issue_price
-        # 因为新系统会根据MA20和premium_rate自动计算issue_price
-        # update_placement_params_issue_price(stock_code, market_data['ma_20'], data_dir)
-
-        # 添加历史FCF数据到placement_params.json
+        # 添加历史FCF数据到DB
         print("\n" + "="*70)
-        print("📊 添加历史FCF数据到 placement_params.json")
+        print("📊 添加历史FCF数据")
         print("="*70)
 
-        placement_file = os.path.join(data_dir, f"{stock_code.replace('.', '_')}_placement_params.json")
+        try:
+            from utils.db_manager import ValuationDB
+            db = ValuationDB()
 
-        # 如果文件不存在，创建默认配置
-        if not os.path.exists(placement_file):
-            print(f"⚠️ {placement_file} 不存在，创建默认配置文件")
-
-            # 创建默认配置（新格式，不包含issue_price和current_price）
-            placement_params = {
-                "stock_code": stock_code,
-                "stock_name": stock_name,
-                "financing_amount": 0.0,
-                "lockup_period": 6,
-                "pricing_method": "ma20_discount_90",
-                "premium_rate": -0.10,
-                "risk_free_rate": 0.03,
-                "net_assets": 0.0,
-                "total_debt": 0.0,
-                "net_income": 0.0,
-                "revenue_growth": 0.15,
-                "operating_margin": 0.15,
-                "beta": 1.0,
-                "historical_fcf_data": {
-                    "years": 5,
-                    "year_range": [2020, 2024],
-                    "data": []
-                },
-                "_notes": {
-                    "financing_amount": "融资金额（元）- 必填，请在定增公告中查找",
-                    "lockup_period": "锁定期（月）- 默认6个月",
-                    "pricing_method": "定价方式：ma20_discount_90(MA20九折), ma20_discount_85(MA20八五折), ma20_par(MA20平价), custom_premium(自定义溢价率)",
-                    "premium_rate": "溢价率（负数为折价，正数为溢价）- 默认-0.10表示九折",
-                    "_auto_generated": "以下参数自动计算，无需手动填写",
-                    "issue_price": f"自动计算：MA20({market_data.get('ma_20', 0):.2f}) × (1 + premium_rate)",
-                    "current_price": f"自动从API获取最新股价: {market_data.get('current_price', 0):.2f}元"
-                },
-                "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                "updated_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            }
-
-            # 保存默认配置
-            with open(placement_file, 'w', encoding='utf-8') as f:
-                json.dump(placement_params, f, indent=2, ensure_ascii=False)
-
-            print(f"✅ 已创建默认配置文件: {placement_file}")
-            print(f"   MA20: {market_data.get('ma_20', 0):.2f} 元")
-            print(f"   当前价: {market_data.get('current_price', 0):.2f} 元")
-        else:
-            # 读取现有配置
-            with open(placement_file, 'r', encoding='utf-8') as f:
-                placement_params = json.load(f)
+            # 确保placement_params存在
+            existing_params = db.load_placement_params(stock_code)
+            if existing_params is None:
+                # 创建默认配置
+                default_config = {
+                    "financing_amount": 100000000,
+                    "lockup_period": 6,
+                    "pricing_method": "ma20_discount_90",
+                    "premium_rate": -0.10,
+                    "risk_free_rate": 0.03,
+                    "net_assets": 0.0,
+                    "total_debt": 0.0,
+                    "net_income": 0.0,
+                    "revenue_growth": 0.15,
+                    "operating_margin": 0.15,
+                    "beta": 1.0,
+                    "historical_fcf_data": {"years": 5, "year_range": [2020, 2024], "data": []},
+                }
+                db.upsert_stock(stock_code, stock_name)
+                db.save_placement_params(stock_code, default_config)
+                print(f"✅ 已创建默认配置(DB): {stock_code}")
 
             # 获取历史FCF数据
-            print(f"正在获取历史FCF数据...")
             financial = TushareFinancialData(stock_code)
             historical_fcf = financial.get_historical_fcf_for_dcf(max_years=15)
 
             if historical_fcf and historical_fcf.get('data'):
-                placement_params['historical_fcf_data'] = historical_fcf
-                print(f"✅ 已添加 {len(historical_fcf['data'])} 年历史FCF数据")
-
-                # 显示最近几年的FCF
-                print(f"   最近几年FCF（亿元）:")
+                db.save_historical_fcf(stock_code, historical_fcf['data'])
+                print(f"✅ 已保存 {len(historical_fcf['data'])} 年历史FCF数据到DB")
                 for item in historical_fcf['data'][-5:]:
                     print(f"   {item['year']}: {item['fcf']:.2f}")
-
-                # 保存更新后的文件
-                with open(placement_file, 'w', encoding='utf-8') as f:
-                    json.dump(placement_params, f, indent=2, ensure_ascii=False)
-                print(f"✅ 已更新FCF数据到: {placement_file}")
             else:
                 print(f"⚠️ 未获取到历史FCF数据")
+
+        except Exception as e:
+            print(f"⚠️ 保存FCF数据失败: {e}")
 
         # 生成行业指数数据
         print("\n" + "="*70)
@@ -1808,14 +1741,18 @@ if __name__ == '__main__':
         industry_data = generate_industry_data(stock_code)
 
         if industry_data:
-            # 保存行业数据
-            industry_filename = f"{stock_code.replace('.', '_')}_industry_data.json"
-            industry_filepath = os.path.join(data_dir, industry_filename)
-
-            with open(industry_filepath, 'w', encoding='utf-8') as f:
-                json.dump(industry_data, f, ensure_ascii=False, indent=2)
-
-            print(f"\n✅ 已保存行业指数数据到: {industry_filepath}")
+            # 保存行业数据到DB
+            try:
+                from utils.db_manager import ValuationDB
+                db = ValuationDB()
+                db.save_industry_data(stock_code, industry_data)
+                print(f"\n✅ 已保存行业指数数据到DB: {stock_code}")
+            except Exception as e:
+                print(f"⚠️ 保存行业数据到DB失败: {e}")
+                industry_filepath = os.path.join(data_dir, f"{stock_code.replace('.', '_')}_industry_data.json")
+                with open(industry_filepath, 'w', encoding='utf-8') as f:
+                    json.dump(industry_data, f, ensure_ascii=False, indent=2)
+                print(f"✅ 已保存行业指数数据到文件: {industry_filepath}")
 
             # 打印行业数据摘要
             print("\n📊 行业指数数据摘要:")
