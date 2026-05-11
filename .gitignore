@@ -63,3 +63,7 @@ enterprise_analysis/wanma_report/output/*.docx
 # 行业DCF缓存数据
 industry_dcf/data/*.json
 !industry_dcf/data/.gitkeep
+
+# 定增分析数据（已迁移到SQLite）
+price_maintenance_risk_analysis/data/json_backup/
+price_maintenance_risk_analysis/data/*.xlsx
