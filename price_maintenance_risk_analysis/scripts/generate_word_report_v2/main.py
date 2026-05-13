@@ -272,11 +272,14 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
     document = Document()
     utils.setup_chinese_font(document)
 
-    # 检查市场数据文件是否存在，如果不存在则自动生成
+    # 检查市场数据是否存在（优先DB，其次文件）
+    from utils.db_manager import ValuationDB
+    db = ValuationDB()
+    db_market = db.load_market_data(stock_code)
     market_data_file = os.path.join(DATA_DIR, f"{stock_code.replace('.', '_')}_market_data.json")
-    if not os.path.exists(market_data_file):
-        print(f"⚠️ 市场数据文件不存在: {market_data_file}")
-        print(f"📥 自动生成市场数据...")
+
+    if not db_market and not os.path.exists(market_data_file):
+        print(f"⚠️ DB和文件中均无市场数据，自动生成...")
 
         try:
             # 导入update_market_data模块
@@ -293,12 +296,10 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
             updated_market_data = update_module.generate_market_data(stock_code, stock_name, issue_date)
 
             if updated_market_data:
-                # 保存到文件 - 使用模块的json避免冲突
-                print(f"   保存数据到文件...")
-                with open(market_data_file, 'w', encoding='utf-8') as f:
-                    # 直接使用json模块，确保没有冲突
-                    json.dump(updated_market_data, f, ensure_ascii=False, indent=2)
-                print(f"✅ 市场数据生成成功！已保存到: {market_data_file}")
+                # 优先保存到DB
+                print(f"   保存数据到DB...")
+                db.save_market_data(stock_code, updated_market_data)
+                print(f"✅ 市场数据生成成功！已保存到DB")
                 print(f"   数据日期: {updated_market_data.get('analysis_date', 'N/A')}")
                 print(f"   当前价格: {updated_market_data.get('current_price', 'N/A')}")
                 print(f"   MA20: {updated_market_data.get('ma_20', 'N/A')}")
@@ -455,10 +456,6 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
                     db.save_market_data(stock_code, updated_market_data)
                 except Exception:
                     pass
-                # 同时保存到文件（兼容性）
-                market_data_file = os.path.join(DATA_DIR, f"{stock_code.replace('.', '_')}_market_data.json")
-                with open(market_data_file, 'w', encoding='utf-8') as f:
-                    json.dump(updated_market_data, f, ensure_ascii=False, indent=2)
 
                 print(f" 个股市场数据更新成功！")
 
@@ -624,10 +621,7 @@ def _ensure_market_data(stock_code, stock_name, market_data_file, issue_date=Non
             db.save_market_data(stock_code, updated_data)
         except Exception:
             pass
-        # 同时保存到文件（兼容性）
-        with open(market_data_file, 'w', encoding='utf-8') as f:
-            json.dump(updated_data, f, ensure_ascii=False, indent=2)
-        print(f"  市场数据已自动生成")
+        print(f"  市场数据已自动生成并保存到DB")
     else:
         raise ValueError(
             f"无法生成 {stock_code} 的市场数据，请检查Tushare API配置"
@@ -831,9 +825,6 @@ def _load_industry_data(stock_code, auto_generate=True):
                 # 保存到DB
                 if db:
                     db.save_industry_data(stock_code, industry_data)
-                # 同时保存到文件（兼容性）
-                with open(industry_data_file, 'w', encoding='utf-8') as f:
-                    json.dump(industry_data, f, ensure_ascii=False, indent=2)
                 print(f" ✅ 行业数据生成成功！")
                 return industry_data
             else:

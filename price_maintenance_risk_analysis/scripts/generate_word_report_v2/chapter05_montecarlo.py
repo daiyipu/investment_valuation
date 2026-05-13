@@ -847,12 +847,12 @@ def generate_chapter(context):
         skip_time_series = False
         print(f" 从market_data加载price_series: {len(prices_list)}个交易日")
 
-    # 创建时间序列预测器
+    # 创建时间序列预测器（使用250日窗口，更反映当前趋势）
     if not skip_time_series:
         try:
             if prices_list and len(prices_list) >= 100:
                 prices_series = pd.Series(prices_list)
-                forecaster = TimeSeriesForecaster(prices_series)
+                forecaster = TimeSeriesForecaster(prices_series, window=250)
 
                 # ARIMA预测
                 print("\n运行ARIMA模型预测漂移率...")
@@ -860,10 +860,11 @@ def generate_chapter(context):
 
                 # 添加模型设置说明
                 add_paragraph(document, '模型设置：', bold=True)
+                data_window = arima_result.get('data_window', len(prices_series))
                 arima_params = [
-                    ['模型类型', 'ARIMA(1,1,1)'],
+                    ['模型类型', 'ARIMA(p,0,q) on log returns'],
                     ['预测期数', '120日（半年）'],
-                    ['数据量', f'{len(prices_series)}个交易日'],
+                    ['数据窗口', f'最近{data_window}个交易日'],
                     ['拟合状态', ' 成功' if arima_result['model_fitted'] else ' 失败（使用历史平均）']
                 ]
                 if arima_result['model_fitted']:
@@ -883,6 +884,16 @@ def generate_chapter(context):
                     add_paragraph(document, '   - 数据量不足（建议至少250个交易日）')
                     add_paragraph(document, '   - 序列平稳性不足')
                     add_paragraph(document, '   - 存在异常值或结构断点')
+
+                # 趋势方向校验
+                if arima_result.get('trend_divergence'):
+                    recent_drift = arima_result.get('recent_drift_120d', 0)
+                    add_paragraph(document, '')
+                    add_paragraph(document, '⚠️ 趋势方向预警：', bold=True)
+                    add_paragraph(document, f'• ARIMA预测漂移率：{arima_result["forecast_drift"]*100:+.2f}%（年化）')
+                    add_paragraph(document, f'• 近120日实际漂移率：{recent_drift*100:+.2f}%（年化）')
+                    add_paragraph(document, '• 预测方向与近期实际趋势相反，ARIMA预测的可信度较低')
+                    add_paragraph(document, '• 建议：以近期实际趋势（120日窗口）为主要参考，ARIMA预测仅作辅助参考')
 
                 # 对比历史漂移率
                 add_paragraph(document, '')

@@ -100,7 +100,7 @@ def generate_chapter(context):
     net_income = project_params.get('net_income', 253532329.85)  # 净利润
 
     # 获取真实总股本（从 Tushare）
-    total_shares = 767460689  # 光弘科技真实总股本（约7.67亿股）
+    total_shares = 767460689  # 默认值，将通过API获取真实值
     try:
         ts_token = os.environ.get('TUSHARE_TOKEN', '')
         if ts_token:

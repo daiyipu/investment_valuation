@@ -15,13 +15,17 @@ class TimeSeriesForecaster:
     使用ARIMA模型预测漂移率，GARCH模型预测波动率
     """
 
-    def __init__(self, prices: pd.Series):
+    def __init__(self, prices: pd.Series, window: int = None):
         """
         初始化预测器
 
         Args:
             prices: 价格序列（pd.Series）
+            window: 使用最近N个交易日的数据（默认None表示全部使用）
+                    建议使用250，避免早期数据干扰当前趋势判断
         """
+        if window and len(prices) > window:
+            prices = prices.iloc[-window:]
         self.prices = prices.sort_index()
         self.returns = self._calculate_returns()
 
@@ -84,7 +88,7 @@ class TimeSeriesForecaster:
     def find_optimal_arima_order(
         self,
         max_p: int = 3,
-        max_d: int = 2,
+        max_d: int = 0,
         max_q: int = 3,
         information_criterion: str = 'aic'
     ) -> Dict:
@@ -93,7 +97,7 @@ class TimeSeriesForecaster:
 
         Args:
             max_p: AR阶数最大值
-            max_d: 差分阶数最大值
+            max_d: 差分阶数最大值（默认0，因为输入已经是log returns，已平稳）
             max_q: MA阶数最大值
             information_criterion: 信息准则 ('aic' 或 'bic')
 
@@ -113,7 +117,7 @@ class TimeSeriesForecaster:
             log_returns = np.log(self.prices).diff().dropna()
             log_returns = log_returns.reset_index(drop=True)
 
-            # 生成所有可能的(p,d,q)组合
+            # 生成所有可能的(p,d,q)组合（d固定为0，因为输入已是log returns）
             p_range = range(0, max_p + 1)
             d_range = range(0, max_d + 1)
             q_range = range(0, max_q + 1)
@@ -153,7 +157,7 @@ class TimeSeriesForecaster:
             if not results:
                 print("⚠️ 没有成功拟合的模型，使用默认(1,1,1)")
                 return {
-                    'optimal_order': (1, 1, 1),
+                    'optimal_order': (1, 0, 1),
                     'best_ic': float('inf'),
                     'all_results': [],
                     'top_models': []
@@ -193,17 +197,22 @@ class TimeSeriesForecaster:
         order: tuple = None,
         auto_find_order: bool = True,
         max_p: int = 3,
-        max_d: int = 2,
+        max_d: int = 0,
         max_q: int = 3
     ) -> Dict:
         """
         使用ARIMA预测漂移率（年化收益率）
 
+        注意：输入self.prices的log returns已经是平稳序列，因此d应固定为0。
+        如果d>0会导致过度差分，产生不稳定的预测结果。
+
         Args:
             horizon: 预测期数（默认120日）
             order: ARIMA模型阶数(p,d,q)，如果为None且auto_find_order=True则自动寻优
             auto_find_order: 是否自动寻找最优阶数
-            max_p, max_d, max_q: 自动寻优时的最大阶数
+            max_p: AR阶数最大值
+            max_d: 差分阶数最大值（默认0，输入已是log returns）
+            max_q: MA阶数最大值
 
         Returns:
             {
@@ -236,7 +245,7 @@ class TimeSeriesForecaster:
                 order = order_selection['optimal_order']
                 print(f"    使用最优阶数: ARIMA{order}")
             elif order is None:
-                order = (1, 1, 1)  # 默认值
+                order = (1, 0, 1)  # 默认值，d=0
 
             # 拟合ARIMA模型
             model = ARIMA(log_returns, order=order)
@@ -249,21 +258,24 @@ class TimeSeriesForecaster:
             # 预测未来horizon期
             forecast = fitted.forecast(steps=horizon)
 
-            # 计算年化漂移率（两种方式）
-            # 方式1：简单年化（对数收益率线性年化）
+            # 计算年化漂移率
             total_log_return = forecast.sum()
             annualized_drift_simple = total_log_return / horizon * 252
 
-            # 方式2：复利年化（更准确，转换为简单收益率后年化再转回）
-            # 累积简单收益率
+            # 复利年化（更准确）
             total_simple_return = np.exp(total_log_return) - 1
-            # 复利年化
             annualized_simple_return = (1 + total_simple_return) ** (252 / horizon) - 1
-            # 转回对数收益率
             annualized_drift_compound = np.log(1 + annualized_simple_return)
 
             # 使用复利年化方式（更准确）
             annualized_drift = annualized_drift_compound
+
+            # 趋势方向校验：比较ARIMA预测与近期实际趋势
+            recent_120d = log_returns[-120:] if len(log_returns) >= 120 else log_returns
+            recent_drift = recent_120d.mean() * 252
+            arima_drift_simple = annualized_drift_simple
+            trend_divergence = (arima_drift_simple > 0 and recent_drift < 0) or \
+                               (arima_drift_simple < 0 and recent_drift > 0)
 
             result = {
                 'forecast_drift': annualized_drift,
@@ -276,7 +288,10 @@ class TimeSeriesForecaster:
                 'forecast_series': forecast,
                 'fitted_model': fitted,
                 'log_returns': log_returns,
-                'order_used': order
+                'order_used': order,
+                'trend_divergence': trend_divergence,
+                'recent_drift_120d': recent_drift,
+                'data_window': len(log_returns),
             }
 
             if order_selection:
@@ -297,7 +312,7 @@ class TimeSeriesForecaster:
                 'model_fitted': False,
                 'error': str(e),
                 'forecast_series': pd.Series([historical_drift] * horizon),
-                'order_used': order if order else (1, 1, 1)
+                'order_used': order if order else (1, 0, 1)
             }
 
     def arch_lm_test(self, series: pd.Series = None) -> Dict:

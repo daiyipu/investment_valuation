@@ -1547,7 +1547,7 @@ def generate_var_chart(var_95, var_99, cvar_95, save_path):
     plt.close()
 
 
-def generate_relative_valuation_charts_split(current_metrics, industry_avg, peer_companies_data, save_dir):
+def generate_relative_valuation_charts_split(current_metrics, industry_avg, peer_companies_data, save_dir, stock_name=''):
     """生成相对估值分析图表 - 拆分版本（单独大图）"""
     chart_paths = []
     _n = lambda v: v if v is not None else 0
@@ -1562,7 +1562,7 @@ def generate_relative_valuation_charts_split(current_metrics, industry_avg, peer
     x = np.arange(len(metrics))
     width = 0.35
 
-    bars1 = ax.bar(x - width/2, current_vals, width, label='光弘科技', color='#3498db', alpha=0.8)
+    bars1 = ax.bar(x - width/2, current_vals, width, label=stock_name or '个股', color='#3498db', alpha=0.8)
     bars2 = ax.bar(x + width/2, industry_vals, width, label='行业平均', color='#e74c3c', alpha=0.8)
 
     ax.set_xlabel('估值指标', fontproperties=font_prop, fontsize=14)
@@ -1595,7 +1595,7 @@ def generate_relative_valuation_charts_split(current_metrics, industry_avg, peer
     peer_pes.append(_n(industry_avg['pe']))
     peer_names.append('行业平均')
     peer_pes.append(_n(current_metrics['pe']))
-    peer_names.append('光弘科技')
+    peer_names.append(stock_name or '个股')
 
     colors_pe = ['#95a5a6'] * len(peer_companies_data) + ['#e74c3c', '#3498db']
     bars = ax.bar(range(len(peer_names)), peer_pes, color=colors_pe, alpha=0.7)

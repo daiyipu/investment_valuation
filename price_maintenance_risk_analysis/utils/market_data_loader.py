@@ -313,15 +313,6 @@ def save_market_indices_data(indices_results: Dict, data_dir: str = '..'):
     except Exception as e:
         print(f"⚠️ 保存指数数据到DB失败: {e}")
 
-    # 同时保存为JSON文件（兼容性）
-    output_file = os.path.join(data_dir, 'market_indices_scenario_data.json')
-    try:
-        with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump(scenario_indices_data, f, indent=2, ensure_ascii=False)
-        print(f"💾 指数数据已保存(文件): {output_file}")
-    except Exception:
-        pass
-
     print(f"   指数数量: {len(scenario_indices_data)}")
 
 

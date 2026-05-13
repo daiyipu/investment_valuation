@@ -53,6 +53,7 @@ def generate_chapter(context):
 
     # 提取常用变量
     stock_code = project_params.get('stock_code', '300735.SZ')
+    stock_name = context.get('stock_name', stock_code)
     issue_price = project_params['issue_price']
     current_price = project_params['current_price']
     lockup_period = project_params['lockup_period']
@@ -101,7 +102,7 @@ def generate_chapter(context):
         price_value_cover = f'{current_price:.2f} 元/股'
 
     info_data = [
-        ['公司名称', f'{project_params.get("company_name", "光弘科技")} ({stock_code})'],
+        ['公司名称', f'{stock_name} ({stock_code})'],
         ['报告日期', current_date],
         ['发行价格', f'{issue_price:.2f} 元/股'],
         [price_label_cover, price_value_cover],
@@ -162,7 +163,7 @@ def generate_chapter(context):
     project_headers = ['指标', '具体内容']
     project_data = [
         ['股票代码', stock_code],
-        ['公司名称', project_params.get('company_name', '光弘科技')],
+        ['公司名称', stock_name],
         ['发行日/报价日', project_params.get('issue_date', 'N/A')],
         ['询价邀请日', project_params.get('invitation_date', 'N/A')],
         ['发行价格', f'{issue_price:.2f} 元/股'],

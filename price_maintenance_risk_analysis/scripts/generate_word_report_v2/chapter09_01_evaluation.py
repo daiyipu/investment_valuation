@@ -447,11 +447,12 @@ def generate_chapter(context):
     add_paragraph(document, '• 市场指数情景：基于市场历史数据的情景分析')
     add_paragraph(document, '• 行业估值情景：基于行业PE历史分位数的情景分析')
     add_paragraph(document, '• 个股估值情景：基于个股PE历史分位数的情景分析')
+    add_paragraph(document, '• 修正PE情景：基于修正PE估值的目标价情景分析')
     add_paragraph(document, '• DCF估值情景：基于绝对估值法的情景分析')
     add_paragraph(document, '')
 
     add_paragraph(document, '情景数量统计：', bold=True)
-    add_paragraph(document, '• 历史数据场景共计5大类')
+    add_paragraph(document, '• 历史数据场景共计6大类')
     add_paragraph(document, '• 每类场景包含多个档位设置（如高、中、低档位）')
     add_paragraph(document, '• 具体情景数量和详细分析请参见第六章"情景分析"')
     

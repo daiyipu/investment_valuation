@@ -44,6 +44,7 @@ def generate_chapter(context):
     IMAGES_DIR = context['IMAGES_DIR']
 
     stock_code = project_params.get('stock_code', '')  # 从project_params获取（与V2一致）
+    stock_name = context.get('stock_name', stock_code)
     _script_dir = os.path.dirname(os.path.abspath(__file__))
     DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(_script_dir)), 'data')
     cache_file = os.path.join(DATA_DIR, f"{stock_code.replace('.', '_')}_relative_valuation.json")
@@ -51,8 +52,9 @@ def generate_chapter(context):
     # ==================== 二、相对估值分析 ====================
     add_title(document, '二、相对估值分析', level=1)
 
-    add_paragraph(document, '本章节通过相对估值法（参数法），将光弘科技与行业内可比公司进行对比分析。')
-    add_paragraph(document, '选取申万三级分类"消费电子零部件及组装"行业的同行公司，对比PE、PS、PB等估值倍数。')
+    add_paragraph(document, f'本章节通过相对估值法（参数法），将{stock_name}与行业内可比公司进行对比分析。')
+    sw_l3_name = context.get('industry_data', {}).get('sw_l3_name', '行业')
+    add_paragraph(document, f'选取申万三级分类"{sw_l3_name}"行业的同行公司，对比PE、PS、PB等估值倍数。')
 
     add_title(document, '2.1 估值指标对比', level=2)
 
@@ -299,10 +301,6 @@ def generate_chapter(context):
                     print(f"  已缓存相对估值数据到DB")
                 except Exception:
                     pass
-                # 同时保存到文件（兼容性）
-                with open(cache_file, 'w', encoding='utf-8') as f:
-                    json.dump(cache_data, f, ensure_ascii=False, indent=2)
-                print(f"  已缓存相对估值数据到 {os.path.basename(cache_file)}")
             except Exception:
                 pass
 
@@ -384,7 +382,7 @@ def generate_chapter(context):
             return f"{(val - ref) / ref * 100:+.1f}%"
         return 'N/A'
 
-    valuation_headers = ['指标', '光弘科技', '行业平均', '中位数', 'Q1(25分位)', 'Q3(75分位)', '最小值', '最大值', '偏离度']
+    valuation_headers = ['指标', stock_name, '行业平均', '中位数', 'Q1(25分位)', 'Q3(75分位)', '最小值', '最大值', '偏离度']
     valuation_data = [
         ['PE (TTM)',
          _fmt_val(current_metrics_val['pe']),
@@ -435,7 +433,7 @@ def generate_chapter(context):
     # 添加同行公司名单
     add_paragraph(document, '')
     add_title(document, '2.1.1 同行公司名单', level=3)
-    add_paragraph(document, f'基于申万三级行业分类"消费电子零部件及组装"筛选的同行公司：')
+    add_paragraph(document, f'基于申万三级行业分类"{sw_l3_name}"筛选的同行公司：')
 
     # 按市值排序的同行公司表格
     peer_companies_sorted = peer_companies_val.sort_values('market_cap', ascending=False)
@@ -464,7 +462,7 @@ def generate_chapter(context):
 
     add_paragraph(document, '图表 2.0: 相对估值对比分析 - 估值指标对比')
     chart_paths, df_scenarios = generate_relative_valuation_charts_split(
-        current_metrics_val, industry_avg_val, peer_companies_val, IMAGES_DIR
+        current_metrics_val, industry_avg_val, peer_companies_val, IMAGES_DIR, stock_name=stock_name
     )
     add_image(document, chart_paths[0])  # 估值指标对比
 
@@ -487,7 +485,7 @@ def generate_chapter(context):
         add_paragraph(document, '')
 
         # 申万行业指数估值表格
-        sw_index_headers = ['指标', '申万行业指数', '光弘科技', '差异', '说明']
+        sw_index_headers = ['指标', '申万行业指数', stock_name, '差异', '说明']
         sw_index_data = [
             ['PE (TTM)',
              _fmt_val(sw_index_pe),

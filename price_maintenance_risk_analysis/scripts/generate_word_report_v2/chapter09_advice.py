@@ -95,7 +95,7 @@ def calculate_decision_conclusion(thresholds, qualified_by_category=None,
         if m in method_names:
             method_count += 1
             method_details.append(m)
-    step3_pass = method_count >= 2
+    step3_pass = method_count >= 3
     step3_detail = f'{method_count}/3个有效（' + '、'.join(method_details) + '）' if method_details else f'{method_count}/3个有效'
 
     all_pass = step1_pass and step2_pass and step3_pass
@@ -1589,7 +1589,9 @@ def generate_chapter(context):
             'profit_prob': profit_prob,
             'premium_rate': scenario_obj.get('premium_rate', scenario_obj.get('discount', 0)) * 100,
             'var_95': var_95,
-            'issue_price': issue_price
+            'issue_price': issue_price,
+            'drift': scenario_obj.get('drift', 0),
+            'volatility': scenario_obj.get('volatility', 0),
         })
 
     if dcf_scenario_options:
@@ -2305,7 +2307,7 @@ def generate_chapter(context):
         s3_status = '✓ 通过' if s3['pass'] else '✗ 未通过'
         add_paragraph(document, f'① 历史数据场景：{s1["detail"]} → {s1_status}（需≥2个）')
         add_paragraph(document, f'② 预期估值场景：{s2["detail"]} → {s2_status}（需≥1个）')
-        add_paragraph(document, f'③ 其他场景：{s3["detail"]} → {s3_status}（需≥2个）')
+        add_paragraph(document, f'③ 其他场景：{s3["detail"]} → {s3_status}（需全部通过）')
         add_paragraph(document, '')
 
         if all([s1['pass'], s2['pass'], s3['pass']]):

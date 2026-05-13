@@ -1231,9 +1231,14 @@ def generate_chapter(context):
                 pe_current_price = pe_estimation.get('current_price', 0)
 
                 if pe_target_price > 0 and pe_current_price > 0:
-                    # 漂移率 = (目标价 - 当前价) / 当前价
-                    pe_drift = (pe_target_price / pe_current_price) - 1.0
-                    pe_drift = max(-0.50, min(1.00, pe_drift))
+                    # 1年期预期收益率 = (目标价 - 当前价) / 当前价
+                    pe_return_1y = (pe_target_price / pe_current_price) - 1.0
+                    # 折算为120日区间收益率: (1+1年收益率)^(120/250) - 1
+                    if pe_return_1y > -1:
+                        pe_drift = (1 + pe_return_1y) ** (120 / 250) - 1
+                    else:
+                        pe_drift = -0.50
+                    pe_drift = max(-0.50, min(2.00, pe_drift))
 
                     norm_pe_val = pe_estimation.get('normalized_pe', 0)
                     ind_pe_val = pe_estimation.get('industry_pe_median', 0)
@@ -1246,7 +1251,8 @@ def generate_chapter(context):
                     add_paragraph(document, f'• 行业净利润增速: {eg*100:.1f}%')
                     add_paragraph(document, f'• 1年后预测净利润: {proj_1y["projected_ni"]/10000:.2f}亿元')
                     add_paragraph(document, f'• 1年后行业PE对应价: {pe_target_price:.2f}元 (当前价: {pe_current_price:.2f}元)')
-                    add_paragraph(document, f'• 漂移率(区间): {pe_drift*100:+.1f}%')
+                    add_paragraph(document, f'• 1年期预期涨幅: {pe_return_1y*100:+.1f}%')
+                    add_paragraph(document, f'• 折算120日区间收益率: {pe_drift*100:+.1f}%（按(1+R)^(120/250)-1折算）')
                     add_paragraph(document, '')
 
                     # 确保波动率变量可用
@@ -1377,9 +1383,11 @@ def generate_chapter(context):
             scenario_obj = result.get('scenario', result)
             scenario_name = scenario_obj.get('name', '未知')
 
-            # 提取情景类型（市场指数、行业PE、个股PE、DCF估值）
+            # 提取情景类型（市场指数、行业PE、个股PE、修正PE、DCF估值）
             if '市场指数' in scenario_name:
                 scenario_type = '市场指数情景'
+            elif '修正PE' in scenario_name:
+                scenario_type = '修正PE情景'
             elif '行业PE' in scenario_name:
                 scenario_type = '行业PE情景'
             elif '个股PE' in scenario_name:
@@ -1458,6 +1466,7 @@ def generate_chapter(context):
         add_paragraph(document, f'• 6.3行业PE情景：{scenario_type_counts.get("行业PE情景", 0)}个（1×3×5矩阵）')
         add_paragraph(document, f'• 6.4个股PE情景：{scenario_type_counts.get("个股PE情景", 0)}个（1×3×5矩阵）')
         add_paragraph(document, f'• 6.5 DCF估值情景：{scenario_type_counts.get("DCF估值情景", 0)}个（1×3×5矩阵）')
+        add_paragraph(document, f'• 6.6修正PE情景：{scenario_type_counts.get("修正PE情景", 0)}个（1×3×5矩阵）')
         add_paragraph(document, '')
 
         add_paragraph(document, ' 评级说明：')
