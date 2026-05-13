@@ -305,16 +305,31 @@ def generate_chapter(context):
                 pass
 
         except Exception as e:
-            print(f"获取相对估值数据失败: {e}，使用示例数据")
-        # 初始化申万行业变量（防止 UnboundLocalError）
-        sw_index_pe = None
-        sw_index_pb = None
-        sw_index_ps = None
-        target_index_code = None
-        target_industry_l3 = None
+            print(f"获取相对估值数据失败: {e}，尝试使用缓存")
 
-        # 尝试使用过期缓存（API不可用时的降级方案）
-        if os.path.exists(cache_file):
+        # 尝试使用DB缓存（API不可用时的降级方案）
+        if not _cache_loaded:
+            try:
+                from utils.db_manager import ValuationDB
+                db = ValuationDB()
+                cached = db.load_relative_valuation(stock_code)
+                if cached:
+                    current_metrics_val = cached.get('current_metrics', {})
+                    peer_data = cached.get('peer_companies', [])
+                    peer_companies_val = pd.DataFrame(peer_data) if peer_data else pd.DataFrame()
+                    sw_index_pe = cached.get('sw_index_pe')
+                    sw_index_pb = cached.get('sw_index_pb')
+                    sw_index_ps = cached.get('sw_index_ps')
+                    target_index_code = cached.get('target_index_code')
+                    target_industry_l3 = cached.get('target_industry_l3')
+                    trade_date = cached.get('trade_date')
+                    print(f"  使用DB缓存的相对估值数据（交易日期: {trade_date}）")
+                    _cache_loaded = True
+            except Exception:
+                pass
+
+        # 回退到JSON文件缓存
+        if not _cache_loaded and os.path.exists(cache_file):
             try:
                 with open(cache_file, 'r', encoding='utf-8') as f:
                     cached = json.load(f)
@@ -326,10 +341,12 @@ def generate_chapter(context):
                 target_index_code = cached.get('target_index_code')
                 target_industry_l3 = cached.get('target_industry_l3')
                 trade_date = cached.get('trade_date')
-                print(f"  使用过期缓存的相对估值数据（交易日期: {trade_date}）")
+                print(f"  使用文件缓存的相对估值数据（交易日期: {trade_date}）")
+                _cache_loaded = True
             except (json.JSONDecodeError, KeyError):
-                raise ValueError(f"无法获取相对估值数据且无可用缓存，请检查网络连接")
-        else:
+                pass
+
+        if not _cache_loaded:
             raise ValueError(f"无法获取相对估值数据且无缓存，请检查网络连接")
 
     # 计算行业统计指标（填充NaN，避免成分股过少时崩溃）
