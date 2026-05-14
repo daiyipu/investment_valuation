@@ -1502,33 +1502,51 @@ def generate_industry_data(stock_code, days=500):
         print("⚠️ 无法获取行业分类，跳过行业数据生成")
         return None
 
-    # 使用申万三级行业指数代码
-    index_code = industry_info.get('sw_l3_index_code')
-
-    # 行业名称显示（使用三级行业名称，如果没有则使用一级或二级）
+    # 行业名称和代码
     sw_l3_name = industry_info.get('sw_l3_name', '')
     sw_l2_name = industry_info.get('sw_l2_name', '')
     sw_l1_name = industry_info.get('sw_l1_name', '')
+    sw_l3_code = industry_info.get('sw_l3_code', '')
+    sw_l2_code = industry_info.get('sw_l2_code', '')
+    sw_l1_code = industry_info.get('sw_l1_code', '')
 
-    if sw_l3_name:
-        industry_display_name = sw_l3_name
-    elif sw_l2_name:
-        industry_display_name = f"{sw_l1_name}-{sw_l2_name}"
-    else:
-        industry_display_name = sw_l1_name
+    # 构建降级链：L3 → L2 → L1
+    fallback_chain = []
+    if sw_l3_code:
+        l3_idx = sw_l3_code if sw_l3_code.endswith('.SI') else f"{sw_l3_code}.SI"
+        fallback_chain.append((l3_idx, sw_l3_name, '三级行业'))
+    if sw_l2_code:
+        l2_idx = sw_l2_code if sw_l2_code.endswith('.SI') else f"{sw_l2_code}.SI"
+        fallback_chain.append((l2_idx, sw_l2_name, '二级行业'))
+    if sw_l1_code:
+        l1_idx = sw_l1_code if sw_l1_code.endswith('.SI') else f"{sw_l1_code}.SI"
+        fallback_chain.append((l1_idx, sw_l1_name, '一级行业'))
 
-    if not index_code:
+    if not fallback_chain:
         print("⚠️ 未找到行业指数代码")
         return None
 
-    print(f"📡 正在获取 {industry_display_name}（{index_code}）的行业指数数据...")
+    # 依次尝试获取行业指数数据
+    df = None
+    used_index_code = None
+    used_industry_name = None
+    for idx_code, idx_name, idx_level in fallback_chain:
+        display = idx_name or idx_code
+        print(f"📡 正在获取 {display}（{idx_code}）的行业指数数据...")
+        result = fetch_industry_index_data(idx_code, days=days)
+        if result is not None and len(result) >= 250:
+            df = result
+            used_index_code = idx_code
+            used_industry_name = display
+            break
+        else:
+            print(f"   ⚠️ {idx_level}指数数据不足，尝试上级行业...")
 
-    # 获取行业指数历史数据
-    df = fetch_industry_index_data(index_code, days=days)
-
-    if df is None or len(df) < 250:
-        print(f"⚠️ 行业指数数据不足，跳过")
+    if df is None:
+        print(f"⚠️ 所有行业指数数据均不足，跳过")
         return None
+
+    industry_display_name = used_industry_name or sw_l1_name
 
     # 计算行业指数指标（使用与个股相同的计算方法）
     latest_date = df['trade_date'].iloc[-1]
@@ -1567,7 +1585,7 @@ def generate_industry_data(stock_code, days=500):
 
     # 构建行业数据字典
     industry_data = {
-        'index_code': index_code,
+        'index_code': used_index_code,
         'industry_name': industry_display_name,
         'sw_l1_code': industry_info.get('sw_l1_code', ''),
         'sw_l1_name': sw_l1_name,

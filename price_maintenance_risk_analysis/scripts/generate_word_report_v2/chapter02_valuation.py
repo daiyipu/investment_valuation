@@ -301,6 +301,7 @@ def generate_chapter(context):
                     print(f"  已缓存相对估值数据到DB")
                 except Exception:
                     pass
+                _cache_loaded = True
             except Exception:
                 pass
 
