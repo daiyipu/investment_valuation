@@ -275,13 +275,13 @@ class PrivatePlacementRiskAnalyzer:
         brownian_motion = np.random.standard_normal((n_simulations, total_days))
 
         # 股价路径模拟（几何布朗运动）
-        # 注意：drift和volatility都应该是连续复利年化值
+        # drift 是ARIMA输出的对数收益率（连续复利年化），直接使用，无需再减 0.5*sigma²
         prices = np.zeros((n_simulations, total_days + 1))
         prices[:, 0] = self.current_price
 
         for t in range(1, total_days + 1):
             prices[:, t] = prices[:, t-1] * np.exp(
-                (drift - 0.5 * volatility**2) * dt +
+                drift * dt +
                 volatility * np.sqrt(dt) * brownian_motion[:, t-1]
             )
 

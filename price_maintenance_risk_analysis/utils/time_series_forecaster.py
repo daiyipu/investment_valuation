@@ -506,8 +506,8 @@ class TimeSeriesForecaster:
         try:
             from arch import arch_model
 
-            # 计算收益率（小数形式，与历史波动率计算保持一致）
-            returns_decimal = self.prices.pct_change().dropna()
+            # 计算对数收益率（与历史波动率计算方式一致，避免暴涨股简单收益率膨胀）
+            returns_decimal = np.log(self.prices.astype(float)).diff().dropna()
 
             # 确定使用的阶数
             order_selection = None
