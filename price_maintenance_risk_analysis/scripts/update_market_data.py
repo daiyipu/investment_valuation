@@ -9,6 +9,7 @@ import json
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+import time
 import sys
 import os
 import argparse
@@ -1436,13 +1437,15 @@ def get_stock_industry_classification(stock_code):
         }
 
 
-def fetch_industry_index_data(index_code, days=500):
+def fetch_industry_index_data(index_code, days=500, stock_code=None, sw_industry_name=None):
     """
-    获取申万行业指数历史数据（使用sw_daily接口）
+    获取申万行业指数历史数据（使用sw_daily接口，超限时降级AKShare）
 
     参数:
         index_code: 行业指数代码，如 '801010.SI' (申万电子指数) 或 '850531.SI' (三级行业指数)
         days: 获取天数
+        stock_code: 股票代码，用于AKShare降级时查找同花顺行业
+        sw_industry_name: 申万行业名称，用于AKShare降级时模糊匹配
 
     返回:
         DataFrame或None
@@ -1456,7 +1459,19 @@ def fetch_industry_index_data(index_code, days=500):
         print(f"   查询时间范围: {start_date} ~ {end_date}")
 
         # 使用申万行业日线行情接口（sw_daily）
-        df = pro.sw_daily(ts_code=index_code, start_date=start_date, end_date=end_date)
+        # 注意：sw_daily频率限制为每天5次，超限时降级到AKShare同花顺行业指数
+        try:
+            df = pro.sw_daily(ts_code=index_code, start_date=start_date, end_date=end_date)
+        except Exception as e:
+            err_msg = str(e)
+            if '频率超限' in err_msg:
+                print(f"   ⏳ sw_daily频率超限，降级使用AKShare同花顺行业指数...")
+                df = _fetch_industry_data_akshare(index_code, start_date, end_date, stock_code=stock_code, sw_industry_name=sw_industry_name)
+                if df is None:
+                    return None
+            else:
+                print(f"   ❌ 获取{index_code}数据失败: {e}")
+                return None
 
         if df is None or df.empty:
             print(f"   ⚠️ 未获取到数据")
@@ -1477,6 +1492,135 @@ def fetch_industry_index_data(index_code, days=500):
         print(f"   ❌ 获取{index_code}数据失败: {e}")
         import traceback
         traceback.print_exc()
+        return None
+
+
+def _get_industry_name_from_db(sw_index_code):
+    """从DB中查找申万行业名称"""
+    try:
+        from utils.db_manager import ValuationDB
+        db = ValuationDB()
+        import sqlite3
+        conn = sqlite3.connect(db.db_path)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT sw_l3_name, sw_l2_name, sw_l1_name FROM industry_data WHERE index_code=?",
+            (sw_index_code,)
+        ).fetchone()
+        conn.close()
+        if row:
+            return row['sw_l3_name'] or row['sw_l2_name'] or row['sw_l1_name']
+    except Exception:
+        pass
+    return None
+
+
+def _fetch_industry_data_akshare(sw_index_code, start_date, end_date, stock_code=None, sw_industry_name=None):
+    """sw_daily超限时的降级方案：用AKShare同花顺行业指数获取日线数据
+
+    策略：
+    1. 通过股票代码在同花顺查找所属行业（准确但需要API调用）
+    2. 通过申万行业名称在同花顺列表模糊匹配（快速但可能匹配不上）
+
+    注意：同花顺行业与申万行业分类不同，但日线行情（OHLCV）可用于计算波动率/收益率。
+    同花顺没有PE/PB数据，这部分会缺失。
+    """
+    try:
+        import akshare as ak
+
+        ths_industry_name = None
+
+        # 策略1：通过股票代码在同花顺查找所属行业
+        if stock_code:
+            try:
+                short_code = stock_code.split('.')[0]
+                # 用东方财富接口反向查询（更快，一次调用）
+                try:
+                    spot = ak.stock_board_industry_spot_em()
+                    if spot is not None and not spot.empty:
+                        # 遍历行业，找包含该股票的
+                        for _, brow in spot.head(30).iterrows():  # 只查前30个主要行业
+                            try:
+                                cons = ak.stock_board_industry_cons_em(symbol=brow['板块名称'])
+                                if cons is not None and not cons.empty:
+                                    if short_code in cons['代码'].values:
+                                        ths_industry_name = brow['板块名称']
+                                        print(f"   通过股票{stock_code}找到行业: {ths_industry_name}")
+                                        break
+                            except Exception:
+                                continue
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+        # 策略2：用传入的申万行业名称在同花顺列表中模糊匹配
+        if not ths_industry_name and sw_industry_name:
+            try:
+                clean = sw_industry_name.replace('Ⅱ', '').replace('Ⅲ', '').replace('Ⅱ', '').replace('Ⅲ', '').strip()
+                # 关键词匹配：拆分名称，找包含核心词的同花顺行业
+                keywords = [k for k in clean.replace('其他', '').split() if len(k) >= 2]
+                if not keywords:
+                    keywords = [clean.replace('其他', '')]
+                ths_names = ak.stock_board_industry_name_ths()
+                for kw in keywords:
+                    if len(kw) >= 2:
+                        matched = ths_names[ths_names['name'].str.contains(kw, na=False)]
+                        if not matched.empty:
+                            ths_industry_name = matched.iloc[0]['name']
+                            print(f"   申万'{sw_industry_name}'→同花顺'{ths_industry_name}'（关键词:{kw}）")
+                            break
+            except Exception:
+                pass
+
+        if not ths_industry_name:
+            print(f"   无法匹配同花顺行业，AKShare降级失败")
+            return None
+
+        print(f"   AKShare降级: 同花顺行业[{ths_industry_name}]")
+
+        # 获取同花顺行业日线
+        df = ak.stock_board_industry_index_ths(
+            symbol=ths_industry_name,
+            start_date=start_date,
+            end_date=end_date
+        )
+
+        if df is None or df.empty:
+            print(f"   AKShare同花顺也未获取到数据")
+            return None
+
+        # 转换列名为sw_daily格式
+        df = df.rename(columns={
+            '日期': 'trade_date',
+            '开盘价': 'open',
+            '最高价': 'high',
+            '最低价': 'low',
+            '收盘价': 'close',
+            '成交量': 'vol',
+            '成交额': 'amount',
+        })
+
+        # 日期格式转换（AKShare: '2026-01-02' → Tushare: '20260102'）
+        df['trade_date'] = df['trade_date'].astype(str).str.replace('-', '')
+
+        # 计算涨跌幅
+        df['pct_chg'] = df['close'].pct_change() * 100
+
+        # PE/PB缺失（同花顺不提供），设为None
+        df['pe'] = None
+        df['pb'] = None
+
+        df = df.sort_values('trade_date').reset_index(drop=True)
+        df.attrs['data_source'] = 'akshare_ths'
+        print(f"   ✅ AKShare降级成功: {len(df)}条数据")
+        return df
+
+    except ImportError:
+        print(f"   AKShare未安装，无法降级")
+        return None
+    except Exception as e:
+        print(f"   AKShare降级失败: {e}")
         return None
 
 
@@ -1533,7 +1677,7 @@ def generate_industry_data(stock_code, days=500):
     for idx_code, idx_name, idx_level in fallback_chain:
         display = idx_name or idx_code
         print(f"📡 正在获取 {display}（{idx_code}）的行业指数数据...")
-        result = fetch_industry_index_data(idx_code, days=days)
+        result = fetch_industry_index_data(idx_code, days=days, stock_code=stock_code, sw_industry_name=idx_name)
         if result is not None and len(result) >= 250:
             df = result
             used_index_code = idx_code
@@ -1618,9 +1762,14 @@ def generate_industry_data(stock_code, days=500):
         'win_rate_120d': round(float(win_rate_120d), 4),
         'win_rate_250d': round(float(win_rate_250d), 4),
         'total_days': len(df),
-        'data_source': 'tushare_sw_index',
+        'data_source': df.attrs.get('data_source', 'tushare_sw_index'),
         'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     }
+
+    # 同时返回原始日线数据，供后续存入DB避免重复调用sw_daily
+    industry_data['_raw_daily_df'] = df
+    industry_data['_used_index_code'] = used_index_code
+    industry_data['_daily_data_source'] = df.attrs.get('data_source', 'tushare_sw')
 
     return industry_data
 
@@ -1764,6 +1913,13 @@ if __name__ == '__main__':
                 from utils.db_manager import ValuationDB
                 db = ValuationDB()
                 db.save_industry_data(stock_code, industry_data)
+                # 同时保存行业日线数据（含PE/PB），后续报告生成直接从DB读取，不再调sw_daily
+                raw_df = industry_data.pop('_raw_daily_df', None)
+                raw_index_code = industry_data.pop('_used_index_code', None)
+                raw_source = industry_data.pop('_daily_data_source', 'tushare_sw')
+                if raw_df is not None and raw_index_code:
+                    db.save_industry_daily(raw_index_code, raw_df, data_source=raw_source)
+                    print(f"  已缓存{len(raw_df)}条行业日线数据到DB（{raw_index_code}, 来源:{raw_source}）")
                 print(f"\n✅ 已保存行业指数数据到DB: {stock_code}")
             except Exception as e:
                 print(f"⚠️ 保存行业数据到DB失败: {e}")

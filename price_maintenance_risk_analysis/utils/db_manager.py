@@ -358,6 +358,84 @@ class ValuationDB:
         conn.commit()
         conn.close()
 
+    def save_industry_daily(self, index_code, df, data_source='tushare_sw'):
+        """保存行业指数日线数据（含PE/PB）到DB
+
+        Args:
+            index_code: 行业指数代码
+            df: 日线DataFrame
+            data_source: 数据来源 'tushare_sw'(申万) 或 'akshare_ths'(同花顺)
+        """
+        if df is None or df.empty:
+            return
+        conn = self.get_connection()
+        for _, row in df.iterrows():
+            conn.execute("""
+                INSERT OR REPLACE INTO industry_daily
+                    (index_code, trade_date, open, high, low, close, volume, amount, pct_chg, pe, pb, ps_ttm, data_source)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (
+                index_code,
+                str(row.get('trade_date', '')),
+                row.get('open'), row.get('high'), row.get('low'), row.get('close'),
+                row.get('vol', row.get('volume')),
+                row.get('amount'),
+                row.get('pct_chg', row.get('pct_change')),
+                row.get('pe'), row.get('pb'), row.get('ps_ttm'),
+                data_source,
+            ))
+        conn.commit()
+        conn.close()
+
+    def load_industry_daily(self, index_code, start_date=None, end_date=None, data_source=None):
+        """从DB加载行业指数日线数据
+
+        Args:
+            index_code: 行业指数代码
+            start_date: 开始日期
+            end_date: 结束日期
+            data_source: 数据来源过滤，None=不限（优先tushare_sw）
+        """
+        conn = self.get_connection()
+        if data_source:
+            if start_date and end_date:
+                rows = conn.execute(
+                    "SELECT * FROM industry_daily WHERE index_code=? AND data_source=? AND trade_date>=? AND trade_date<=? ORDER BY trade_date",
+                    (index_code, data_source, start_date, end_date)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM industry_daily WHERE index_code=? AND data_source=? ORDER BY trade_date",
+                    (index_code, data_source)
+                ).fetchall()
+        else:
+            # 优先取申万数据(tushare_sw)，无数据时再取同花顺(akshare_ths)
+            if start_date and end_date:
+                rows = conn.execute(
+                    "SELECT * FROM industry_daily WHERE index_code=? AND data_source='tushare_sw' AND trade_date>=? AND trade_date<=? ORDER BY trade_date",
+                    (index_code, start_date, end_date)
+                ).fetchall()
+                if not rows:
+                    rows = conn.execute(
+                        "SELECT * FROM industry_daily WHERE index_code=? AND data_source='akshare_ths' AND trade_date>=? AND trade_date<=? ORDER BY trade_date",
+                        (index_code, start_date, end_date)
+                    ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM industry_daily WHERE index_code=? AND data_source='tushare_sw' ORDER BY trade_date",
+                    (index_code,)
+                ).fetchall()
+                if not rows:
+                    rows = conn.execute(
+                        "SELECT * FROM industry_daily WHERE index_code=? AND data_source='akshare_ths' ORDER BY trade_date",
+                        (index_code,)
+                    ).fetchall()
+        conn.close()
+        if not rows:
+            return None
+        import pandas as pd
+        return pd.DataFrame([dict(r) for r in rows])
+
     def is_industry_data_stale(self, stock_code, max_days=7):
         """检查行业数据是否过期。"""
         conn = self.get_connection()
@@ -673,6 +751,149 @@ class ValuationDB:
 
         print("\n迁移完成！")
 
+    # ==================== 东方财富行业板块 ====================
+
+    def save_em_industry_boards(self, boards_df):
+        """批量保存/更新东方财富行业板块列表。
+
+        :param boards_df: akshare stock_board_industry_name_em() 返回的 DataFrame
+        """
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        conn = self.get_connection()
+        try:
+            for _, row in boards_df.iterrows():
+                conn.execute("""
+                    INSERT INTO em_industry_boards
+                        (board_code, board_name, total_count, latest_price, change_pct,
+                         total_mv, turnover_rate, up_count, down_count,
+                         leading_stock, leading_pct, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(board_code) DO UPDATE SET
+                        board_name=excluded.board_name,
+                        total_count=excluded.total_count,
+                        latest_price=excluded.latest_price,
+                        change_pct=excluded.change_pct,
+                        total_mv=excluded.total_mv,
+                        turnover_rate=excluded.turnover_rate,
+                        up_count=excluded.up_count,
+                        down_count=excluded.down_count,
+                        leading_stock=excluded.leading_stock,
+                        leading_pct=excluded.leading_pct,
+                        updated_at=excluded.updated_at
+                """, (
+                    row.get('板块代码'), row.get('板块名称'), 0,
+                    row.get('最新价'), row.get('涨跌幅'),
+                    row.get('总市值'), row.get('换手率'),
+                    row.get('上涨家数'), row.get('下跌家数'),
+                    row.get('领涨股票'), row.get('领涨股票-涨跌幅'),
+                    now,
+                ))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def save_em_industry_stocks(self, board_code, cons_df):
+        """保存某个行业板块的成份股。
+
+        :param board_code: 板块代码 (如 BK1027)
+        :param cons_df: akshare stock_board_industry_cons_em() 返回的 DataFrame
+        """
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        conn = self.get_connection()
+        try:
+            # 先删除该板块旧的成份股
+            conn.execute(
+                "DELETE FROM em_industry_stocks WHERE board_code = ?",
+                (board_code,)
+            )
+            for _, row in cons_df.iterrows():
+                conn.execute("""
+                    INSERT INTO em_industry_stocks
+                        (board_code, stock_code, stock_name,
+                         latest_price, change_pct, change_amt,
+                         volume, amount, amplitude,
+                         high, low, open, prev_close,
+                         turnover_rate, pe_dynamic, pb, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    board_code,
+                    row.get('代码'), row.get('名称'),
+                    row.get('最新价'), row.get('涨跌幅'), row.get('涨跌额'),
+                    row.get('成交量'), row.get('成交额'), row.get('振幅'),
+                    row.get('最高'), row.get('最低'), row.get('今开'), row.get('昨收'),
+                    row.get('换手率'), row.get('市盈率-动态'), row.get('市净率'),
+                    now,
+                ))
+            # 更新板块的成份股数量
+            conn.execute(
+                "UPDATE em_industry_boards SET total_count = ?, updated_at = ? WHERE board_code = ?",
+                (len(cons_df), now, board_code)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def get_em_industry_boards(self):
+        """获取所有东方财富行业板块。"""
+        conn = self.get_connection()
+        try:
+            cur = conn.execute(
+                "SELECT board_code, board_name, total_count FROM em_industry_boards ORDER BY board_code"
+            )
+            return [dict(row) for row in cur.fetchall()]
+        finally:
+            conn.close()
+
+    def get_em_industry_stocks(self, board_code):
+        """获取某个行业板块的所有成份股。
+
+        :param board_code: 板块代码 (如 BK1027)
+        :return: list of dict
+        """
+        conn = self.get_connection()
+        try:
+            cur = conn.execute(
+                "SELECT * FROM em_industry_stocks WHERE board_code = ? ORDER BY stock_code",
+                (board_code,)
+            )
+            return [dict(row) for row in cur.fetchall()]
+        finally:
+            conn.close()
+
+    def get_stock_industries(self, stock_code):
+        """根据股票代码查询其所属的所有东方财富行业板块。
+
+        :param stock_code: 股票代码 (如 600519)
+        :return: list of dict with board_code, board_name
+        """
+        conn = self.get_connection()
+        try:
+            cur = conn.execute("""
+                SELECT b.board_code, b.board_name
+                FROM em_industry_stocks s
+                JOIN em_industry_boards b ON s.board_code = b.board_code
+                WHERE s.stock_code = ?
+                ORDER BY b.board_code
+            """, (stock_code,))
+            return [dict(row) for row in cur.fetchall()]
+        finally:
+            conn.close()
+
+    def get_em_industry_boards_count(self):
+        """获取已入库的行业板块和成份股统计。"""
+        conn = self.get_connection()
+        try:
+            cur = conn.execute("""
+                SELECT
+                    (SELECT COUNT(*) FROM em_industry_boards) AS board_count,
+                    (SELECT COUNT(*) FROM em_industry_stocks) AS stock_count,
+                    (SELECT COUNT(DISTINCT stock_code) FROM em_industry_stocks) AS unique_stock_count,
+                    (SELECT COUNT(*) FROM em_industry_boards WHERE total_count > 0) AS boards_with_stocks
+            """)
+            return dict(cur.fetchone())
+        finally:
+            conn.close()
+
 
 # ==================== Schema ====================
 
@@ -811,4 +1032,66 @@ CREATE TABLE IF NOT EXISTS screening_results (
     created_at      TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_screening_batch ON screening_results(batch_id);
+
+CREATE TABLE IF NOT EXISTS industry_daily (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    index_code      TEXT NOT NULL,
+    trade_date      TEXT NOT NULL,
+    open            REAL,
+    high            REAL,
+    low             REAL,
+    close           REAL,
+    volume          REAL,
+    amount          REAL,
+    pct_chg         REAL,
+    pe              REAL,
+    pb              REAL,
+    ps_ttm          REAL,
+    data_source     TEXT DEFAULT 'tushare_sw',
+    UNIQUE(index_code, trade_date, data_source)
+);
+CREATE INDEX IF NOT EXISTS idx_industry_daily_code ON industry_daily(index_code);
+CREATE INDEX IF NOT EXISTS idx_industry_daily_date ON industry_daily(index_code, trade_date);
+
+-- 东方财富行业板块列表
+CREATE TABLE IF NOT EXISTS em_industry_boards (
+    board_code     TEXT PRIMARY KEY,  -- 板块代码 (BK1027)
+    board_name     TEXT NOT NULL,     -- 板块名称 (小金属)
+    total_count    INTEGER DEFAULT 0,-- 成份股数量
+    latest_price   REAL,             -- 最新价
+    change_pct     REAL,             -- 涨跌幅
+    total_mv       REAL,             -- 总市值
+    turnover_rate  REAL,             -- 换手率
+    up_count       INTEGER,          -- 上涨家数
+    down_count     INTEGER,          -- 下跌家数
+    leading_stock  TEXT,             -- 领涨股票
+    leading_pct    REAL,             -- 领涨股票涨跌幅
+    created_at     TEXT DEFAULT (datetime('now')),
+    updated_at     TEXT DEFAULT (datetime('now'))
+);
+
+-- 东方财富行业板块成份股
+CREATE TABLE IF NOT EXISTS em_industry_stocks (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    board_code     TEXT NOT NULL,     -- 所属板块代码
+    stock_code     TEXT NOT NULL,     -- 股票代码
+    stock_name     TEXT NOT NULL,     -- 股票名称
+    latest_price   REAL,             -- 最新价
+    change_pct     REAL,             -- 涨跌幅
+    change_amt     REAL,             -- 涨跌额
+    volume         REAL,             -- 成交量
+    amount         REAL,             -- 成交额
+    amplitude      REAL,             -- 振幅
+    high           REAL,             -- 最高
+    low            REAL,             -- 最低
+    open           REAL,             -- 今开
+    prev_close     REAL,             -- 昨收
+    turnover_rate  REAL,             -- 换手率
+    pe_dynamic     REAL,             -- 市盈率-动态
+    pb             REAL,             -- 市净率
+    created_at     TEXT DEFAULT (datetime('now')),
+    UNIQUE(board_code, stock_code)
+);
+CREATE INDEX IF NOT EXISTS idx_em_industry_stocks_board ON em_industry_stocks(board_code);
+CREATE INDEX IF NOT EXISTS idx_em_industry_stocks_code ON em_industry_stocks(stock_code);
 """

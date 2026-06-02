@@ -123,6 +123,7 @@ def main():
     )
     parser.add_argument('--input', default=None, help='输入Excel文件路径（含"股票代码"和"股票简称"列）')
     parser.add_argument('--output', default=None, help='输出Excel文件路径')
+    parser.add_argument('--sheet', default=0, help='读取Excel的第几个sheet（序号从0开始，默认0）')
     args, remaining = parser.parse_known_args()
 
     stock_list = []
@@ -134,7 +135,8 @@ def main():
     # 2) 从 Excel 读取
     if args.input:
         print(f'读取输入文件: {args.input}')
-        df = pd.read_excel(args.input)
+        sheet = int(args.sheet)
+        df = pd.read_excel(args.input, sheet_name=sheet)
         if '股票代码' not in df.columns or '股票简称' not in df.columns:
             print(f'错误: Excel 需包含"股票代码"和"股票简称"两列')
             print(f'当前列: {list(df.columns)}')

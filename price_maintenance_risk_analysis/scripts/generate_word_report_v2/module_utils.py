@@ -1842,6 +1842,47 @@ def generate_stock_market_data_charts_split(market_data, price_data, volatility_
     return paths
 
 
+def _fetch_industry_data_akshare_chart(index_code, start_date, end_date, industry_data):
+    """sw_daily超限时用AKShare同花顺行业指数降级获取图表数据"""
+    try:
+        import akshare as ak
+        industry_name = (industry_data.get('sw_l3_name') or
+                        industry_data.get('sw_l2_name') or
+                        industry_data.get('sw_l1_name') or
+                        industry_data.get('industry_name', ''))
+        if not industry_name:
+            return None
+
+        ths_names = ak.stock_board_industry_name_ths()
+        clean_name = industry_name.replace('Ⅱ', '').replace('Ⅲ', '').strip()
+        matched = ths_names[ths_names['name'].str.contains(clean_name, na=False)]
+        if matched.empty:
+            matched = ths_names[ths_names['name'].str.contains(industry_name, na=False)]
+        if matched.empty:
+            print(f"  AKShare未找到匹配行业: {industry_name}")
+            return None
+
+        ths_name = matched.iloc[0]['name']
+        print(f"  AKShare降级: {industry_name} → {ths_name}")
+        start_fmt = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:8]}"
+        end_fmt = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:8]}"
+        df = ak.stock_board_industry_index_ths(symbol=ths_name, start_date=start_fmt, end_date=end_fmt)
+        if df is None or df.empty:
+            return None
+        df = df.rename(columns={
+            '日期': 'trade_date', '开盘价': 'open', '最高价': 'high',
+            '最低价': 'low', '收盘价': 'close', '成交量': 'vol', '成交额': 'amount',
+        })
+        df['trade_date'] = df['trade_date'].astype(str).str.replace('-', '')
+        df['pct_chg'] = df['close'].pct_change() * 100
+        df = df.sort_values('trade_date').reset_index(drop=True)
+        print(f"  ✅ AKShare降级成功: {len(df)}条")
+        return df
+    except Exception as e:
+        print(f"  AKShare降级失败: {e}")
+        return None
+
+
 def generate_industry_index_charts(industry_data, save_dir):
     """
     生成行业指数图表（走势、波动率、收益率分布）
@@ -1872,11 +1913,29 @@ def generate_industry_index_charts(industry_data, save_dir):
 
         pro = ts.pro_api(ts_token)
 
-        # 获取最近500天的数据
+        # 获取最近500天的数据（优先从DB缓存读取）
         end_date = datetime.now().strftime('%Y%m%d')
         start_date = (datetime.now() - timedelta(days=500*2)).strftime('%Y%m%d')
 
-        df = pro.sw_daily(ts_code=index_code, start_date=start_date, end_date=end_date)
+        df = None
+        try:
+            from utils.db_manager import ValuationDB
+            db = ValuationDB()
+            df = db.load_industry_daily(index_code, start_date, end_date)
+            if df is not None and not df.empty:
+                print(f"  使用DB缓存的行业日线数据（{len(df)}条）")
+        except Exception:
+            pass
+
+        if df is None or df.empty:
+            try:
+                df = pro.sw_daily(ts_code=index_code, start_date=start_date, end_date=end_date)
+            except Exception as e:
+                if '频率超限' in str(e):
+                    print(f"  ⏳ sw_daily超限，尝试AKShare降级...")
+                    df = _fetch_industry_data_akshare_chart(index_code, start_date, end_date, industry_data)
+                else:
+                    print(f"  ❌ 获取行业数据失败: {e}")
 
         if df is None or df.empty:
             print(f" 未获取到{index_code}的历史数据")

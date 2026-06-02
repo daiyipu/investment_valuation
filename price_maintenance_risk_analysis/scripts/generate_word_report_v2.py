@@ -2244,11 +2244,51 @@ def generate_industry_index_charts(industry_data, save_dir):
 
         pro = ts.pro_api(ts_token)
 
-        # 获取最近500天的数据
+        # 获取最近500天的数据（优先DB缓存 → AKShare降级 → sw_daily兜底）
         end_date = datetime.now().strftime('%Y%m%d')
         start_date = (datetime.now() - timedelta(days=500*2)).strftime('%Y%m%d')
 
-        df = pro.sw_daily(ts_code=index_code, start_date=start_date, end_date=end_date)
+        df = None
+        # 1. DB缓存
+        try:
+            from utils.db_manager import ValuationDB
+            db = ValuationDB()
+            df = db.load_industry_daily(index_code, start_date, end_date)
+            if df is not None and not df.empty:
+                print(f"  使用DB缓存的行业日线数据（{len(df)}条）")
+        except Exception:
+            pass
+        # 2. AKShare同花顺降级
+        if df is None or df.empty:
+            try:
+                import akshare as ak
+                ind_name = (industry_data.get('sw_l3_name') or industry_data.get('sw_l2_name') or
+                           industry_data.get('sw_l1_name') or industry_data.get('industry_name', ''))
+                if ind_name:
+                    clean = ind_name.replace('Ⅱ','').replace('Ⅲ','').strip()
+                    ths = ak.stock_board_industry_name_ths()
+                    m = ths[ths['name'].str.contains(clean, na=False)]
+                    if m.empty:
+                        m = ths[ths['name'].str.contains(ind_name, na=False)]
+                    if not m.empty:
+                        s_fmt = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:8]}"
+                        e_fmt = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:8]}"
+                        df = ak.stock_board_industry_index_ths(symbol=m.iloc[0]['name'], start_date=s_fmt, end_date=e_fmt)
+                        if df is not None and not df.empty:
+                            df = df.rename(columns={'日期':'trade_date','开盘价':'open','最高价':'high',
+                                '最低价':'low','收盘价':'close','成交量':'vol','成交额':'amount'})
+                            df['trade_date'] = df['trade_date'].astype(str).str.replace('-','')
+                            df['pct_chg'] = df['close'].pct_change() * 100
+                            df = df.sort_values('trade_date').reset_index(drop=True)
+                            print(f"  AKShare降级成功: {len(df)}条")
+            except Exception:
+                pass
+        # 3. sw_daily兜底
+        if df is None or df.empty:
+            try:
+                df = pro.sw_daily(ts_code=index_code, start_date=start_date, end_date=end_date)
+            except Exception:
+                df = None
 
         if df is None or df.empty:
             print(f"⚠️ 未获取到{index_code}的历史数据")
@@ -3431,30 +3471,55 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
 
                 time.sleep(0.2)  # 避免请求过快
 
-            # 获取申万行业指数的PE数据（使用sw_daily接口）
+            # 获取申万行业指数的PE数据（DB缓存 → AKShare降级 → sw_daily兜底）
             sw_index_pe = None
             sw_index_pb = None
             sw_index_ps = None
             try:
                 print(f"✅ 正在获取申万行业指数PE数据: {target_index_code}")
-                # 获取最近5天的数据，取最新的一条
                 end_date = datetime.now().strftime('%Y%m%d')
                 start_date = (datetime.now() - timedelta(days=10)).strftime('%Y%m%d')
-                df_index = pro.sw_daily(
-                    ts_code=target_index_code,
-                    start_date=start_date,
-                    end_date=end_date
-                )
-                if df_index is not None and not df_index.empty:
-                    # sw_daily返回的是pe列（不是pe_ttm）
+                df_index = None
+                # 1. DB缓存
+                try:
+                    from utils.db_manager import ValuationDB
+                    db = ValuationDB()
+                    df_index = db.load_industry_daily(target_index_code, start_date, end_date)
+                    if df_index is not None and not df_index.empty:
+                        print(f"  使用DB缓存的行业PE数据")
+                except Exception:
+                    pass
+                # 2. AKShare申万三级PE快照（无频率限制）
+                if df_index is None or df_index.empty:
+                    try:
+                        import akshare as ak
+                        ths_info = ak.sw_index_third_info()
+                        matched = ths_info[ths_info['行业代码'] == target_index_code]
+                        if not matched.empty:
+                            row = matched.iloc[0]
+                            sw_index_pe = row.get('TTM(滚动)市盈率', None)
+                            sw_index_pb = row.get('市净率', None)
+                            if sw_index_pe:
+                                print(f"  使用AKShare申万PE数据: PE={sw_index_pe:.2f}, PB={sw_index_pb:.2f}")
+                                df_index = 'akshare_skip'
+                    except Exception:
+                        pass
+                # 3. sw_daily兜底
+                if (df_index is None or df_index.empty) and df_index != 'akshare_skip':
+                    try:
+                        df_index = pro.sw_daily(ts_code=target_index_code, start_date=start_date, end_date=end_date)
+                    except Exception:
+                        df_index = None
+                # 从sw_daily结果提取PE
+                if df_index is not None and df_index != 'akshare_skip' and not df_index.empty:
                     latest = df_index.iloc[-1]
                     sw_index_pe = latest.get('pe', None)
                     sw_index_pb = latest.get('pb', None)
-                    sw_index_ps = latest.get('ps_ttm', None)  # sw_daily可能没有ps_ttm
+                    sw_index_ps = latest.get('ps_ttm', None)
                     if sw_index_pe:
                         print(f"✅ 申万行业指数PE数据获取成功: PE={sw_index_pe:.2f}, PB={sw_index_pb:.2f}")
-                else:
-                    print(f"⚠️ 申万行业指数PE数据为空")
+                if not sw_index_pe:
+                    print(f"⚠️ 申万行业指数PE数据为空，将跳过行业PE对比")
             except Exception as e:
                 print(f"⚠️ 获取申万行业指数PE数据失败: {e}")
 
