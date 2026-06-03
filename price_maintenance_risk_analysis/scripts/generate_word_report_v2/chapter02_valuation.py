@@ -250,7 +250,7 @@ def generate_chapter(context):
                         except Exception as e:
                             print(f"  AKShare PE获取失败: {e}")
                     # 3. 前面都失败 → 尝试sw_daily（可能超限）
-                    if (df_index is None or df_index.empty) and df_index != 'akshare_skip':
+                    if df_index is None or (not isinstance(df_index, str) and df_index.empty):
                         end_date = datetime.now().strftime('%Y%m%d')
                         start_date = (datetime.now() - timedelta(days=10)).strftime('%Y%m%d')
                         try:

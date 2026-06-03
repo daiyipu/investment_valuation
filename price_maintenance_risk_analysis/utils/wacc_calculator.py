@@ -12,6 +12,7 @@ WACC计算模块
 
 import numpy as np
 import pandas as pd
+import time
 from typing import Dict, Optional, Tuple
 from datetime import datetime, timedelta
 
@@ -82,7 +83,8 @@ class WACCCalculator:
         self,
         stock_code: str,
         window: int = 120,
-        market_index: str = '000300.SH'
+        market_index: str = '000300.SH',
+        cached_market_df: pd.DataFrame = None
     ) -> Dict:
         """
         从API获取数据并计算Beta
@@ -91,6 +93,7 @@ class WACCCalculator:
             stock_code: 股票代码（如'300735.SZ'）
             window: 计算窗口（交易日）
             market_index: 市场指数代码（默认沪深300）
+            cached_market_df: 缓存的市场指数数据（避免重复调用index_daily）
 
         返回:
             {
@@ -109,26 +112,50 @@ class WACCCalculator:
             end_date = datetime.now().strftime('%Y%m%d')
             start_date = (datetime.now() - timedelta(days=window*2)).strftime('%Y%m%d')
 
-            # 获取个股数据
-            df_stock = self.pro.daily(
-                ts_code=stock_code,
-                start_date=start_date,
-                end_date=end_date,
-                fields='trade_date,pct_chg'
-            )
+            # 获取个股数据（带重试，应对频率限制）
+            df_stock = None
+            for attempt in range(3):
+                try:
+                    df_stock = self.pro.daily(
+                        ts_code=stock_code,
+                        start_date=start_date,
+                        end_date=end_date,
+                        fields='trade_date,pct_chg'
+                    )
+                    # Tushare频率超限时可能返回字符串错误信息
+                    if isinstance(df_stock, str):
+                        df_stock = None
+                    break
+                except Exception as e:
+                    if '频率超限' in str(e) and attempt < 2:
+                        time.sleep(1.5 * (attempt + 1))
+                        continue
+                    return {'beta': 1.0, 'error': f'获取个股数据失败: {e}'}
 
-            if df_stock.empty:
+            if df_stock is None or (isinstance(df_stock, pd.DataFrame) and df_stock.empty):
                 return {'beta': 1.0, 'error': '未获取到个股数据'}
 
-            # 获取市场指数数据
-            df_market = self.pro.index_daily(
-                ts_code=market_index,
-                start_date=start_date,
-                end_date=end_date,
-                fields='trade_date,pct_chg'
-            )
+            # 获取市场指数数据（使用缓存或新获取）
+            df_market = cached_market_df
+            if df_market is None:
+                for attempt in range(3):
+                    try:
+                        df_market = self.pro.index_daily(
+                            ts_code=market_index,
+                            start_date=start_date,
+                            end_date=end_date,
+                            fields='trade_date,pct_chg'
+                        )
+                        if isinstance(df_market, str):
+                            df_market = None
+                        break
+                    except Exception as e:
+                        if '频率超限' in str(e) and attempt < 2:
+                            time.sleep(1.5 * (attempt + 1))
+                            continue
+                        return {'beta': 1.0, 'error': f'获取市场数据失败: {e}'}
 
-            if df_market.empty:
+            if df_market is None or (isinstance(df_market, pd.DataFrame) and df_market.empty):
                 return {'beta': 1.0, 'error': '未获取到市场数据'}
 
             # 按日期排序
@@ -228,15 +255,39 @@ class WACCCalculator:
             return {'industry_beta': 1.0, 'error': '没有可用的同行公司'}
 
         try:
+            # 预先获取市场指数数据（所有股票共用，避免重复API调用）
+            end_date = datetime.now().strftime('%Y%m%d')
+            start_date = (datetime.now() - timedelta(days=window*2)).strftime('%Y%m%d')
+            cached_market_df = None
+            if self.pro is not None:
+                try:
+                    cached_market_df = self.pro.index_daily(
+                        ts_code='000300.SH',
+                        start_date=start_date,
+                        end_date=end_date,
+                        fields='trade_date,pct_chg'
+                    )
+                    if isinstance(cached_market_df, str):
+                        cached_market_df = None
+                except Exception:
+                    cached_market_df = None
+
             # 计算每只股票的Beta
             betas = []
-            for stock_code in stock_codes:
-                result = self.calculate_beta_from_api(stock_code, window=window)  # 明确传入500天窗口
-                if 'beta' in result and result['beta'] > 0:
+            for i, stock_code in enumerate(stock_codes):
+                # 调用间隔，避免触发Tushare频率限制（daily接口约200次/分钟）
+                if i > 0:
+                    time.sleep(0.4)
+                result = self.calculate_beta_from_api(
+                    stock_code, window=window, cached_market_df=cached_market_df
+                )
+                if 'beta' in result and result['beta'] > 0 and 'error' not in result:
                     betas.append(result['beta'])
                     print(f"   {stock_code}: Beta = {result['beta']:.3f}")
+                elif 'error' in result:
+                    print(f"   {stock_code}: {result['error']}")
                 else:
-                    print(f"   {stock_code}: Beta计算失败或数据不足")
+                    print(f"   {stock_code}: Beta={result.get('beta', 'N/A')} 异常，跳过")
 
             if len(betas) == 0:
                 return {'industry_beta': 1.0, 'error': '未成功计算任何Beta'}
