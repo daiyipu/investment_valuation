@@ -70,16 +70,19 @@ class IndustryDataFetcher:
 
         print(f"  获取行业 {l3_code} 数据: {len(member_codes)}家公司")
 
-        # Fetch data for each company
+        # Fetch data for each company（并行，避免21家×3报表串行）
         companies = {}
         start_date = (datetime.now() - timedelta(days=years * 365)).strftime('%Y%m%d')
+        from concurrent.futures import ThreadPoolExecutor
 
-        for i, ts_code in enumerate(member_codes):
-            if (i + 1) % 10 == 0:
-                print(f"    进度: {i+1}/{len(member_codes)}")
-            data = self._fetch_company_data(ts_code, start_date)
-            if data is not None:
-                companies[ts_code] = data
+        def _fetch_one(code):
+            return code, self._fetch_company_data(code, start_date)
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            for code, data in executor.map(_fetch_one, member_codes):
+                if data is not None:
+                    companies[code] = data
+        print(f"    并行获取完成: {len(companies)}/{len(member_codes)} 家")
 
         result = {
             'l3_code': l3_code,

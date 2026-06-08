@@ -415,6 +415,10 @@ def generate_chapter(context):
             raise ValueError(f"无法获取相对估值数据且无缓存，请检查网络连接")
 
     # 计算行业统计指标（填充NaN，避免成分股过少时崩溃）
+    # 同行为空时（小行业无成分股）用0填充，避免KeyError
+    if peer_companies_val.empty or 'pe' not in peer_companies_val.columns:
+        print(f"  ⚠️ 同行公司数据为空，行业统计指标置零")
+        peer_companies_val = pd.DataFrame(columns=['name', 'code', 'pe', 'ps', 'pb', 'market_cap'])
     _pe = peer_companies_val['pe'].fillna(0)
     _ps = peer_companies_val['ps'].fillna(0)
     _pb = peer_companies_val['pb'].fillna(0)
