@@ -266,10 +266,7 @@ class PEEstimator:
         return {'latest': latest, 'avg_3y': avg_3y, 'by_year': by_year}
 
     def _extract_company_revenue_ni(self, company_financials: dict):
-        """Extract latest revenue and net income (wan yuan) from company data.
-
-        优先用最新年报(end_date含1231)，无年报时回退到最新季报。
-        """
+        """Extract latest revenue and net income (wan yuan) from company data."""
         inc_df = company_financials.get('income')
         if inc_df is None or (isinstance(inc_df, pd.DataFrame) and inc_df.empty):
             return 0, 0
@@ -279,22 +276,15 @@ class PEEstimator:
         else:
             records = inc_df
 
-        if not records:
+        annual = [r for r in records
+                  if str(r.get('end_date', '')).endswith('1231')]
+        if not annual:
             return 0, 0
 
-        # 优先年报，无则用最新报告期
-        annual = [r for r in records if str(r.get('end_date', '')).endswith('1231')]
-        pool = annual if annual else records
-
-        # deduplicate by end_date, keep last
+        # deduplicate, keep last
         seen = {}
-        for r in pool:
-            ed = r.get('end_date', '')
-            if ed:
-                seen[ed] = r
-
-        if not seen:
-            return 0, 0
+        for r in annual:
+            seen[r['end_date']] = r
 
         latest = seen[sorted(seen.keys())[-1]]
         rev = float(latest.get('total_revenue', 0) or 0) / 10000  # yuan -> wan yuan
@@ -302,16 +292,6 @@ class PEEstimator:
         if ni is None:
             ni = latest.get('n_income', 0)
         ni = float(ni or 0) / 10000
-
-        # 季报年化（若用的是季报且非年报）
-        if not annual and str(latest.get('end_date', '')).endswith(('0331', '0630', '0930')):
-            end_date = str(latest.get('end_date', ''))
-            month = end_date[4:6]
-            quarters = {'03': 1, '06': 2, '09': 3}.get(month, 1)
-            if quarters > 0 and rev > 0:
-                rev = rev / quarters * 4  # 年化营收
-                ni = ni / quarters * 4     # 年化净利润
-
         return rev, ni
 
     def _project_forward_pe(
