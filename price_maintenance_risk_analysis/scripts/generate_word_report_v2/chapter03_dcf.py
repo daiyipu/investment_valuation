@@ -75,6 +75,7 @@ def generate_chapter(context):
     stock_code = context['stock_code']
     project_params = context['project_params']
     placement_params = context.get('placement_params', {})
+    issue_date = project_params.get('issue_date')  # 报价日(YYYYMMDD)，回溯分析基准
 
     # ==================== 三、DCF估值分析 ====================
     add_title(document, '三、DCF估值分析', level=1)
@@ -184,7 +185,7 @@ def generate_chapter(context):
                 project_params['net_income'] = net_income
 
             # 获取历史净利润数据以计算CAGR（作为备选方案）
-            historical_incomes = financial.get_historical_net_income(years=5)
+            historical_incomes = financial.get_historical_net_income(years=5, issue_date=issue_date)
             net_income_cagr = None  # 净利润CAGR（备选）
             if historical_incomes and len(historical_incomes) >= 2:
                 # 计算CAGR (复合年增长率)
@@ -203,7 +204,7 @@ def generate_chapter(context):
                     print(f"   注：将优先使用FCF的CAGR，如果不可用则使用净利润CAGR")
 
             # 获取完整历史FCF数据（用于DCF估值）
-            historical_fcf_data = financial.get_historical_fcf_for_dcf(max_years=15)
+            historical_fcf_data = financial.get_historical_fcf_for_dcf(max_years=15, issue_date=issue_date)
             if historical_fcf_data:
                 project_params['historical_fcf_data'] = historical_fcf_data
                 print(f" 已保存历史FCF数据到项目参数")

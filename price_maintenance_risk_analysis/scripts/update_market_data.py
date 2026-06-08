@@ -951,21 +951,29 @@ class TushareFinancialData:
             print(f"❌ 获取利润表失败: {e}")
             return None
 
-    def get_historical_net_income(self, years=5) -> list:
+    def get_historical_net_income(self, years=5, issue_date=None) -> list:
         """
         获取历史净利润数据，用于计算CAGR
         优先使用年度数据，如某年无年度数据则使用最新季度数据年化
 
         参数:
             years: 获取最近几年的数据（默认5年）
+            issue_date: 报价日(YYYYMMDD)，回溯分析时取报价日往前N年（避免用未来数据）
 
         返回:
             历史净利润列表，从最新到最旧排序
         """
         try:
-            # 获取最近几年的数据（多取一些以确保有足够数据）
-            end_date = datetime.now().strftime('%Y%m%d')
-            start_date = (datetime.now() - timedelta(days=(years+2)*365)).strftime('%Y%m%d')
+            # 回溯分析：报价日往前推，避免前瞻偏差（用报价日后的未来数据）
+            if issue_date:
+                ref_date = issue_date
+                print(f"   回溯模式：以报价日{issue_date}为基准往前推{years}年")
+            else:
+                ref_date = datetime.now().strftime('%Y%m%d')
+            # 多取2年确保有足够年报数据
+            ref_obj = datetime.strptime(ref_date, '%Y%m%d')
+            end_date = ref_date
+            start_date = (ref_obj - timedelta(days=(years+2)*365)).strftime('%Y%m%d')
 
             print(f"正在获取历史净利润数据...")
             print(f"   字段说明：n_income_attr_p = 归属母公司所有者的净利润（不含少数股东损益）")
@@ -1158,12 +1166,13 @@ class TushareFinancialData:
 
         return result
 
-    def get_historical_fcf_for_dcf(self, max_years: int = 15) -> dict:
+    def get_historical_fcf_for_dcf(self, max_years: int = 15, issue_date=None) -> dict:
         """
         获取从上市以来的历史财务数据，用于DCF估值
 
         参数:
             max_years: 最多获取多少年的数据
+            issue_date: 报价日(YYYYMMDD)，回溯分析时取报价日往前N年（避免前瞻偏差）
 
         返回:
             包含历史FCF数据的字典
@@ -1171,9 +1180,15 @@ class TushareFinancialData:
         print(f"\n📊 获取 {self.ts_code} 的历史财务数据（用于DCF估值）...")
 
         try:
-            # 获取上市日期（简化处理：从最早的交易日推算）
-            end_date = datetime.now().strftime('%Y%m%d')
-            start_date = (datetime.now() - timedelta(days=max_years*365)).strftime('%Y%m%d')
+            # 回溯分析：报价日往前推，避免用报价日后的未来数据
+            if issue_date:
+                ref_obj = datetime.strptime(issue_date, '%Y%m%d')
+                end_date = issue_date
+                print(f"   回溯模式：以报价日{issue_date}为基准")
+            else:
+                ref_obj = datetime.now()
+                end_date = datetime.now().strftime('%Y%m%d')
+            start_date = (ref_obj - timedelta(days=max_years*365)).strftime('%Y%m%d')
 
             print(f"   查询范围: {start_date} ~ {end_date}")
 
