@@ -52,6 +52,56 @@ def _analyze_one(stock_code, stock_name, headless_fn):
     }
 
 
+def _add_months(ymd_str, months):
+    """日期字符串(YYYYMMDD)加N个月，返回YYYYMMDD。"""
+    from datetime import datetime
+    dt = datetime.strptime(ymd_str, '%Y%m%d')
+    m = dt.month - 1 + months
+    y = dt.year + m // 12
+    m = m % 12 + 1
+    d = min(dt.day, 28)  # 避免无效日（如2月30日）
+    return dt.replace(year=y, month=m, day=d).strftime('%Y%m%d')
+
+
+def _calc_post_issue_return(pro, stock_code, issue_date, months=7):
+    """计算报价日N个月后相对报价日的涨跌幅（默认7个月≈解禁后1个月）。
+
+    返回: (报价日价格, N个月后价格, 实际目标日期, 涨跌幅) 或全None
+    """
+    from datetime import datetime, timedelta
+    try:
+        target_date = _add_months(issue_date, months)
+        # 查询窗口：报价日 ~ 目标日后15天（覆盖非交易日找最近交易日）
+        end_fetch = (datetime.strptime(target_date, '%Y%m%d') + timedelta(days=15)).strftime('%Y%m%d')
+        df = pro.daily(ts_code=stock_code, start_date=issue_date, end_date=end_fetch)
+        if df is None or df.empty:
+            return None, None, None, None
+        df = df.sort_values('trade_date').reset_index(drop=True)
+
+        # 报价日价格（<=报价日的最近交易日）
+        before = df[df['trade_date'] <= issue_date]
+        if before.empty:
+            issue_price = df.iloc[0]['close']
+            issue_actual = df.iloc[0]['trade_date']
+        else:
+            issue_price = before.iloc[-1]['close']
+            issue_actual = before.iloc[-1]['trade_date']
+
+        # 目标日价格（>=目标日的最近交易日）
+        after = df[df['trade_date'] >= target_date]
+        if after.empty:
+            return float(issue_price), None, None, None
+        target_price = after.iloc[0]['close']
+        target_actual = after.iloc[0]['trade_date']
+
+        if issue_price > 0:
+            ret = (target_price - issue_price) / issue_price
+            return float(issue_price), float(target_price), target_actual, ret
+        return float(issue_price), float(target_price), target_actual, None
+    except Exception:
+        return None, None, None, None
+
+
 def run_batch_screening(stock_list, output_path=None):
     """批量筛选主函数。
 
@@ -77,6 +127,18 @@ def run_batch_screening(stock_list, output_path=None):
     results = []
     raw_results = []  # 保存原始headless结果用于DB
     t_batch_start = time.time()
+
+    # 初始化Tushare（用于计算报价日后7个月涨跌幅）
+    pro = None
+    if any(len(item) > 2 and item[2] for item in stock_list):
+        try:
+            import tushare as ts
+            ts_token = os.environ.get('TUSHARE_TOKEN', '')
+            if ts_token:
+                pro = ts.pro_api(ts_token)
+        except Exception:
+            pro = None
+
     for idx, item in enumerate(stock_list, 1):
         # stock_list 元素可为 (code, name) 或 (code, name, issue_date)
         code, name = item[0], item[1]
@@ -87,7 +149,23 @@ def run_batch_screening(stock_list, output_path=None):
         headless_result = generate_report_headless(code, name, issue_date=issue_date)
         stock_elapsed = time.time() - t_stock
         raw_results.append(headless_result)
-        results.append(_analyze_one(code, name, lambda c, n: headless_result))
+        row = _analyze_one(code, name, lambda c, n: headless_result)
+
+        # 计算报价日后7个月涨跌幅（解禁后1个月的实际收益）
+        if issue_date and pro:
+            issue_p, target_p, target_date_actual, ret = _calc_post_issue_return(pro, code, issue_date, months=7)
+            row['报价日价格'] = f"{issue_p:.2f}" if issue_p else '-'
+            row['7个月后价格'] = f"{target_p:.2f}" if target_p else '-'
+            row['7个月后涨跌幅'] = f"{ret*100:+.2f}%" if ret is not None else '-'
+            if ret is not None:
+                print(f'  📈 7个月后({target_date_actual}): {target_p:.2f}元, 涨跌幅={ret*100:+.2f}%')
+            time.sleep(0.3)
+        else:
+            row['报价日价格'] = '-'
+            row['7个月后价格'] = '-'
+            row['7个月后涨跌幅'] = '-'
+
+        results.append(row)
         print(f'  ⏱ {code} 耗时 {stock_elapsed:.1f}s')
 
         # 保存到DB
