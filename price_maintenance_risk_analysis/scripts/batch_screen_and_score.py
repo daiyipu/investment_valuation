@@ -80,9 +80,10 @@ def main():
         print(f'❌ 找不到 batch_financial_score.py: {EFAES_SCRIPT}')
         sys.exit(1)
 
-    # 生成带日期的输出文件名
+    # 生成带日期+输入文件名的输出文件名
     date_tag = datetime.now().strftime('%y%m%d')
-    screening_output = os.path.join(DATA_DIR, f'batch_screening_result_{date_tag}.xlsx')
+    input_basename = os.path.splitext(os.path.basename(args.input))[0]
+    screening_output = os.path.join(DATA_DIR, f'batch_screening_result_{date_tag}_{input_basename}.xlsx')
 
     print(f'📁 输入文件: {args.input}')
     print(f'📁 筛选结果: {screening_output}')
