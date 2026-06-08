@@ -231,6 +231,9 @@ def generate_chapter(context):
     analyzer = context['analyzer']
     risk_params = context.get('risk_params', {})
 
+    import time as _time
+    _t_ch5 = _time.time()
+
     # ==================== 五、蒙特卡洛模拟 ====================
     add_title(document, '五、蒙特卡洛模拟', level=1)
 
@@ -479,6 +482,8 @@ def generate_chapter(context):
     add_paragraph(document, f'• 95%的置信区间内，亏损可能不超过 {abs(percent_5)*100:.1f}%')
 
     # ==================== 5.2 多窗口期对比分析 ====================
+    print(f"  ⏱ [5.1] 基础MC模拟: {_time.time()-_t_ch5:.1f}s")
+    _t_52 = _time.time()
     add_title(document, '5.2 多窗口期对比分析', level=2)
 
     add_paragraph(document, '本节分析不同时间窗口（60日/120日/250日）下的蒙特卡洛模拟结果，对比不同窗口期的波动率和收益率对定增收益的影响。')
@@ -813,6 +818,8 @@ def generate_chapter(context):
         add_paragraph(document, f' 多窗口期图表生成失败: {e}')
 
     # ==================== 5.3 ARIMA预测漂移率 ====================
+    print(f"  ⏱ [5.2] 多窗口+溢价率情景: {_time.time()-_t_52:.1f}s")
+    _t_53 = _time.time()
     add_title(document, '5.3 ARIMA时间序列预测漂移率', level=2)
 
     add_paragraph(document, '本节使用ARIMA（自回归积分滑动平均）模型预测未来120日的漂移率（年化收益率）。')
@@ -933,6 +940,8 @@ def generate_chapter(context):
     add_section_break(document)
 
     # ==================== 5.4 GARCH预测波动率 ====================
+    print(f"  ⏱ [5.3] ARIMA拟合: {_time.time()-_t_53:.1f}s")
+    _t_54 = _time.time()
     add_title(document, '5.4 GARCH模型预测波动率', level=2)
 
     add_paragraph(document, '本节使用GARCH（广义自回归条件异方差）模型预测未来120日的波动率。')
@@ -1018,6 +1027,8 @@ def generate_chapter(context):
     add_section_break(document)
 
     # ==================== 5.5 基于预测参数的蒙特卡洛模拟 ====================
+    print(f"  ⏱ [5.4] GARCH拟合: {_time.time()-_t_54:.1f}s")
+    _t_55 = _time.time()
     if not skip_time_series:
         add_title(document, '5.5 基于预测参数的蒙特卡洛模拟（120日）', level=2)
 
