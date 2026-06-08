@@ -228,22 +228,32 @@ class WACCCalculator:
             # 降级：使用行业成分股
             print(f"📊 使用行业指数成分股计算行业Beta：{industry_code}")
             try:
-                # 获取行业成分股
-                df_members = self.pro.index_member(
-                    index_code=industry_code,
-                    fields='con_code,index_code,in_date,out_date,is_new'
-                )
+                # 优先使用 index_member_all（部分L3行业在 index_member 中返回空）
+                stock_codes = []
+                try:
+                    df_all = self.pro.index_member_all(l3_code=industry_code)
+                    if df_all is not None and not df_all.empty:
+                        if 'out_date' in df_all.columns:
+                            df_all = df_all[df_all['out_date'].isna()]
+                        stock_codes = df_all['ts_code'].unique().tolist()[:max_stocks]
+                except Exception:
+                    pass
 
-                if df_members.empty:
+                # 降级：index_member
+                if not stock_codes:
+                    df_members = self.pro.index_member(
+                        index_code=industry_code,
+                        fields='con_code,index_code,in_date,out_date,is_new'
+                    )
+                    if df_members is not None and not df_members.empty:
+                        today = datetime.now().strftime('%Y%m%d')
+                        df_members = df_members[
+                            (df_members['out_date'].isna()) | (df_members['out_date'] > today)
+                        ]
+                        stock_codes = df_members['con_code'].tolist()[:max_stocks]
+
+                if not stock_codes:
                     return {'industry_beta': 1.0, 'error': '未找到行业成分股'}
-
-                # 筛选当前成分股
-                today = datetime.now().strftime('%Y%m%d')
-                df_members = df_members[
-                    (df_members['out_date'].isna()) | (df_members['out_date'] > today)
-                ]
-
-                stock_codes = df_members['con_code'].tolist()[:max_stocks]
                 print(f"   行业成分股数量：{len(stock_codes)}")
             except Exception as e:
                 print(f"   ⚠️ 获取行业成分股失败: {e}")
