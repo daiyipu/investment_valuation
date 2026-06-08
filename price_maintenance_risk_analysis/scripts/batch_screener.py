@@ -77,10 +77,14 @@ def run_batch_screening(stock_list, output_path=None):
     results = []
     raw_results = []  # 保存原始headless结果用于DB
     t_batch_start = time.time()
-    for idx, (code, name) in enumerate(stock_list, 1):
+    for idx, item in enumerate(stock_list, 1):
+        # stock_list 元素可为 (code, name) 或 (code, name, issue_date)
+        code, name = item[0], item[1]
+        issue_date = item[2] if len(item) > 2 else None
         t_stock = time.time()
-        print(f'[{idx}/{total}] {code} {name}')
-        headless_result = generate_report_headless(code, name)
+        date_hint = f' (报价日: {issue_date})' if issue_date else ''
+        print(f'[{idx}/{total}] {code} {name}{date_hint}')
+        headless_result = generate_report_headless(code, name, issue_date=issue_date)
         stock_elapsed = time.time() - t_stock
         raw_results.append(headless_result)
         results.append(_analyze_one(code, name, lambda c, n: headless_result))
@@ -124,6 +128,26 @@ def _parse_stock_args(args):
     return stock_list
 
 
+def _normalize_issue_date(value):
+    """将报价日期值规范化为 YYYYMMDD 字符串。
+
+    支持 pandas Timestamp / datetime / 字符串(2020-03-11 / 2020/03/11 / 20200311)。
+    返回 None 表示无报价日期。
+    """
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    s = str(value).strip()
+    if not s or s.lower() in ('nan', 'nat', 'none'):
+        return None
+    # pandas Timestamp / datetime 对象
+    if hasattr(value, 'strftime'):
+        return value.strftime('%Y%m%d')
+    # 字符串：统一去分隔符
+    for sep in ('-', '/', '.'):
+        s = s.replace(sep, '')
+    return s if len(s) == 8 and s.isdigit() else None
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='批量定增决策筛选',
@@ -149,8 +173,19 @@ def main():
             print(f'错误: Excel 需包含"股票代码"和"股票简称"两列')
             print(f'当前列: {list(df.columns)}')
             sys.exit(1)
+        # 识别报价日期列（支持多种命名）
+        date_col = None
+        for candidate in ('报价日期', '报价日', '发行日', '发行日期'):
+            if candidate in df.columns:
+                date_col = candidate
+                break
+        if date_col:
+            print(f'检测到报价日期列: {date_col}')
         for _, row in df.iterrows():
-            stock_list.append((str(row['股票代码']).strip(), str(row['股票简称']).strip()))
+            code = str(row['股票代码']).strip()
+            name = str(row['股票简称']).strip()
+            issue_date = _normalize_issue_date(row[date_col]) if date_col else None
+            stock_list.append((code, name, issue_date))
 
     if not stock_list:
         print('错误: 请指定股票（位置参数或 --input Excel）')
