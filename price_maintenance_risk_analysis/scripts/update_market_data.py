@@ -1022,6 +1022,9 @@ class TushareFinancialData:
                     print(f"   {year}年: 找到年度数据 {row['end_date']}，净利润 {net_income_yuan/100000000:.2f}亿元")
                 else:
                     # 没有年度数据，使用该年最新的季度数据并年化
+                    if year_df.empty:
+                        # 该年完全无数据（如上市前的年份），跳过
+                        continue
                     latest_quarter = year_df.iloc[0]  # 已经按日期降序排序
                     end_date_str = latest_quarter['end_date']
                     month_day = end_date_str[4:]  # 获取MMDD部分
