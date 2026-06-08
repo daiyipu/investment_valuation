@@ -148,50 +148,60 @@ class PEHistoryAnalyzer:
                 if attempt > 0:
                     print(f"  第{attempt + 1}次尝试获取行业PE数据...")
 
-                # 1. 获取股票所在的申万行业
-                df_member = self.pro.index_member(ts_code=stock_code)
-
-                if df_member.empty:
-                    if attempt < max_retries - 1:
-                        print(f"  第{attempt + 1}次尝试未获取到行业成分信息，{2}秒后重试...")
-                        import time
-                        time.sleep(2)
-                        continue
-                    else:
-                        print(f" 未获取到{stock_code}的行业成分信息")
-                        return None, None, None
-
-                # 过滤申万行业（优先三级，其次二级，最后一级）
-                df_sw = df_member[df_member['index_code'].str.contains('.SI')]
-
-                # 找当前有效的行业（out_date为空的）
-                df_current = df_sw[df_sw['out_date'].isna()]
-
-                if df_current.empty:
-                    # 如果没有当前有效的，使用最近加入的
-                    df_current = df_sw.sort_values('in_date', ascending=False).head(1)
-
-                # 按优先级查找：三级 > 二级 > 一级
+                # 1. 获取股票所在的申万行业（优先三级，其次二级，最后一级）
+                # 使用 index_member_all 获取完整L1/L2/L3层级（index_member只返回L1）
                 index_code = None
                 index_level = None
+                industry_name = None
 
-                # 申万三级：85开头
-                l3_codes = df_current[df_current['index_code'].str.match(r'^85\d{4}\.SI$')]
-                if not l3_codes.empty:
-                    index_code = l3_codes.iloc[0]['index_code']
-                    index_level = 'L3'
-                # 申万二级：80开头
-                else:
-                    l2_codes = df_current[df_current['index_code'].str.match(r'^80\d{4}\.SI$')]
-                    if not l2_codes.empty:
-                        index_code = l2_codes.iloc[0]['index_code']
-                        index_level = 'L2'
-                    # 申万一级：80开头（前两位）
+                try:
+                    df_member_all = self.pro.index_member_all(ts_code=stock_code)
+                    if df_member_all is not None and not df_member_all.empty:
+                        row = df_member_all.iloc[0]
+                        if row.get('l3_code') and str(row['l3_code']).startswith('85'):
+                            index_code = row['l3_code']
+                            index_level = 'L3'
+                            industry_name = row.get('l3_name', index_code)
+                        elif row.get('l2_code') and str(row['l2_code']).startswith('80'):
+                            index_code = row['l2_code']
+                            index_level = 'L2'
+                            industry_name = row.get('l2_name', index_code)
+                        elif row.get('l1_code'):
+                            index_code = row['l1_code']
+                            index_level = 'L1'
+                            industry_name = row.get('l1_name', index_code)
+                except Exception:
+                    pass
+
+                # 降级：index_member_all 失败时用 index_member
+                if index_code is None:
+                    df_member = self.pro.index_member(ts_code=stock_code)
+                    if df_member.empty:
+                        if attempt < max_retries - 1:
+                            print(f"  第{attempt + 1}次尝试未获取到行业成分信息，{2}秒后重试...")
+                            import time
+                            time.sleep(2)
+                            continue
+                        else:
+                            print(f" 未获取到{stock_code}的行业成分信息")
+                            return None, None, None
+
+                    df_sw = df_member[df_member['index_code'].str.contains('.SI')]
+                    df_current = df_sw[df_sw['out_date'].isna()]
+                    if df_current.empty:
+                        df_current = df_sw.sort_values('in_date', ascending=False).head(1)
+
+                    # 按优先级查找：三级 > 二级 > 一级
+                    l3_codes = df_current[df_current['index_code'].str.match(r'^85\d{4}\.SI$')]
+                    if not l3_codes.empty:
+                        index_code = l3_codes.iloc[0]['index_code']
+                        index_level = 'L3'
                     else:
-                        # 尝试获取行业分类信息
-                        df_classify = self.pro.index_classify(level='L1', src='SW2021')
-                        # 这里简化处理，使用第一个申万指数
-                        if not df_current.empty:
+                        l2_codes = df_current[df_current['index_code'].str.match(r'^80\d{4}\.SI$')]
+                        if not l2_codes.empty:
+                            index_code = l2_codes.iloc[0]['index_code']
+                            index_level = 'L2'
+                        elif not df_current.empty:
                             index_code = df_current.iloc[0]['index_code']
                             index_level = 'L1'
 
@@ -199,10 +209,14 @@ class PEHistoryAnalyzer:
                     print(f" 未找到{stock_code}的申万行业代码")
                     return None, None, None
 
-                # 获取行业名称
-                df_classify = self.pro.index_classify(level=index_level, src='SW2021')
-                industry_info = df_classify[df_classify['index_code'] == index_code]
-                industry_name = industry_info.iloc[0]['industry_name'] if not industry_info.empty else index_code
+                # 获取行业名称（如果 index_member_all 没拿到的话）
+                if not industry_name or industry_name == index_code:
+                    try:
+                        df_classify = self.pro.index_classify(level=index_level, src='SW2021')
+                        industry_info = df_classify[df_classify['index_code'] == index_code]
+                        industry_name = industry_info.iloc[0]['industry_name'] if not industry_info.empty else index_code
+                    except Exception:
+                        industry_name = index_code
 
                 # 2. 获取行业指数历史PE数据
                 # 优先从DB缓存读取，避免sw_daily频率限制
