@@ -108,14 +108,9 @@ class PEHistoryAnalyzer:
                 if len(df) > 0:
                     return df
                 else:
-                    if attempt < max_retries - 1:
-                        print(f"  第{attempt + 1}次尝试获取的数据过滤后为空，{2}秒后重试...")
-                        import time
-                        time.sleep(2)
-                        continue
-                    else:
-                        print(f"⚠️ {stock_code}的历史PE数据过滤后为空")
-                        return None
+                    # API有数据但过滤后全空 = 公司持续亏损(PE无定义)，无需重试
+                    print(f"⚠️ {stock_code}历史PE过滤后为空（持续亏损，PE无定义），跳过PE趋势分析")
+                    return None
 
             except Exception as e:
                 if attempt < max_retries - 1:
