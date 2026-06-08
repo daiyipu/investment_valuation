@@ -62,7 +62,7 @@ class PEHistoryAnalyzer:
                 return font_path
         return None
 
-    def get_stock_pe_history(self, stock_code, days=1825, max_retries=3):
+    def get_stock_pe_history(self, stock_code, days=1825, max_retries=3, end_date=None):
         """
         获取个股历史PE数据（带重试机制）
 
@@ -71,12 +71,14 @@ class PEHistoryAnalyzer:
             days: 历史自然日天数，默认1825天（5年）
                   实际交易日数据会少于自然日（约60-65%）
             max_retries: 最大重试次数，默认3次
+            end_date: 截止日期(YYYYMMDD)，回溯分析时传报价日，默认今天
 
         返回:
             DataFrame: 包含trade_date, pe_ttm, pb, ps_ttm等列
         """
-        end_date = datetime.now().strftime('%Y%m%d')
-        start_date = (datetime.now() - timedelta(days=days)).strftime('%Y%m%d')
+        if end_date is None:
+            end_date = datetime.now().strftime('%Y%m%d')
+        start_date = (datetime.strptime(end_date, '%Y%m%d') - timedelta(days=days)).strftime('%Y%m%d')
 
         for attempt in range(max_retries):
             try:
@@ -152,7 +154,7 @@ class PEHistoryAnalyzer:
             print(f"  AKShare百度估值PE获取失败({stock_code}): {e}")
             return None
 
-    def get_industry_pe_history(self, stock_code, days=1825, max_retries=3):
+    def get_industry_pe_history(self, stock_code, days=1825, max_retries=3, end_date=None):
         """
         获取申万行业历史PE数据（带重试机制）
 
@@ -161,12 +163,14 @@ class PEHistoryAnalyzer:
             days: 历史自然日天数，默认1825天（5年）
                   实际交易日数据会少于自然日（约60-65%）
             max_retries: 最大重试次数，默认3次
+            end_date: 截止日期(YYYYMMDD)，回溯分析时传报价日，默认今天
 
         返回:
             tuple: (行业名称, 行业代码, DataFrame或None)
         """
-        end_date = datetime.now().strftime('%Y%m%d')
-        start_date = (datetime.now() - timedelta(days=days)).strftime('%Y%m%d')
+        if end_date is None:
+            end_date = datetime.now().strftime('%Y%m%d')
+        start_date = (datetime.strptime(end_date, '%Y%m%d') - timedelta(days=days)).strftime('%Y%m%d')
 
         for attempt in range(max_retries):
             try:

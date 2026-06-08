@@ -44,6 +44,7 @@ def generate_chapter(context):
     document = context['document']
     project_params = context['project_params']
     IMAGES_DIR = context['IMAGES_DIR']
+    issue_date = project_params.get('issue_date')  # 报价日(YYYYMMDD)，回溯分析基准
 
     import time as _time
     _t_ch2 = _time.time()
@@ -730,7 +731,7 @@ def generate_chapter(context):
 
         # 获取个股历史PE数据（最近5年）
         print(" 正在获取个股历史PE数据...")
-        stock_pe_data = pe_analyzer.get_stock_pe_history(stock_code, days=1825)
+        stock_pe_data = pe_analyzer.get_stock_pe_history(stock_code, days=1825, end_date=issue_date)
 
         if stock_pe_data is not None:
             print(f" 个股PE数据获取成功: {len(stock_pe_data)}条记录")
@@ -739,7 +740,7 @@ def generate_chapter(context):
 
         # 获取行业历史PE数据
         print(" 正在获取行业历史PE数据...")
-        industry_name, industry_code, industry_pe_data = pe_analyzer.get_industry_pe_history(stock_code, days=1825)
+        industry_name, industry_code, industry_pe_data = pe_analyzer.get_industry_pe_history(stock_code, days=1825, end_date=issue_date)
 
         if industry_pe_data is not None:
             print(f" 行业PE数据获取成功: {len(industry_pe_data)}条记录, 行业: {industry_name}({industry_code})")
@@ -806,7 +807,7 @@ def generate_chapter(context):
 
                 def _fetch_one_peer(code):
                     try:
-                        h = pe_analyzer.get_stock_pe_history(code, days=1095)  # 3年，减少数据传输
+                        h = pe_analyzer.get_stock_pe_history(code, days=1095, end_date=issue_date)  # 3年，截至报价日
                         if h is not None and not h.empty:
                             return h.rename(columns={'pe_ttm': 'pe'})
                     except Exception:

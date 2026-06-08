@@ -859,17 +859,21 @@ class TushareFinancialData:
         except ImportError:
             raise ImportError("请安装tushare: pip install tushare")
 
-    def get_latest_balancesheet(self) -> dict:
+    def get_latest_balancesheet(self, issue_date=None) -> dict:
         """
         获取最新资产负债表数据
+
+        参数:
+            issue_date: 报价日(YYYYMMDD)，回溯分析时取该日之前发布的最新财报
 
         返回:
             包含资产负债表主要字段的字典
         """
         try:
-            # 获取最近4个季度的数据
-            end_date = datetime.now().strftime('%Y%m%d')
-            start_date = (datetime.now() - timedelta(days=365)).strftime('%Y%m%d')
+            # 获取最近4个季度的数据（回溯分析时截至报价日）
+            ref_date = issue_date or datetime.now().strftime('%Y%m%d')
+            end_date = ref_date
+            start_date = (datetime.strptime(ref_date, '%Y%m%d') - timedelta(days=365)).strftime('%Y%m%d')
 
             df = self.pro.balancesheet(
                 ts_code=self.ts_code,
@@ -901,17 +905,21 @@ class TushareFinancialData:
             print(f"❌ 获取资产负债表失败: {e}")
             return None
 
-    def get_latest_income(self) -> dict:
+    def get_latest_income(self, issue_date=None) -> dict:
         """
         获取最新利润表数据
+
+        参数:
+            issue_date: 报价日(YYYYMMDD)，回溯分析时取该日之前发布的最新财报
 
         返回:
             包含利润表主要字段的字典
         """
         try:
-            # 获取最近4个季度的数据
-            end_date = datetime.now().strftime('%Y%m%d')
-            start_date = (datetime.now() - timedelta(days=365)).strftime('%Y%m%d')
+            # 获取最近4个季度的数据（回溯分析时截至报价日）
+            ref_date = issue_date or datetime.now().strftime('%Y%m%d')
+            end_date = ref_date
+            start_date = (datetime.strptime(ref_date, '%Y%m%d') - timedelta(days=365)).strftime('%Y%m%d')
 
             df = self.pro.income(
                 ts_code=self.ts_code,

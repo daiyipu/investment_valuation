@@ -152,8 +152,8 @@ def generate_chapter(context):
         if ts_token:
             financial = TushareFinancialData(stock_code)
 
-            # 获取资产负债表数据
-            balancesheet = financial.get_latest_balancesheet()
+            # 获取资产负债表数据（截至报价日，避免用未来财报）
+            balancesheet = financial.get_latest_balancesheet(issue_date=issue_date)
             if balancesheet:
                 total_liab_value = balancesheet['total_liabilities'] / 100000000  # 转亿元
                 cash_equivalents = balancesheet['cash_equivalents'] / 100000000  # 转亿元
@@ -174,8 +174,8 @@ def generate_chapter(context):
                 else:
                     print(f"   净现金: {-net_debt:.2f} 亿元")
 
-            # 获取利润表数据（净利润）
-            income = financial.get_latest_income()
+            # 获取利润表数据（净利润，截至报价日）
+            income = financial.get_latest_income(issue_date=issue_date)
             if income:
                 net_income = income['net_income']
                 print(f" 从Tushare获取利润表数据成功，期间: {income['report_date']}")
@@ -603,7 +603,8 @@ def generate_chapter(context):
                 market_data=project_params,  # 传递市场数据
                 industry_code='801010.SI',   # 申万一级行业代码（电子）
                 peer_companies=peer_companies_val,  # 传入同行公司数据
-                use_industry_beta=True       # 使用行业Beta
+                use_industry_beta=True,      # 使用行业Beta
+                end_date=issue_date          # Beta截至报价日(回溯分析)
             )
 
             # 显示WACC计算详情

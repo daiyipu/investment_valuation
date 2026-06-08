@@ -84,7 +84,8 @@ class WACCCalculator:
         stock_code: str,
         window: int = 120,
         market_index: str = '000300.SH',
-        cached_market_df: pd.DataFrame = None
+        cached_market_df: pd.DataFrame = None,
+        end_date: str = None
     ) -> Dict:
         """
         从API获取数据并计算Beta
@@ -108,9 +109,10 @@ class WACCCalculator:
             return {'beta': 1.0, 'error': 'API未初始化'}
 
         try:
-            # 计算日期范围
-            end_date = datetime.now().strftime('%Y%m%d')
-            start_date = (datetime.now() - timedelta(days=window*2)).strftime('%Y%m%d')
+            # 计算日期范围（回溯分析时截至报价日，避免用未来数据）
+            if end_date is None:
+                end_date = datetime.now().strftime('%Y%m%d')
+            start_date = (datetime.strptime(end_date, '%Y%m%d') - timedelta(days=window*2)).strftime('%Y%m%d')
 
             # 获取个股数据（带重试，应对频率限制）
             df_stock = None
@@ -187,7 +189,8 @@ class WACCCalculator:
         industry_code: str = None,
         peer_companies: pd.DataFrame = None,
         window: int = 500,
-        max_stocks: int = 9999  # 修改为9999，表示使用所有同行公司
+        max_stocks: int = 9999,  # 修改为9999，表示使用所有同行公司
+        end_date: str = None  # 截止日期(报价日)，避免用未来数据
     ) -> Dict:
         """
         计算行业Beta（同行公司Beta的中位数）
@@ -266,8 +269,10 @@ class WACCCalculator:
 
         try:
             # 预先获取市场指数数据（所有股票共用，避免重复API调用）
-            end_date = datetime.now().strftime('%Y%m%d')
-            start_date = (datetime.now() - timedelta(days=window*2)).strftime('%Y%m%d')
+            # 回溯分析时截至报价日
+            if end_date is None:
+                end_date = datetime.now().strftime('%Y%m%d')
+            start_date = (datetime.strptime(end_date, '%Y%m%d') - timedelta(days=window*2)).strftime('%Y%m%d')
             cached_market_df = None
             if self.pro is not None:
                 try:
@@ -287,7 +292,7 @@ class WACCCalculator:
 
             def _calc_one(code):
                 return code, self.calculate_beta_from_api(
-                    code, window=window, cached_market_df=cached_market_df
+                    code, window=window, cached_market_df=cached_market_df, end_date=end_date
                 )
 
             betas = []
@@ -452,7 +457,8 @@ class WACCCalculator:
         industry_code: Optional[str] = None,
         peer_companies: Optional[pd.DataFrame] = None,
         custom_params: Optional[Dict] = None,
-        use_industry_beta: bool = True
+        use_industry_beta: bool = True,
+        end_date: str = None  # 截止日期(报价日)，Beta回溯分析用
     ) -> Dict:
         """
         计算WACC（加权平均资本成本）
@@ -506,7 +512,8 @@ class WACCCalculator:
             print(f"\n2. 计算行业Beta系数（使用第二章同行公司）...")
             industry_result = self.calculate_industry_beta(
                 peer_companies=peer_companies,
-                window=params['beta_window']
+                window=params['beta_window'],
+                end_date=end_date
             )
             beta_industry = industry_result.get('industry_beta', 1.0)
             if 'error' not in industry_result:
@@ -520,7 +527,8 @@ class WACCCalculator:
             print(f"\n2. 计算行业Beta系数（使用行业指数成分股）...")
             industry_result = self.calculate_industry_beta(
                 industry_code=industry_code,
-                window=params['beta_window']
+                window=params['beta_window'],
+                end_date=end_date
             )
             beta_industry = industry_result.get('industry_beta', 1.0)
             if 'error' not in industry_result:
