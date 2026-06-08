@@ -231,32 +231,50 @@ def generate_chapter(context):
                             pass
                         time.sleep(0.2)
 
-                # 获取申万行业指数的PE数据（优先DB缓存 → sw_daily → AKShare兜底）
+                # 获取申万行业指数的PE数据（L3无数据时降级L2/L1，最后AKShare兜底）
                 try:
                     print(f" 正在获取申万行业指数PE数据: {target_index_code}")
                     df_index = None
-                    # 1. 优先从DB读取
-                    try:
-                        from utils.db_manager import ValuationDB
-                        db = ValuationDB()
-                        end_date = datetime.now().strftime('%Y%m%d')
-                        start_date = (datetime.now() - timedelta(days=10)).strftime('%Y%m%d')
-                        df_index = db.load_industry_daily(target_index_code, start_date, end_date)
-                        if df_index is not None and not df_index.empty:
-                            print(f"  使用DB缓存的行业PE数据")
-                    except Exception:
-                        pass
-                    # 2. DB无数据 → sw_daily（数据最完整，含PE/PB/PS/OHLCV）
-                    if df_index is None or df_index.empty:
-                        end_date = datetime.now().strftime('%Y%m%d')
-                        start_date = (datetime.now() - timedelta(days=10)).strftime('%Y%m%d')
+                    # 收集L3/L2/L1候选代码（部分L3如农业综合Ⅲ无sw_daily数据）
+                    candidate_codes = []
+                    for lv in ('l3_code', 'l2_code', 'l1_code'):
+                        code = latest_industry.get(lv)
+                        if code:
+                            candidate_codes.append((lv, code))
+                    if not candidate_codes:
+                        candidate_codes = [('l3_code', target_index_code)]
+
+                    end_date = datetime.now().strftime('%Y%m%d')
+                    start_date = (datetime.now() - timedelta(days=10)).strftime('%Y%m%d')
+
+                    # 逐级尝试 DB缓存 → sw_daily
+                    for lv, cand_code in candidate_codes:
+                        # 1. DB缓存
                         try:
-                            df_index = pro.sw_daily(ts_code=target_index_code, start_date=start_date, end_date=end_date)
+                            from utils.db_manager import ValuationDB
+                            db = ValuationDB()
+                            df_index = db.load_industry_daily(cand_code, start_date, end_date)
+                            if df_index is not None and not df_index.empty:
+                                if cand_code != target_index_code:
+                                    print(f"  L3无数据，降级使用 {lv.replace('_code','').upper()} {cand_code}")
+                                else:
+                                    print(f"  使用DB缓存的行业PE数据({cand_code})")
+                                break
+                        except Exception:
+                            pass
+                        # 2. sw_daily
+                        try:
+                            df_index = pro.sw_daily(ts_code=cand_code, start_date=start_date, end_date=end_date)
                             if isinstance(df_index, str):
                                 df_index = None
+                            if df_index is not None and not df_index.empty:
+                                if cand_code != target_index_code:
+                                    print(f"  L3无数据，降级使用 {lv.replace('_code','').upper()} {cand_code}")
+                                break
                         except Exception:
                             df_index = None
-                    # 从sw_daily结果提取PE/PB/PS
+
+                    # 从sw_daily/DB结果提取PE/PB/PS
                     if df_index is not None and not df_index.empty:
                         latest = df_index.iloc[-1]
                         sw_index_pe = latest.get('pe', None)
@@ -264,7 +282,7 @@ def generate_chapter(context):
                         sw_index_ps = latest.get('ps_ttm', None)
                         if sw_index_pe:
                             print(f"  sw_daily PE数据获取成功: PE={sw_index_pe:.2f}, PB={sw_index_pb:.2f}")
-                    # 3. sw_daily也失败 → AKShare申万三级PE兜底
+                    # 3. 全部失败 → AKShare申万三级PE兜底
                     if not sw_index_pe:
                         try:
                             import akshare as ak
