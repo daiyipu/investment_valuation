@@ -97,6 +97,9 @@ def generate_chapter(context):
     n_years = 5
     _industry_benchmark = None  # 缓存行业校准数据，避免重复获取
 
+    import time as _time
+    _t_ch3 = _time.time()
+
     # 从placement_params中获取财务数据
     net_income = project_params.get('net_income', 253532329.85)  # 净利润
 
@@ -543,6 +546,8 @@ def generate_chapter(context):
             add_paragraph(document, '•  FCF为负值，可能由于大额资本支出或营运资金占用')
 
     # ==================== WACC计算 ====================
+    print(f"  ⏱ [3.1-3.2] 行业校准+财报+FCF: {_time.time()-_t_ch3:.1f}s")
+    _t_wacc = _time.time()
     add_title(document, '3.3.2 WACC（加权平均资本成本）计算', level=3)
 
     add_paragraph(document, 'WACC是DCF估值中的关键参数，代表投资者要求的必要收益率。本节使用CAPM模型计算WACC。')

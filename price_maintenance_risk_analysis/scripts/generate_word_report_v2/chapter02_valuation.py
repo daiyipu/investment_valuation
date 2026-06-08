@@ -805,7 +805,7 @@ def generate_chapter(context):
 
                 def _fetch_one_peer(code):
                     try:
-                        h = pe_analyzer.get_stock_pe_history(code, days=1825)
+                        h = pe_analyzer.get_stock_pe_history(code, days=1095)  # 3年，减少数据传输
                         if h is not None and not h.empty:
                             return h.rename(columns={'pe_ttm': 'pe'})
                     except Exception:
