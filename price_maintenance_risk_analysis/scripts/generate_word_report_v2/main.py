@@ -566,7 +566,7 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
 def _ensure_market_data(stock_code, stock_name, market_data_file, issue_date=None):
     """确保市场数据存在且包含 ma_20，缺失或无效时自动重新生成。
 
-    陈旧检测：修复后的数据含 latest_ma_20 字段，缺失则视为旧数据需重建。
+    陈旧检测：通过 schema_version 字段判断数据版本，缺失或版本过旧则重建。
     """
     # 先尝试从DB加载
     try:
@@ -574,9 +574,9 @@ def _ensure_market_data(stock_code, stock_name, market_data_file, issue_date=Non
         db = ValuationDB()
         existing = db.load_market_data(stock_code)
         if existing and existing.get('ma_20'):
-            # 陈旧检测：缺 latest_ma_20 说明是修复前的旧数据(未按报价日截断)
-            if 'latest_ma_20' not in existing:
-                print(f"  ⚠️ 检测到旧版市场数据(缺latest_ma_20字段)，重新生成...")
+            # 陈旧检测：缺 schema_version 或版本不是最新的，重新生成
+            if existing.get('schema_version') != 'v2_issue_date':
+                print(f"  ⚠️ 检测到旧版市场数据(版本={existing.get('schema_version', '无')}),重新生成...")
             else:
                 print(f"  市场数据(DB)已存在，无需重新生成")
                 return
@@ -589,7 +589,7 @@ def _ensure_market_data(stock_code, stock_name, market_data_file, issue_date=Non
         try:
             with open(market_data_file, 'r', encoding='utf-8') as f:
                 existing = json.load(f)
-            if existing and existing.get('ma_20') and 'latest_ma_20' in existing:
+            if existing and existing.get('ma_20') and existing.get('schema_version') == 'v2_issue_date':
                 # 文件有新数据但DB没有，导入到DB
                 try:
                     from utils.db_manager import ValuationDB

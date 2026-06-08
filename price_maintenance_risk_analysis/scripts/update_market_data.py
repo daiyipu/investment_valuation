@@ -21,6 +21,11 @@ except ImportError:
     sys.exit(1)
 
 
+# 市场数据版本号：用于陈旧数据检测
+# v2: 所有指标(波动率/收益率/MA)统一基于报价日截断
+SCHEMA_VERSION = 'v2_issue_date'
+
+
 def _init_tushare_pro():
     """Initialize tushare pro_api with token from env or config."""
     token = os.environ.get('TUSHARE_TOKEN', '')
@@ -659,7 +664,6 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技', issu
     # 计算移动平均线（全部基于报价日，确保定价基准一致）
     # ma_20/30/60/120/250 均为报价日的成交量加权均价，整个报告统一使用
     ma_20 = issue_date_ma20  # 已在上方计算
-    latest_ma_20 = df['close'].rolling(window=20).mean().iloc[-1]  # 兼容字段：最新交易日MA20
     ma_30 = calculate_ma_from_base_date(df, issue_date, window=30)
     ma_60 = calculate_ma_from_base_date(df, issue_date, window=60)
     ma_120 = calculate_ma_from_base_date(df, issue_date, window=120)
@@ -721,7 +725,7 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技', issu
         'period_return_250d': round(float(period_return_250d), 4),
         'drift': round(float(annual_return_60d), 4),  # 默认使用60日年化收益率
         'ma_20': round(float(ma_20), 2),  # 报价日MA20（定价基准）
-        'latest_ma_20': round(float(latest_ma_20), 2),  # 最新交易日MA20
+        'schema_version': SCHEMA_VERSION,  # 数据版本号(陈旧检测用)
         'ma_30': round(float(ma_30), 2),
         'ma_60': round(float(ma_60), 2),
         'ma_120': round(float(ma_120), 2),
