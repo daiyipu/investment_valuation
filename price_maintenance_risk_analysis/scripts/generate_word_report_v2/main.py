@@ -102,19 +102,8 @@ def _get_historical_price_and_ma20(stock_code, issue_date_str, force_regenerate=
                 print(f"  ✅ 使用已锁定的发行日数据(DB)（发行日：{issue_date_str}）")
                 ma20_price = locked_data.get('ma_20')
                 bidding_date_price = locked_data.get('issue_date_price')
-
-                # 只更新当前价格（最新交易日价格）—— 只需最近几天数据，不必拉2年
-                print(f"  更新当前价格（最新交易日价格）...")
-                from update_market_data import fetch_latest_data
-                latest_data = fetch_latest_data(stock_code, days=15)
-                if latest_data is not None and not latest_data.empty:
-                    current_price = latest_data.iloc[-1]['close']
-                    analysis_date = latest_data.iloc[-1]['trade_date']
-                    print(f"  当前价格已更新至：{analysis_date} - {current_price:.2f}元")
-                    db.update_issue_date_current_price(stock_code, issue_date_str, float(current_price), analysis_date)
-                else:
-                    print(f"  ⚠️ 无法获取最新价格，保持锁定数据中的当前价格：{locked_data.get('current_price', 'N/A')}元")
-
+                # 回溯分析模式：current_price 统一为报价日价格，不更新到最新价
+                # （所有指标都基于报价日，current_price也应是报价日价格）
                 return bidding_date_price, ma20_price
 
         # DB中无数据或需要重新生成
@@ -575,25 +564,33 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
 
 
 def _ensure_market_data(stock_code, stock_name, market_data_file, issue_date=None):
-    """确保市场数据存在且包含 ma_20，缺失或无效时自动重新生成。"""
+    """确保市场数据存在且包含 ma_20，缺失或无效时自动重新生成。
+
+    陈旧检测：修复后的数据含 latest_ma_20 字段，缺失则视为旧数据需重建。
+    """
     # 先尝试从DB加载
     try:
         from utils.db_manager import ValuationDB
         db = ValuationDB()
         existing = db.load_market_data(stock_code)
         if existing and existing.get('ma_20'):
-            print(f"  市场数据(DB)已存在，无需重新生成")
-            return
+            # 陈旧检测：缺 latest_ma_20 说明是修复前的旧数据(未按报价日截断)
+            if 'latest_ma_20' not in existing:
+                print(f"  ⚠️ 检测到旧版市场数据(缺latest_ma_20字段)，重新生成...")
+            else:
+                print(f"  市场数据(DB)已存在，无需重新生成")
+                return
     except Exception:
         pass
 
-    # DB中无有效数据，检查文件
+    # DB中无有效数据或数据陈旧，检查文件
+    use_file_data = False
     if os.path.exists(market_data_file):
         try:
             with open(market_data_file, 'r', encoding='utf-8') as f:
                 existing = json.load(f)
-            if existing and existing.get('ma_20'):
-                # 文件有数据但DB没有，导入到DB
+            if existing and existing.get('ma_20') and 'latest_ma_20' in existing:
+                # 文件有新数据但DB没有，导入到DB
                 try:
                     from utils.db_manager import ValuationDB
                     db = ValuationDB()
