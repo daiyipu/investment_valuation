@@ -106,7 +106,10 @@ def main():
         print(f'❌ 筛选结果文件未生成: {screening_output}')
         sys.exit(1)
 
-    if not run_step('Step 2/3: 财务评分 (batch_financial_score)', step2_cmd):
+    if not run_step('Step 2/3: 财务评分 (batch_financial_score)', [
+        sys.executable, EFAES_SCRIPT,
+        screening_output,
+    ]):
         sys.exit(1)
 
     # 最终输出
