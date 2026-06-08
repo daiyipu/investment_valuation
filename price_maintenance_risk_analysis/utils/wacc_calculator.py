@@ -282,22 +282,28 @@ class WACCCalculator:
                 except Exception:
                     cached_market_df = None
 
-            # 计算每只股票的Beta
-            betas = []
-            for i, stock_code in enumerate(stock_codes):
-                # 调用间隔，避免触发Tushare频率限制（daily接口约200次/分钟）
-                if i > 0:
-                    time.sleep(0.4)
-                result = self.calculate_beta_from_api(
-                    stock_code, window=window, cached_market_df=cached_market_df
+            # 计算每只股票的Beta（并行，避免串行+sleep累积）
+            from concurrent.futures import ThreadPoolExecutor
+
+            def _calc_one(code):
+                return code, self.calculate_beta_from_api(
+                    code, window=window, cached_market_df=cached_market_df
                 )
-                if 'beta' in result and result['beta'] > 0 and 'error' not in result:
-                    betas.append(result['beta'])
-                    print(f"   {stock_code}: Beta = {result['beta']:.3f}")
-                elif 'error' in result:
-                    print(f"   {stock_code}: {result['error']}")
-                else:
-                    print(f"   {stock_code}: Beta={result.get('beta', 'N/A')} 异常，跳过")
+
+            betas = []
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                for code, result in executor.map(_calc_one, stock_codes):
+                    if 'beta' in result and result['beta'] > 0 and 'error' not in result:
+                        # 过滤极端异常值（次新股/小盘股Beta失真，正常范围0.3~2.5）
+                        if result['beta'] > 3.0:
+                            print(f"   {code}: Beta = {result['beta']:.3f} (异常>3，跳过)")
+                        else:
+                            betas.append(result['beta'])
+                            print(f"   {code}: Beta = {result['beta']:.3f}")
+                    elif 'error' in result:
+                        print(f"   {code}: {result['error']}")
+                    else:
+                        print(f"   {code}: Beta={result.get('beta', 'N/A')} 异常，跳过")
 
             if len(betas) == 0:
                 return {'industry_beta': 1.0, 'error': '未成功计算任何Beta'}
