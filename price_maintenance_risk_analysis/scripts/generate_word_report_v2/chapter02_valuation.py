@@ -199,24 +199,37 @@ def generate_chapter(context):
                 peer_stocks_all = peer_stocks_all.head(30)
                 peer_names_dict = dict(zip(peer_stocks_all['ts_code'], peer_stocks_all['name_x']))
 
-                # 获取同行公司的估值数据
+                # 获取同行公司的估值数据（一次全市场查询替代逐只循环）
                 peer_data_list = []
-                for peer_code in peer_stocks_all['ts_code'].tolist():
-                    peer_name = peer_names_dict.get(peer_code, peer_code)
-
-                    try:
-                        df_peer = pro.daily_basic(
-                            ts_code=peer_code,
-                            trade_date=trade_date,
-                            fields='ts_code,pe_ttm,pb,ps_ttm,total_mv'
-                        )
-                        if not df_peer.empty:
-                            df_peer['name'] = peer_name
-                            peer_data_list.append(df_peer)
-                    except:
-                        pass
-
-                    time.sleep(0.2)  # 避免请求过快
+                try:
+                    df_all = pro.daily_basic(
+                        trade_date=trade_date,
+                        fields='ts_code,pe_ttm,pb,ps_ttm,total_mv'
+                    )
+                    if not df_all.empty:
+                        peer_codes = peer_stocks_all['ts_code'].tolist()
+                        df_peers = df_all[df_all['ts_code'].isin(peer_codes)].copy()
+                        # 补充名称
+                        df_peers['name'] = df_peers['ts_code'].map(peer_names_dict)
+                        peer_data_list = [df_peers]
+                        print(f"  一次批量获取 {len(df_peers)}/{len(peer_codes)} 家同行估值数据")
+                except Exception as e:
+                    # 降级：逐只查询
+                    print(f"  批量查询失败({e})，降级逐只查询...")
+                    for peer_code in peer_stocks_all['ts_code'].tolist():
+                        peer_name = peer_names_dict.get(peer_code, peer_code)
+                        try:
+                            df_peer = pro.daily_basic(
+                                ts_code=peer_code,
+                                trade_date=trade_date,
+                                fields='ts_code,pe_ttm,pb,ps_ttm,total_mv'
+                            )
+                            if not df_peer.empty:
+                                df_peer['name'] = peer_name
+                                peer_data_list.append(df_peer)
+                        except:
+                            pass
+                        time.sleep(0.2)
 
                 # 获取申万行业指数的PE数据（优先DB缓存 → sw_daily → AKShare兜底）
                 try:
