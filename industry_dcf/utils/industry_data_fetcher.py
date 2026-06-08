@@ -78,7 +78,7 @@ class IndustryDataFetcher:
         def _fetch_one(code):
             return code, self._fetch_company_data(code, start_date)
 
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        with ThreadPoolExecutor(max_workers=8) as executor:
             for code, data in executor.map(_fetch_one, member_codes):
                 if data is not None:
                     companies[code] = data

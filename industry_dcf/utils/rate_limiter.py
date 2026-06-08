@@ -12,9 +12,12 @@ from typing import Any, Callable, List, Optional
 
 
 class RateLimiter:
-    """Token-bucket style rate limiter for Tushare API calls."""
+    """Token-bucket style rate limiter for Tushare API calls.
 
-    def __init__(self, calls_per_minute: int = 180, min_interval: float = 0.35):
+    注意: 已购买Tushare高级权限(无频率限制)，放宽间隔以提升并发性能。
+    """
+
+    def __init__(self, calls_per_minute: int = 600, min_interval: float = 0.05):
         self.calls_per_minute = calls_per_minute
         self.min_interval = min_interval
         self._timestamps: List[float] = []

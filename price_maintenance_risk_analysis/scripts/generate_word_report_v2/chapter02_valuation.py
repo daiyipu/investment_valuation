@@ -813,7 +813,7 @@ def generate_chapter(context):
                     return None
 
                 peer_pe_histories = []
-                with ThreadPoolExecutor(max_workers=5) as executor:
+                with ThreadPoolExecutor(max_workers=8) as executor:
                     for h in executor.map(_fetch_one_peer, peer_codes):
                         if h is not None:
                             peer_pe_histories.append(h)

@@ -291,7 +291,7 @@ class WACCCalculator:
                 )
 
             betas = []
-            with ThreadPoolExecutor(max_workers=5) as executor:
+            with ThreadPoolExecutor(max_workers=8) as executor:
                 for code, result in executor.map(_calc_one, stock_codes):
                     if 'beta' in result and result['beta'] > 0 and 'error' not in result:
                         # 过滤极端异常值（次新股/小盘股Beta失真，正常范围0.3~2.5）
