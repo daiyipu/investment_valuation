@@ -108,8 +108,13 @@ class PEHistoryAnalyzer:
                 if len(df) > 0:
                     return df
                 else:
-                    # API有数据但过滤后全空 = 公司持续亏损(PE无定义)，无需重试
-                    print(f"⚠️ {stock_code}历史PE过滤后为空（持续亏损，PE无定义），跳过PE趋势分析")
+                    # API有数据但过滤后全空 = 公司持续亏损(PE无定义)
+                    # 尝试AKShare百度估值兜底（含负PE，可显示亏损趋势）
+                    ak_df = self._fetch_pe_from_akshare(stock_code)
+                    if ak_df is not None:
+                        print(f"  {stock_code} 使用AKShare百度估值PE兜底（{len(ak_df)}条，含亏损期负PE）")
+                        return ak_df
+                    print(f"⚠️ {stock_code}历史PE过滤后为空（持续亏损，PE无定义），AKShare也无数据，跳过PE趋势分析")
                     return None
 
             except Exception as e:
@@ -121,6 +126,31 @@ class PEHistoryAnalyzer:
                 else:
                     print(f"❌ 获取{stock_code}历史PE数据失败: {e}")
                     return None
+
+    def _fetch_pe_from_akshare(self, stock_code):
+        """AKShare百度估值PE兜底（Tushare亏损股PE为空时使用）。
+
+        百度估值对亏损股返回负PE（价格/负EPS），可显示亏损趋势。
+        返回与Tushare格式一致的DataFrame(trade_date, pe_ttm)。
+        """
+        try:
+            import akshare as ak
+            # AKShare用6位代码(去后缀)
+            code = stock_code.split('.')[0]
+            df = ak.stock_zh_valuation_baidu(symbol=code, indicator='市盈率(TTM)', period='近五年')
+            if df is None or df.empty:
+                return None
+            import pandas as pd
+            # 转换格式: date(日期对象) + value(PE) → trade_date(YYYYMMDD) + pe_ttm
+            df = df.copy()
+            df['trade_date'] = pd.to_datetime(df['date']).dt.strftime('%Y%m%d')
+            df['pe_ttm'] = df['value']
+            df = df[['trade_date', 'pe_ttm']].dropna(subset=['pe_ttm'])
+            df = df.sort_values('trade_date').reset_index(drop=True)
+            return df if not df.empty else None
+        except Exception as e:
+            print(f"  AKShare百度估值PE获取失败({stock_code}): {e}")
+            return None
 
     def get_industry_pe_history(self, stock_code, days=1825, max_retries=3):
         """
