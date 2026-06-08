@@ -501,12 +501,13 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技', issu
 
     # 报价日是历史日期时，补充获取报价日附近的数据（fetch_latest_data只取近2年）
     if issue_date and issue_date < df['trade_date'].min():
+        from datetime import timedelta as _timedelta
         print(f"   ⚠️ 当前数据范围({df['trade_date'].min()}~{df['trade_date'].max()})未覆盖报价日{issue_date}，补充获取历史数据...")
         pro = _init_tushare_pro()
         issue_date_obj = datetime.strptime(issue_date, '%Y%m%d')
-        # 报价日前60天到报价日后10天（覆盖MA20计算和询价窗口）
-        hist_start = (issue_date_obj - timedelta(days=90)).strftime('%Y%m%d')
-        hist_end = (issue_date_obj + timedelta(days=10)).strftime('%Y%m%d')
+        # 报价日前90天到报价日后10天（覆盖MA20计算和询价窗口）
+        hist_start = (issue_date_obj - _timedelta(days=90)).strftime('%Y%m%d')
+        hist_end = (issue_date_obj + _timedelta(days=10)).strftime('%Y%m%d')
         print(f"   补充查询: {hist_start} ~ {hist_end}")
         try:
             df_hist = pro.daily(ts_code=stock_code, start_date=hist_start, end_date=hist_end)
@@ -552,13 +553,15 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技', issu
     print(f"   实际使用交易日: {latest_date}")
     print(f"   实际使用收盘价: {current_price:.2f} 元")
 
-    # 计算MA20（基于发行日）
+    # 计算MA20（基于发行日）—— 用于定价的关键MA20
     print(f"   计算MA20（基于发行日{issue_date}）...")
-    ma_20 = calculate_ma20_from_base_date(df, issue_date)
-    if ma_20 is None:
+    issue_date_ma20 = calculate_ma20_from_base_date(df, issue_date)
+    if issue_date_ma20 is None:
         print(f"无法基于发行日{issue_date}计算MA20")
         return None
-    print(f"   MA20（基于发行日{issue_date}的成交量加权均价）: {ma_20:.2f} 元")
+    print(f"   MA20（基于发行日{issue_date}的成交量加权均价）: {issue_date_ma20:.2f} 元")
+    # 优先用报价日MA20作为ma_20（定价基准）；后续移动平均线另存
+    ma_20 = issue_date_ma20
 
     # 计算波动率（多窗口）
     vol_20 = calculate_rolling_volatility(df, 20)
@@ -583,8 +586,9 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技', issu
     period_return_120d = calculate_period_return(df, 120)
     period_return_250d = calculate_period_return(df, 250)
 
-    # 计算移动平均线
-    ma_20 = df['close'].rolling(window=20).mean().iloc[-1]
+    # 计算移动平均线（基于最新交易日，用于技术指标分析）
+    # 注意：ma_20 已在上方设为报价日MA20（定价基准），这里用 latest_ma_20 存最新值
+    latest_ma_20 = df['close'].rolling(window=20).mean().iloc[-1]
     ma_30 = df['close'].rolling(window=30).mean().iloc[-1]
     ma_60 = df['close'].rolling(window=60).mean().iloc[-1]
     ma_120 = df['close'].rolling(window=120).mean().iloc[-1]
@@ -639,7 +643,8 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技', issu
         'period_return_120d': round(float(period_return_120d), 4),
         'period_return_250d': round(float(period_return_250d), 4),
         'drift': round(float(annual_return_60d), 4),  # 默认使用60日年化收益率
-        'ma_20': round(float(ma_20), 2),
+        'ma_20': round(float(ma_20), 2),  # 报价日MA20（定价基准）
+        'latest_ma_20': round(float(latest_ma_20), 2),  # 最新交易日MA20
         'ma_30': round(float(ma_30), 2),
         'ma_60': round(float(ma_60), 2),
         'ma_120': round(float(ma_120), 2),
