@@ -586,8 +586,10 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技', issu
     period_return_120d = calculate_period_return(df, 120)
     period_return_250d = calculate_period_return(df, 250)
 
-    # 计算移动平均线（基于最新交易日，用于技术指标分析）
-    # 注意：ma_20 已在上方设为报价日MA20（定价基准），这里用 latest_ma_20 存最新值
+    # 计算移动平均线（基于最新交易日，用于当前技术面分析）
+    # 注意时间基准差异：
+    #   - ma_20 = 报价日MA20（上方计算），作为发行定价基准，整个报告统一使用
+    #   - ma_30/60/120/250 = 最新交易日均线，用于判断"当前价相对均线位置"
     latest_ma_20 = df['close'].rolling(window=20).mean().iloc[-1]
     ma_30 = df['close'].rolling(window=30).mean().iloc[-1]
     ma_60 = df['close'].rolling(window=60).mean().iloc[-1]
