@@ -274,12 +274,13 @@ def calculate_period_return(df, window):
     return period_discrete_return
 
 
-def fetch_market_turnover_data(target_days=1200):
+def fetch_market_turnover_data(target_days=1200, issue_date=None):
     """
     获取市场换手率数据（上海+深圳）
 
     参数:
         target_days: 目标获取天数（默认1200个交易日≈5年）
+        issue_date: 报价日(YYYYMMDD)，回溯分析时取该日及之前的数据
 
     返回:
         dict: 包含当前换手率、历史数据和分位数
@@ -290,9 +291,10 @@ def fetch_market_turnover_data(target_days=1200):
 
         print(f"\n📡 正在获取市场换手率数据...")
 
-        # 使用批量获取方式
-        end_date = datetime.now().strftime('%Y%m%d')
-        start_date = (datetime.now() - timedelta(days=365*6)).strftime('%Y%m%d')  # 回溯6年确保有足够交易日
+        # 使用批量获取方式（回溯分析时截至报价日）
+        ref_date = issue_date or datetime.now().strftime('%Y%m%d')
+        end_date = ref_date
+        start_date = (datetime.strptime(ref_date, '%Y%m%d') - timedelta(days=365*6)).strftime('%Y%m%d')
 
         print(f"   查询日期范围: {start_date} ~ {end_date}")
 
@@ -692,7 +694,7 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技', issu
 
     # 获取市场换手率数据
     print(f"\n📊 获取市场换手率数据...")
-    turnover_data = fetch_market_turnover_data(target_days=1200)  # 获取5年数据
+    turnover_data = fetch_market_turnover_data(target_days=1200, issue_date=issue_date)  # 截至5年数据
     if turnover_data:
         print(f"✅ 市场换手率数据获取成功")
     else:

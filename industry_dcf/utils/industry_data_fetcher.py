@@ -36,6 +36,7 @@ class IndustryDataFetcher:
         l3_code: str,
         years: int = 10,
         force_refresh: bool = False,
+        issue_date: str = None,
     ) -> dict:
         """Get full financial data for an L3 industry.
 
@@ -71,12 +72,15 @@ class IndustryDataFetcher:
         print(f"  获取行业 {l3_code} 数据: {len(member_codes)}家公司")
 
         # Fetch data for each company（并行，避免21家×3报表串行）
+        # 回溯分析时以报价日为end_date，避免取报价日后发布的财报
         companies = {}
-        start_date = (datetime.now() - timedelta(days=years * 365)).strftime('%Y%m%d')
+        ref_dt = datetime.strptime(issue_date, '%Y%m%d') if issue_date else datetime.now()
+        start_date = (ref_dt - timedelta(days=years * 365)).strftime('%Y%m%d')
+        end_date = ref_dt.strftime('%Y%m%d') if issue_date else None
         from concurrent.futures import ThreadPoolExecutor
 
         def _fetch_one(code):
-            return code, self._fetch_company_data(code, start_date)
+            return code, self._fetch_company_data(code, start_date, end_date=end_date)
 
         with ThreadPoolExecutor(max_workers=8) as executor:
             for code, data in executor.map(_fetch_one, member_codes):
@@ -100,13 +104,16 @@ class IndustryDataFetcher:
         self,
         ts_code: str,
         years: int = 10,
+        issue_date: str = None,
     ) -> Optional[Dict[str, pd.DataFrame]]:
         """Fetch financial data for a single company as DataFrames.
 
         Returns {'cashflow': DataFrame, 'income': DataFrame, 'balance': DataFrame}
         """
-        start_date = (datetime.now() - timedelta(days=years * 365)).strftime('%Y%m%d')
-        data = self._fetch_company_data(ts_code, start_date)
+        ref_dt = datetime.strptime(issue_date, '%Y%m%d') if issue_date else datetime.now()
+        start_date = (ref_dt - timedelta(days=years * 365)).strftime('%Y%m%d')
+        end_date = issue_date  # 限制财报不超过报价日
+        data = self._fetch_company_data(ts_code, start_date, end_date=end_date)
         if data is None:
             return None
 
@@ -170,20 +177,24 @@ class IndustryDataFetcher:
         valid = [df.dropna(axis=1, how='all') for df in results if not df.empty]
         return pd.concat(valid, ignore_index=True) if valid else pd.DataFrame()
 
-    def _fetch_company_data(self, ts_code: str, start_date: str) -> Optional[dict]:
-        """Fetch cashflow, income, balance sheet for one company."""
+    def _fetch_company_data(self, ts_code: str, start_date: str, end_date: str = None) -> Optional[dict]:
+        """Fetch cashflow, income, balance sheet for one company.
+
+        end_date: 限制财报公告日不超过该日(回溯分析时=报价日)，None则不限制。
+        """
         try:
+            kw_end = {'end_date': end_date} if end_date else {}
             cashflow = self.rate_limiter.call(
                 self.pro.cashflow,
-                ts_code=ts_code, start_date=start_date,
+                ts_code=ts_code, start_date=start_date, **kw_end,
             )
             income = self.rate_limiter.call(
                 self.pro.income,
-                ts_code=ts_code, start_date=start_date,
+                ts_code=ts_code, start_date=start_date, **kw_end,
             )
             balance = self.rate_limiter.call(
                 self.pro.balancesheet,
-                ts_code=ts_code, start_date=start_date,
+                ts_code=ts_code, start_date=start_date, **kw_end,
             )
 
             # At least one statement must exist

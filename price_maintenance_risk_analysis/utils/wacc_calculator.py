@@ -249,9 +249,10 @@ class WACCCalculator:
                         fields='con_code,index_code,in_date,out_date,is_new'
                     )
                     if df_members is not None and not df_members.empty:
-                        today = datetime.now().strftime('%Y%m%d')
+                        # 用end_date(报价日)判断成分股是否仍在指数中，避免用未来调入/调出
+                        ref_today = end_date or datetime.now().strftime('%Y%m%d')
                         df_members = df_members[
-                            (df_members['out_date'].isna()) | (df_members['out_date'] > today)
+                            (df_members['out_date'].isna()) | (df_members['out_date'] > ref_today)
                         ]
                         stock_codes = df_members['con_code'].tolist()[:max_stocks]
 
