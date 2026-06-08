@@ -124,7 +124,10 @@ class IndustryDataFetcher:
         """Get daily_basic (PE, PB, market cap) for all industry members.
 
         Used for industry median PE calculation.
+        优化：用 daily_basic(trade_date=X) 一次取全市场再筛选，替代逐家循环。
         """
+        import pandas as pd
+
         if not trade_date:
             trade_date = datetime.now().strftime('%Y%m%d')
 
@@ -132,6 +135,24 @@ class IndustryDataFetcher:
         if not member_codes:
             return pd.DataFrame()
 
+        member_set = set(member_codes)
+
+        # 一次取全市场 daily_basic，本地筛选行业成员（1次调用替代N次）
+        for td in [trade_date] + [(datetime.now() - timedelta(days=d)).strftime('%Y%m%d') for d in range(1, 10)]:
+            try:
+                df_all = self.rate_limiter.call(
+                    self.pro.daily_basic,
+                    trade_date=td,
+                    fields='ts_code,trade_date,pe,pb,total_mv,total_share',
+                )
+                if df_all is not None and not df_all.empty:
+                    df_filtered = df_all[df_all['ts_code'].isin(member_set)].copy()
+                    if not df_filtered.empty:
+                        return df_filtered.dropna(axis=1, how='all')
+            except Exception:
+                continue
+
+        # 降级：逐家查询（全市场查询失败时）
         results = []
         for ts_code in member_codes:
             db = self.rate_limiter.call(
@@ -142,28 +163,10 @@ class IndustryDataFetcher:
             if db is not None and not db.empty:
                 results.append(db)
 
-        # Try previous dates if no data found
-        if not results:
-            for days_back in range(1, 10):
-                td = (datetime.now() - timedelta(days=days_back)).strftime('%Y%m%d')
-                for ts_code in member_codes:
-                    db = self.rate_limiter.call(
-                        self.pro.daily_basic,
-                        ts_code=ts_code, trade_date=td,
-                        fields='ts_code,trade_date,pe,pb,total_mv,total_share',
-                    )
-                    if db is not None and not db.empty:
-                        results.append(db)
-                if results:
-                    break
-
         if not results:
             return pd.DataFrame()
-
         valid = [df.dropna(axis=1, how='all') for df in results if not df.empty]
-        if not valid:
-            return pd.DataFrame()
-        return pd.concat(valid, ignore_index=True)
+        return pd.concat(valid, ignore_index=True) if valid else pd.DataFrame()
 
     def _fetch_company_data(self, ts_code: str, start_date: str) -> Optional[dict]:
         """Fetch cashflow, income, balance sheet for one company."""
