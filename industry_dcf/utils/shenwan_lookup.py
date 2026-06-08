@@ -63,6 +63,30 @@ def find_l3_by_code(ts_code: str, pro_api, json_path: str = None) -> Optional[Di
     l3_map = {e['l3_code']: e for e in all_l3}
 
     try:
+        # 优先使用 index_member_all（直接返回L1/L2/L3完整层级）
+        member_all = pro_api.index_member_all(ts_code=ts_code)
+        if member_all is not None and not member_all.empty:
+            row = member_all.iloc[0]
+            l3_code = row.get('l3_code', '')
+            if l3_code and _L3_PATTERN.match(str(l3_code)):
+                # index_member_all 直接提供完整层级信息
+                result = {
+                    'l1_code': row.get('l1_code', ''),
+                    'l1_name': row.get('l1_name', ''),
+                    'l2_code': row.get('l2_code', ''),
+                    'l2_name': row.get('l2_name', ''),
+                    'l3_code': str(l3_code),
+                    'l3_name': row.get('l3_name', ''),
+                }
+                # 补充JSON中的层级关系（如有）
+                if str(l3_code) in l3_map:
+                    json_entry = l3_map[str(l3_code)]
+                    for k, v in json_entry.items():
+                        if not result.get(k):
+                            result[k] = v
+                return result
+
+        # 降级：使用 index_member
         members = pro_api.index_member(ts_code=ts_code)
         if members is None or members.empty:
             return _fallback_by_name(ts_code, pro_api, all_l3)
