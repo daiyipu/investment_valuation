@@ -103,10 +103,10 @@ def _get_historical_price_and_ma20(stock_code, issue_date_str, force_regenerate=
                 ma20_price = locked_data.get('ma_20')
                 bidding_date_price = locked_data.get('issue_date_price')
 
-                # 只更新当前价格（最新交易日价格）
+                # 只更新当前价格（最新交易日价格）—— 只需最近几天数据，不必拉2年
                 print(f"  更新当前价格（最新交易日价格）...")
                 from update_market_data import fetch_latest_data
-                latest_data = fetch_latest_data(stock_code)
+                latest_data = fetch_latest_data(stock_code, days=15)
                 if latest_data is not None and not latest_data.empty:
                     current_price = latest_data.iloc[-1]['close']
                     analysis_date = latest_data.iloc[-1]['trade_date']
