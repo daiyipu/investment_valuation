@@ -16,6 +16,7 @@
 import sys
 import os
 import json
+import time
 from datetime import datetime, timedelta
 from docx import Document
 
@@ -716,7 +717,10 @@ def generate_report_headless(stock_code, stock_name=None, issue_date=None, force
         ]
         for ch_name, ch_fn in chapters:
             try:
+                t_ch = time.time()
                 context = ch_fn(context)
+                ch_elapsed = time.time() - t_ch
+                print(f"  ⏱ {ch_name} {ch_elapsed:.1f}s")
             except Exception as ch_err:
                 print(f"  ⚠️ {ch_name} 失败: {ch_err}")
 

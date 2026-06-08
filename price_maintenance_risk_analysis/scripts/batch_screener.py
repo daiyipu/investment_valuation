@@ -18,6 +18,7 @@
 import argparse
 import os
 import sys
+import time
 
 import pandas as pd
 
@@ -75,11 +76,15 @@ def run_batch_screening(stock_list, output_path=None):
 
     results = []
     raw_results = []  # 保存原始headless结果用于DB
+    t_batch_start = time.time()
     for idx, (code, name) in enumerate(stock_list, 1):
+        t_stock = time.time()
         print(f'[{idx}/{total}] {code} {name}')
         headless_result = generate_report_headless(code, name)
+        stock_elapsed = time.time() - t_stock
         raw_results.append(headless_result)
         results.append(_analyze_one(code, name, lambda c, n: headless_result))
+        print(f'  ⏱ {code} 耗时 {stock_elapsed:.1f}s')
 
         # 保存到DB
         try:
@@ -89,6 +94,8 @@ def run_batch_screening(stock_list, output_path=None):
         except Exception:
             pass
 
+    batch_elapsed = time.time() - t_batch_start
+
     # 写入 Excel
     df = pd.DataFrame(results)
     df.to_excel(output_path, index=False, engine='openpyxl')
@@ -97,7 +104,8 @@ def run_batch_screening(stock_list, output_path=None):
     # 打印汇总
     pass_count = sum(1 for r in results if r['定增决策'] == '建议参与本次定向增发')
     fail_count = total - pass_count
-    print(f'汇总: 通过 {pass_count} / 不通过 {fail_count} / 共 {total}')
+    avg_time = batch_elapsed / total if total > 0 else 0
+    print(f'汇总: 通过 {pass_count} / 不通过 {fail_count} / 共 {total} [总耗时 {batch_elapsed:.1f}s, 平均 {avg_time:.1f}s/只]')
 
     return df
 

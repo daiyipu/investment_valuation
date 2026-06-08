@@ -18,6 +18,7 @@
 
 import os
 import sys
+import time
 import subprocess
 from datetime import datetime
 
@@ -44,13 +45,15 @@ def run_step(description, cmd):
     print(f'  命令: {" ".join(cmd)}')
     print()
 
+    t0 = time.time()
     result = subprocess.run(cmd, cwd=DATA_DIR)
+    elapsed = time.time() - t0
 
     if result.returncode != 0:
-        print(f'\n❌ {description} 失败 (退出码: {result.returncode})')
+        print(f'\n❌ {description} 失败 (退出码: {result.returncode}) [耗时 {elapsed:.1f}s]')
         return False
 
-    print(f'\n✅ {description} 完成')
+    print(f'\n✅ {description} 完成 [耗时 {elapsed:.1f}s]')
     return True
 
 
@@ -85,6 +88,8 @@ def main():
     print(f'📁 筛选结果: {screening_output}')
     print(f'📁 最终结果: {screening_output.replace(".xlsx", "_scored.xlsx")}')
 
+    t_total = time.time()  # 总计时起点
+
     # ── Step 1: 定增决策筛选 ──
     step1_cmd = [
         sys.executable, SCREENER_SCRIPT,
@@ -111,6 +116,7 @@ def main():
 
     # ── Step 3: 追加最终结论列 ──
     # 规则: 定增决策="建议参与" 且 成长能力_趋势="通过" → 最终"通过"
+    t_step3 = time.time()
     print()
     print('=' * 60)
     print('  Step 3/3: 生成最终结论')
@@ -149,12 +155,14 @@ def main():
 
     wb.save(scored_output)
 
+    step3_elapsed = time.time() - t_step3
     total = ws.max_row - 1
     print()
-    print(f'  最终结论: {pass_count}/{total} 通过')
+    print(f'  最终结论: {pass_count}/{total} 通过 [耗时 {step3_elapsed:.1f}s]')
     print()
+    total_elapsed = time.time() - t_total
     print('=' * 60)
-    print(f'🎉 全部完成!')
+    print(f'🎉 全部完成! [总耗时 {total_elapsed:.1f}s]')
     print(f'   筛选结果: {screening_output}')
     print(f'   最终结果: {scored_output}')
     print('=' * 60)
