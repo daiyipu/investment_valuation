@@ -483,6 +483,66 @@ def calculate_ma20_from_base_date(df, base_date_str):
         return None
 
 
+def calculate_ma_from_base_date(df, base_date_str, window=20):
+    """
+    基于基准日期（发行日/报价日）计算指定窗口的MA价格（成交量加权均价）
+
+    与 calculate_ma20_from_base_date 逻辑相同，但支持任意窗口（30/60/120/250等）。
+
+    参数:
+        df: 股票历史数据DataFrame
+        base_date_str: 基准日期字符串（YYYYMMDD格式）
+        window: 移动平均窗口（交易日），默认20
+
+    返回:
+        float: MA价格（成交量加权均价），如果计算失败返回None
+    """
+    try:
+        # 确保数据按日期排序
+        df_sorted = df.sort_values('trade_date').reset_index(drop=True)
+
+        # 找到发行日或之前的最近交易日作为起点
+        df_before_base = df_sorted[df_sorted['trade_date'] <= base_date_str]
+
+        # 如果发行日是未来日期或没有数据，使用最新交易日
+        if df_before_base.empty:
+            # 使用最新交易日之前的window个交易日（不包括最新交易日）
+            if len(df_sorted) >= window + 1:
+                df_days = df_sorted.iloc[-(window + 1):-1]
+                total_amount = df_days['amount'].sum()
+                total_vol = df_days['vol'].sum()
+                if total_vol > 0:
+                    ma_price = (total_amount / total_vol) * 10
+                else:
+                    ma_price = df_days['close'].mean()
+                return float(ma_price)
+            else:
+                print(f"警告：历史交易日数据不足{window + 1}天，无法计算MA{window}")
+                return None
+
+        # 从发行日或之前的最近交易日开始，往前找window个交易日（不包括基准日当天）
+        start_index = df_before_base.index[-1]
+
+        if start_index >= window:
+            df_days = df_sorted.iloc[start_index - window:start_index]
+            total_amount = df_days['amount'].sum()
+            total_vol = df_days['vol'].sum()
+            if total_vol > 0:
+                ma_price = (total_amount / total_vol) * 10
+            else:
+                ma_price = df_days['close'].mean()
+            return float(ma_price)
+        else:
+            # 报价日前数据不足window天，返回None（由调用方用ma_20兜底）
+            # 不使用最新数据，否则时间基准不一致
+            print(f"   报价日{base_date_str}前数据不足{window}天（仅{start_index}天），MA{window}将用MA20兜底")
+            return None
+
+    except Exception as e:
+        print(f"计算MA{window}失败: {e}")
+        return None
+
+
 def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技', issue_date=None):
     """
     生成市场数据
@@ -505,8 +565,8 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技', issu
         print(f"   ⚠️ 当前数据范围({df['trade_date'].min()}~{df['trade_date'].max()})未覆盖报价日{issue_date}，补充获取历史数据...")
         pro = _init_tushare_pro()
         issue_date_obj = datetime.strptime(issue_date, '%Y%m%d')
-        # 报价日前90天到报价日后10天（覆盖MA20计算和询价窗口）
-        hist_start = (issue_date_obj - _timedelta(days=90)).strftime('%Y%m%d')
+        # 报价日前400天到报价日后10天（覆盖MA250计算所需250交易日 + 询价窗口）
+        hist_start = (issue_date_obj - _timedelta(days=400)).strftime('%Y%m%d')
         hist_end = (issue_date_obj + _timedelta(days=10)).strftime('%Y%m%d')
         print(f"   补充查询: {hist_start} ~ {hist_end}")
         try:
@@ -586,15 +646,20 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技', issu
     period_return_120d = calculate_period_return(df, 120)
     period_return_250d = calculate_period_return(df, 250)
 
-    # 计算移动平均线（基于最新交易日，用于当前技术面分析）
-    # 注意时间基准差异：
-    #   - ma_20 = 报价日MA20（上方计算），作为发行定价基准，整个报告统一使用
-    #   - ma_30/60/120/250 = 最新交易日均线，用于判断"当前价相对均线位置"
-    latest_ma_20 = df['close'].rolling(window=20).mean().iloc[-1]
-    ma_30 = df['close'].rolling(window=30).mean().iloc[-1]
-    ma_60 = df['close'].rolling(window=60).mean().iloc[-1]
-    ma_120 = df['close'].rolling(window=120).mean().iloc[-1]
-    ma_250 = df['close'].rolling(window=250).mean().iloc[-1]
+    # 计算移动平均线（全部基于报价日，确保定价基准一致）
+    # ma_20/30/60/120/250 均为报价日的成交量加权均价，整个报告统一使用
+    ma_20 = issue_date_ma20  # 已在上方计算
+    latest_ma_20 = df['close'].rolling(window=20).mean().iloc[-1]  # 兼容字段：最新交易日MA20
+    ma_30 = calculate_ma_from_base_date(df, issue_date, window=30)
+    ma_60 = calculate_ma_from_base_date(df, issue_date, window=60)
+    ma_120 = calculate_ma_from_base_date(df, issue_date, window=120)
+    ma_250 = calculate_ma_from_base_date(df, issue_date, window=250)
+    # 计算失败时用报价日MA20兜底（保持非空）
+    ma_30 = ma_30 if ma_30 is not None else ma_20
+    ma_60 = ma_60 if ma_60 is not None else ma_20
+    ma_120 = ma_120 if ma_120 is not None else ma_20
+    ma_250 = ma_250 if ma_250 is not None else ma_20
+    print(f"   基于报价日{issue_date}的均线: MA20={ma_20:.2f} MA60={ma_60:.2f} MA120={ma_120:.2f} MA250={ma_250:.2f}")
 
     # 计算胜率（多个时间窗口的上涨天数占比）
     win_rate_20d = (df['pct_chg'].iloc[-20:] > 0).sum() / 20 if len(df) >= 20 else 0
