@@ -144,9 +144,10 @@ def generate_chapter(context):
     document = context['document']
     project_params = context['project_params']
     market_data = context['market_data']
-    current_metrics_val = context['current_metrics_val']
-    industry_stats_val = context['industry_stats_val']
-    peer_companies_val = context['peer_companies_val']
+    # 防御性获取：Ch2失败时这些key可能不存在
+    current_metrics_val = context.get('current_metrics_val', {'pe': None, 'pb': None, 'ps': None})
+    industry_stats_val = context.get('industry_stats_val', {'pe': {}, 'pb': {}, 'ps': {}})
+    peer_companies_val = context.get('peer_companies_val', None)
     IMAGES_DIR = context['IMAGES_DIR']
 
     # ==================== 七、压力测试 ====================
