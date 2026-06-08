@@ -47,6 +47,7 @@ def generate_chapter(context):
 
     import time as _time
     _t_ch2 = _time.time()
+    _t_pe = _t_peer = _t_chart = _t_ch2  # 预初始化，避免条件块跳过时未定义
 
     stock_code = project_params.get('stock_code', '')  # 从project_params获取（与V2一致）
     stock_name = context.get('stock_name', stock_code)
