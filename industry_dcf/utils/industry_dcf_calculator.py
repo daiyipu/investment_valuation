@@ -1259,3 +1259,84 @@ def get_industry_fcff_rev_ratio(
 
     except Exception:
         return 0
+
+
+# Module-level cache for get_industry_benchmark_combined (avoids repeated fetches)
+_benchmark_combined_cache = {}  # {l3_code: (result_dict, timestamp)}
+
+
+def get_industry_benchmark_combined(
+    ts_code: str,
+    pro,
+    force_refresh: bool = False,
+) -> dict:
+    """Get industry-calibrated forecast years AND FCFF/Revenue ratio in one call.
+
+    This is the preferred entry point when both values are needed (e.g., Ch3 DCF).
+    Avoids fetching the same industry data twice (24 companies × 3 statements × 0.35s).
+
+    Returns dict with keys:
+        'forecast_years': int (default 5)
+        'fcff_rev_median': float (default 0)
+    """
+    import time as _time
+    from .rate_limiter import RateLimiter as _RL
+    from .shenwan_lookup import find_l3_by_code as _find_l3
+    from .industry_data_fetcher import IndustryDataFetcher as _IDF
+
+    result = {'forecast_years': 5, 'fcff_rev_median': 0}
+
+    if not ts_code or pro is None:
+        return result
+
+    try:
+        # 1. Find L3 industry
+        industry_info = _find_l3(ts_code, pro)
+        if not industry_info:
+            return result
+        l3_code = industry_info['l3_code']
+
+        # 2. Check memory cache (valid 24h)
+        if not force_refresh and l3_code in _benchmark_combined_cache:
+            cached_result, cached_ts = _benchmark_combined_cache[l3_code]
+            if _time.time() - cached_ts < 86400:
+                return cached_result
+
+        # Also check _forecast_years_cache for backwards compat
+        if not force_refresh and l3_code in _forecast_years_cache:
+            cached_years, cached_ts = _forecast_years_cache[l3_code]
+            if _time.time() - cached_ts < 86400:
+                result['forecast_years'] = cached_years
+                # Still need fcff_rev, but at least years are cached
+
+        # 3. Fetch data ONCE (reuses JSON file cache)
+        rl = _RL()
+        fetcher = _IDF(pro, rate_limiter=rl)
+        calculator = IndustryDCFCalculator()
+
+        industry_financials = fetcher.get_industry_financials(
+            l3_code, force_refresh=force_refresh,
+        )
+        industry_pe_data = fetcher.get_industry_daily_basics(l3_code)
+
+        # 4. Calculate benchmark (single computation)
+        benchmark = calculator.calculate_industry_benchmark(
+            industry_financials, industry_pe_data=industry_pe_data,
+        )
+
+        if 'error' not in benchmark:
+            years = benchmark.get('recommended_forecast_years', 5)
+            fcff_median = benchmark.get('fcff_rev_ratio', {}).get('median', 0)
+            result['forecast_years'] = years
+            result['fcff_rev_median'] = fcff_median
+
+            # Sync with separate caches
+            _forecast_years_cache[l3_code] = (years, _time.time())
+
+        # 5. Cache result
+        _benchmark_combined_cache[l3_code] = (result, _time.time())
+
+        return result
+
+    except Exception:
+        return result

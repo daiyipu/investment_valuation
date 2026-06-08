@@ -46,7 +46,7 @@ from module_utils import (
 _ROOT_DIR = os.path.dirname(PROJECT_DIR)
 if _ROOT_DIR not in sys.path:
     sys.path.insert(0, _ROOT_DIR)
-from industry_dcf.utils.industry_dcf_calculator import get_industry_forecast_years, get_industry_fcff_rev_ratio
+from industry_dcf.utils.industry_dcf_calculator import get_industry_forecast_years, get_industry_fcff_rev_ratio, get_industry_benchmark_combined
 
 # 获取中文字体
 font_prop = get_font_prop()
@@ -95,11 +95,12 @@ def generate_chapter(context):
 
     # 行业校准预测年数（默认5年，有pro时动态获取）
     n_years = 5
+    _industry_benchmark = None  # 缓存行业校准数据，避免重复获取
 
     # 从placement_params中获取财务数据
     net_income = project_params.get('net_income', 253532329.85)  # 净利润
 
-    # 获取真实总股本（从 Tushare）
+    # 获取真实总股本（从 Tushare）+ 一次性获取行业校准数据
     total_shares = 767460689  # 默认值，将通过API获取真实值
     try:
         ts_token = os.environ.get('TUSHARE_TOKEN', '')
@@ -107,7 +108,11 @@ def generate_chapter(context):
             import tushare as ts
 
             pro = ts.pro_api(ts_token)
-            n_years = get_industry_forecast_years(stock_code, pro)
+            # 一次性获取预测年数 + FCFF/营收比率（后续复用）
+            _industry_benchmark = get_industry_benchmark_combined(stock_code, pro)
+            n_years = _industry_benchmark['forecast_years']
+            print(f"  行业校准: 预测{n_years}年, FCFF/营收中位数={_industry_benchmark['fcff_rev_median']:.4f}")
+
             trade_date = (datetime.now() - timedelta(days=1)).strftime('%Y%m%d')
 
             df_basic = pro.daily_basic(
@@ -241,15 +246,19 @@ def generate_chapter(context):
 
     # 当 historical_fcf_data 不存在时，用行业比率修正 base_fcf
     if not ('historical_fcf_data' in project_params and project_params['historical_fcf_data']):
-        ts_token_ind = os.environ.get('TUSHARE_TOKEN', '')
         industry_fcff_rev = 0
-        if ts_token_ind and stock_code:
-            try:
-                import tushare as ts
-                _pro = ts.pro_api(ts_token_ind)
-                industry_fcff_rev = get_industry_fcff_rev_ratio(stock_code, _pro)
-            except Exception:
-                pass
+        # 优先使用已缓存的行业校准数据
+        if _industry_benchmark:
+            industry_fcff_rev = _industry_benchmark['fcff_rev_median']
+        else:
+            ts_token_ind = os.environ.get('TUSHARE_TOKEN', '')
+            if ts_token_ind and stock_code:
+                try:
+                    import tushare as ts
+                    _pro = ts.pro_api(ts_token_ind)
+                    industry_fcff_rev = get_industry_fcff_rev_ratio(stock_code, _pro)
+                except Exception:
+                    pass
         latest_revenue = income.get('revenue', 0) if isinstance(income, dict) else 0
         if industry_fcff_rev > 0 and latest_revenue > 0:
             industry_derived = latest_revenue * industry_fcff_rev
@@ -294,15 +303,18 @@ def generate_chapter(context):
         latest_rev_yi = historical_fcf['data'][-1].get('revenue', 0) if historical_fcf['data'] else 0
         latest_rev = latest_rev_yi * 100000000  # 亿元→元
         # 获取行业FCFF/营收比率用于异常判断
-        ts_token_chk = os.environ.get('TUSHARE_TOKEN', '')
         industry_fcff_rev = 0
-        if ts_token_chk and stock_code:
-            try:
-                import tushare as ts
-                _pro = ts.pro_api(ts_token_chk)
-                industry_fcff_rev = get_industry_fcff_rev_ratio(stock_code, _pro)
-            except Exception:
-                pass
+        if _industry_benchmark:
+            industry_fcff_rev = _industry_benchmark['fcff_rev_median']
+        else:
+            ts_token_chk = os.environ.get('TUSHARE_TOKEN', '')
+            if ts_token_chk and stock_code:
+                try:
+                    import tushare as ts
+                    _pro = ts.pro_api(ts_token_chk)
+                    industry_fcff_rev = get_industry_fcff_rev_ratio(stock_code, _pro)
+                except Exception:
+                    pass
         industry_derived = latest_rev * industry_fcff_rev if industry_fcff_rev > 0 else 0
         # 与行业预期FCFF比较，偏差超过3倍视为异常
         if industry_derived > 0:
@@ -503,15 +515,18 @@ def generate_chapter(context):
         add_paragraph(document, f'• 最新年度FCF（{recent_fcf[-1]["year"]}年）：{latest_fcf:.2f} 亿元')
 
         # 与行业FCFF/营收比率比较
-        ts_token_cmp = os.environ.get('TUSHARE_TOKEN', '')
         industry_fcff_rev_cmp = 0
-        if ts_token_cmp and stock_code:
-            try:
-                import tushare as ts
-                _pro_cmp = ts.pro_api(ts_token_cmp)
-                industry_fcff_rev_cmp = get_industry_fcff_rev_ratio(stock_code, _pro_cmp)
-            except Exception:
-                pass
+        if _industry_benchmark:
+            industry_fcff_rev_cmp = _industry_benchmark['fcff_rev_median']
+        else:
+            ts_token_cmp = os.environ.get('TUSHARE_TOKEN', '')
+            if ts_token_cmp and stock_code:
+                try:
+                    import tushare as ts
+                    _pro_cmp = ts.pro_api(ts_token_cmp)
+                    industry_fcff_rev_cmp = get_industry_fcff_rev_ratio(stock_code, _pro_cmp)
+                except Exception:
+                    pass
         latest_rev_cmp = recent_fcf[-1].get('revenue', 0)
         if industry_fcff_rev_cmp > 0 and latest_rev_cmp > 0:
             company_fcff_rev = latest_fcf / latest_rev_cmp
