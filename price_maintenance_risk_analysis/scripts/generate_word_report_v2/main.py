@@ -310,7 +310,7 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
     # 加载配置数据
     print("\n 加载配置数据...")
     project_params, risk_params, market_data = load_placement_config(stock_code)
-    industry_data = _load_industry_data(stock_code)
+    industry_data = _load_industry_data(stock_code, issue_date=issue_date)
 
     # 优先从配置文件中读取发行日（一旦配置文件中有发行日，就始终使用它）
     config_issue_date = project_params.get('issue_date', '')
@@ -452,7 +452,7 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
                 # 重新加载数据
                 print("\n 重新加载更新后的数据...")
                 project_params, risk_params, market_data = load_placement_config(stock_code)
-                industry_data = _load_industry_data(stock_code)
+                industry_data = _load_industry_data(stock_code, issue_date=issue_date)
 
                 is_fresh_updated, data_msg_updated = check_data_freshness(market_data)
                 print(f" {data_msg_updated}")
@@ -662,7 +662,7 @@ def generate_report_headless(stock_code, stock_name=None, issue_date=None, force
             result['stock_name'] = stock_name
 
         # 加载行业数据（失败时用空dict，不阻塞后续分析）
-        industry_data = _load_industry_data(stock_code)
+        industry_data = _load_industry_data(stock_code, issue_date=issue_date)
         if industry_data is None:
             print(f"  ⚠️ 行业数据加载失败，将跳过行业相关分析")
             industry_data = {}
@@ -739,7 +739,7 @@ def generate_report_headless(stock_code, stock_name=None, issue_date=None, force
     return result
 
 
-def _load_industry_data(stock_code, auto_generate=True):
+def _load_industry_data(stock_code, auto_generate=True, issue_date=None):
     """
     加载行业数据，支持自动生成和数据更新检查
 
@@ -778,7 +778,7 @@ def _load_industry_data(stock_code, auto_generate=True):
                                 if scripts_dir not in sys.path:
                                     sys.path.insert(0, scripts_dir)
                                 from update_market_data import generate_industry_data
-                                new_data = generate_industry_data(stock_code)
+                                new_data = generate_industry_data(stock_code, issue_date=issue_date)
                                 if new_data:
                                     db.save_industry_data(stock_code, new_data)
                                     print(f" ✅ 行业数据更新成功！")
@@ -821,7 +821,7 @@ def _load_industry_data(stock_code, auto_generate=True):
             if scripts_dir not in sys.path:
                 sys.path.insert(0, scripts_dir)
             from update_market_data import generate_industry_data
-            industry_data = generate_industry_data(stock_code)
+            industry_data = generate_industry_data(stock_code, issue_date=issue_date)
             if industry_data:
                 # 保存到DB
                 if db:

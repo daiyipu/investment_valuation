@@ -1542,7 +1542,7 @@ def get_stock_industry_classification(stock_code):
         }
 
 
-def fetch_industry_index_data(index_code, days=500, stock_code=None, sw_industry_name=None):
+def fetch_industry_index_data(index_code, days=500, stock_code=None, sw_industry_name=None, issue_date=None):
     """
     获取申万行业指数历史数据（使用sw_daily接口，超限时降级AKShare）
 
@@ -1551,15 +1551,23 @@ def fetch_industry_index_data(index_code, days=500, stock_code=None, sw_industry
         days: 获取天数
         stock_code: 股票代码，用于AKShare降级时查找同花顺行业
         sw_industry_name: 申万行业名称，用于AKShare降级时模糊匹配
+        issue_date: 报价日(YYYYMMDD)，历史报价日时按报价日窗口查询
 
     返回:
         DataFrame或None
     """
     try:
         pro = _init_tushare_pro()
-        # 计算日期范围
-        end_date = datetime.now().strftime('%Y%m%d')
-        start_date = (datetime.now() - timedelta(days=days*2)).strftime('%Y%m%d')
+        # 计算日期范围：历史报价日按报价日窗口，否则按当前回溯
+        today = datetime.now().strftime('%Y%m%d')
+        if issue_date and issue_date < today:
+            from datetime import timedelta as _td
+            issue_dt = datetime.strptime(issue_date, '%Y%m%d')
+            start_date = (issue_dt - _td(days=days*2)).strftime('%Y%m%d')
+            end_date = (issue_dt + _td(days=10)).strftime('%Y%m%d')
+        else:
+            end_date = today
+            start_date = (datetime.now() - timedelta(days=days*2)).strftime('%Y%m%d')
 
         print(f"   查询时间范围: {start_date} ~ {end_date}")
 
@@ -1729,7 +1737,7 @@ def _fetch_industry_data_akshare(sw_index_code, start_date, end_date, stock_code
         return None
 
 
-def generate_industry_data(stock_code, days=500):
+def generate_industry_data(stock_code, days=500, issue_date=None):
     """
     生成行业指数数据（用于对比分析）
 
@@ -1782,7 +1790,7 @@ def generate_industry_data(stock_code, days=500):
     for idx_code, idx_name, idx_level in fallback_chain:
         display = idx_name or idx_code
         print(f"📡 正在获取 {display}（{idx_code}）的行业指数数据...")
-        result = fetch_industry_index_data(idx_code, days=days, stock_code=stock_code, sw_industry_name=idx_name)
+        result = fetch_industry_index_data(idx_code, days=days, stock_code=stock_code, sw_industry_name=idx_name, issue_date=issue_date)
         if result is not None and len(result) >= 250:
             df = result
             used_index_code = idx_code
