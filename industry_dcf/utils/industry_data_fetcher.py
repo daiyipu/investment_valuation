@@ -138,7 +138,9 @@ class IndustryDataFetcher:
         member_set = set(member_codes)
 
         # 一次取全市场 daily_basic，本地筛选行业成员（1次调用替代N次）
-        for td in [trade_date] + [(datetime.now() - timedelta(days=d)).strftime('%Y%m%d') for d in range(1, 10)]:
+        # 回退序列基于传入的trade_date（报价日），而非now()
+        base_dt = datetime.strptime(trade_date, '%Y%m%d')
+        for td in [trade_date] + [(base_dt - timedelta(days=d)).strftime('%Y%m%d') for d in range(1, 10)]:
             try:
                 df_all = self.rate_limiter.call(
                     self.pro.daily_basic,

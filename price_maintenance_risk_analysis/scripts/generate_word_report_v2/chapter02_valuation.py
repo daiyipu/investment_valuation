@@ -124,12 +124,13 @@ def generate_chapter(context):
 
                 pro = ts.pro_api(ts_token)
 
-                # 获取目标公司的估值数据（自动往前推1-2天直到找到交易日）
+                # 获取目标公司的估值数据（回溯分析时以报价日为锚，往前找最近交易日）
                 trade_date = None
                 df_target = None
+                anchor = issue_date or datetime.now().strftime('%Y%m%d')
 
-                for days_back in range(1, 16):  # 尝试往前推1-15天（覆盖长假）
-                    test_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y%m%d')
+                for days_back in range(0, 16):  # 从报价日（含）往前推15天（覆盖长假）
+                    test_date = (datetime.strptime(anchor, '%Y%m%d') - timedelta(days=days_back)).strftime('%Y%m%d')
                     try:
                         df_target = pro.daily_basic(
                             ts_code=stock_code,
@@ -249,8 +250,8 @@ def generate_chapter(context):
                     if not candidate_codes:
                         candidate_codes = [('l3_code', target_index_code)]
 
-                    end_date = datetime.now().strftime('%Y%m%d')
-                    start_date = (datetime.now() - timedelta(days=10)).strftime('%Y%m%d')
+                    end_date = issue_date or datetime.now().strftime('%Y%m%d')
+                    start_date = (datetime.strptime(end_date, '%Y%m%d') - timedelta(days=10)).strftime('%Y%m%d')
 
                     # 逐级尝试 DB缓存 → sw_daily
                     for lv, cand_code in candidate_codes:
@@ -1108,7 +1109,7 @@ def generate_chapter(context):
                 ind_pe_data = context.get('_industry_pe_data')
                 if not ind_financials or not ind_pe_data:
                     ind_financials = fetcher.get_industry_financials(l3_code)
-                    ind_pe_data = fetcher.get_industry_daily_basics(l3_code)
+                    ind_pe_data = fetcher.get_industry_daily_basics(l3_code, trade_date=issue_date)
                     # 存入context供Ch3复用
                     context['_industry_financials'] = ind_financials
                     context['_industry_pe_data'] = ind_pe_data
@@ -1123,11 +1124,12 @@ def generate_chapter(context):
                 total_shares = project_params.get('total_shares', 0)
                 market_cap = current_price * total_shares if current_price and total_shares else 0
 
-                # 尝试从daily_basic获取更准确的市值
+                # 尝试从daily_basic获取更准确的市值（回溯分析时以报价日为锚）
                 if ts_token:
                     try:
+                        mkt_anchor = issue_date or datetime.now().strftime('%Y%m%d')
                         for db_back in range(0, 10):
-                            td = (datetime.now() - timedelta(days=db_back)).strftime('%Y%m%d')
+                            td = (datetime.strptime(mkt_anchor, '%Y%m%d') - timedelta(days=db_back)).strftime('%Y%m%d')
                             db_df = pro.daily_basic(ts_code=stock_code, trade_date=td,
                                                     fields='ts_code,total_mv,total_share,close')
                             if db_df is not None and not db_df.empty:
