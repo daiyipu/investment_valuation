@@ -137,6 +137,17 @@ def get_l3_members(l3_code: str, pro_api) -> List[str]:
 
     Returns list of ts_code strings.
     """
+    # 优先使用 index_member_all（部分L3行业在 index_member 中返回空或缺失）
+    try:
+        members_all = pro_api.index_member_all(l3_code=l3_code)
+        if members_all is not None and not members_all.empty:
+            if 'out_date' in members_all.columns:
+                members_all = members_all[members_all['out_date'].isna()]
+            return members_all['ts_code'].unique().tolist()
+    except Exception as e:
+        print(f"  index_member_all 获取行业成员失败({l3_code}): {e}")
+
+    # 降级：使用 index_member
     try:
         members = pro_api.index_member(index_code=l3_code)
         if members is None or members.empty:

@@ -494,9 +494,28 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技', issu
                    如果为None，则使用当前日期作为发行日
     """
     # 获取历史数据
+    # 若指定了历史报价日，需确保数据范围覆盖报价日（报价日前60天到当前）
     df = fetch_latest_data(stock_code)
     if df is None:
         return None
+
+    # 报价日是历史日期时，补充获取报价日附近的数据（fetch_latest_data只取近2年）
+    if issue_date and issue_date < df['trade_date'].min():
+        print(f"   ⚠️ 当前数据范围({df['trade_date'].min()}~{df['trade_date'].max()})未覆盖报价日{issue_date}，补充获取历史数据...")
+        pro = _init_tushare_pro()
+        issue_date_obj = datetime.strptime(issue_date, '%Y%m%d')
+        # 报价日前60天到报价日后10天（覆盖MA20计算和询价窗口）
+        hist_start = (issue_date_obj - timedelta(days=90)).strftime('%Y%m%d')
+        hist_end = (issue_date_obj + timedelta(days=10)).strftime('%Y%m%d')
+        print(f"   补充查询: {hist_start} ~ {hist_end}")
+        try:
+            df_hist = pro.daily(ts_code=stock_code, start_date=hist_start, end_date=hist_end)
+            if df_hist is not None and not df_hist.empty:
+                import pandas as pd
+                df = pd.concat([df_hist, df], ignore_index=True).drop_duplicates(subset=['trade_date']).sort_values('trade_date').reset_index(drop=True)
+                print(f"   ✅ 补充后数据范围: {df['trade_date'].iloc[0]} ~ {df['trade_date'].iloc[-1]}")
+        except Exception as e:
+            print(f"   ⚠️ 补充历史数据失败: {e}")
 
     # 确定发行日（报价日）
     if issue_date is None:
