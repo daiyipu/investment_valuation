@@ -554,29 +554,29 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技', issu
                    如果为None，则使用当前日期作为发行日
     """
     # 获取历史数据
-    # 若指定了历史报价日，需确保数据范围覆盖报价日（报价日前60天到当前）
-    df = fetch_latest_data(stock_code)
-    if df is None:
-        return None
+    # 策略：历史报价日直接只拉报价日窗口（避免拉最近2年后又截断丢弃）
+    from datetime import timedelta as _timedelta
+    today = datetime.now().strftime('%Y%m%d')
 
-    # 报价日是历史日期时，补充获取报价日附近的数据（fetch_latest_data只取近2年）
-    if issue_date and issue_date < df['trade_date'].min():
-        from datetime import timedelta as _timedelta
-        print(f"   ⚠️ 当前数据范围({df['trade_date'].min()}~{df['trade_date'].max()})未覆盖报价日{issue_date}，补充获取历史数据...")
-        pro = _init_tushare_pro()
+    if issue_date and issue_date < today:
+        # 历史报价日：直接拉报价日窗口（前500天~后10天，覆盖MA250+波动率计算）
         issue_date_obj = datetime.strptime(issue_date, '%Y%m%d')
-        # 报价日前400天到报价日后10天（覆盖MA250计算所需250交易日 + 询价窗口）
-        hist_start = (issue_date_obj - _timedelta(days=400)).strftime('%Y%m%d')
+        hist_start = (issue_date_obj - _timedelta(days=500)).strftime('%Y%m%d')
         hist_end = (issue_date_obj + _timedelta(days=10)).strftime('%Y%m%d')
-        print(f"   补充查询: {hist_start} ~ {hist_end}")
-        try:
-            df_hist = pro.daily(ts_code=stock_code, start_date=hist_start, end_date=hist_end)
-            if df_hist is not None and not df_hist.empty:
-                import pandas as pd
-                df = pd.concat([df_hist, df], ignore_index=True).drop_duplicates(subset=['trade_date']).sort_values('trade_date').reset_index(drop=True)
-                print(f"   ✅ 补充后数据范围: {df['trade_date'].iloc[0]} ~ {df['trade_date'].iloc[-1]}")
-        except Exception as e:
-            print(f"   ⚠️ 补充历史数据失败: {e}")
+        print(f"📡 历史报价日{issue_date}，直接查询报价日窗口...")
+        print(f"   查询日期范围: {hist_start} ~ {hist_end}")
+        pro = _init_tushare_pro()
+        df = pro.daily(ts_code=stock_code, start_date=hist_start, end_date=hist_end)
+        if df is None or df.empty:
+            print(f"❌ 未获取到报价日附近数据")
+            return None
+        df = df.sort_values('trade_date').reset_index(drop=True)
+        print(f"✅ 获取到 {len(df)} 条数据（范围: {df['trade_date'].iloc[0]} ~ {df['trade_date'].iloc[-1]}）")
+    else:
+        # 无报价日或报价日为近期：拉最近数据
+        df = fetch_latest_data(stock_code)
+        if df is None:
+            return None
 
     # 确定发行日（报价日）
     if issue_date is None:
