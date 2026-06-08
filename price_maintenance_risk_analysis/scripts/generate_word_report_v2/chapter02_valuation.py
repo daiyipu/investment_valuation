@@ -790,17 +790,24 @@ def generate_chapter(context):
                 peer_codes = peer_companies_val['code'].tolist()[:20]  # 取前20个
                 print(f"  同行公司数量: {len(peer_codes)}")
 
-                # 获取每个同行公司的历史PE
-                peer_pe_histories = []
-                for peer_code in peer_codes:
+                # 获取同行公司历史PE（并行查询，避免逐家串行20次API调用）
+                from concurrent.futures import ThreadPoolExecutor
+
+                def _fetch_one_peer(code):
                     try:
-                        peer_history = pe_analyzer.get_stock_pe_history(peer_code, days=1825)
-                        if peer_history is not None and not peer_history.empty:
-                            peer_history = peer_history.rename(columns={'pe_ttm': 'pe'})
-                            peer_pe_histories.append(peer_history)
-                    except Exception as e:
-                        print(f"    获取{peer_code}历史PE失败: {e}")
-                        continue
+                        h = pe_analyzer.get_stock_pe_history(code, days=1825)
+                        if h is not None and not h.empty:
+                            return h.rename(columns={'pe_ttm': 'pe'})
+                    except Exception:
+                        pass
+                    return None
+
+                peer_pe_histories = []
+                with ThreadPoolExecutor(max_workers=5) as executor:
+                    for h in executor.map(_fetch_one_peer, peer_codes):
+                        if h is not None:
+                            peer_pe_histories.append(h)
+                print(f"  并行获取 {len(peer_pe_histories)}/{len(peer_codes)} 家同行历史PE完成")
 
                 if peer_pe_histories:
                     # 合并所有同行公司的历史PE
