@@ -153,23 +153,22 @@ class PEHistoryAnalyzer:
                 index_code = None
                 index_level = None
                 industry_name = None
+                # 保存所有层级的候选代码，用于sw_daily无数据时降级
+                candidate_codes = []
 
                 try:
                     df_member_all = self.pro.index_member_all(ts_code=stock_code)
                     if df_member_all is not None and not df_member_all.empty:
                         row = df_member_all.iloc[0]
+                        # 收集L1/L2/L3候选（按精确度从高到低）
                         if row.get('l3_code') and str(row['l3_code']).startswith('85'):
-                            index_code = row['l3_code']
-                            index_level = 'L3'
-                            industry_name = row.get('l3_name', index_code)
-                        elif row.get('l2_code') and str(row['l2_code']).startswith('80'):
-                            index_code = row['l2_code']
-                            index_level = 'L2'
-                            industry_name = row.get('l2_name', index_code)
-                        elif row.get('l1_code'):
-                            index_code = row['l1_code']
-                            index_level = 'L1'
-                            industry_name = row.get('l1_name', index_code)
+                            candidate_codes.append(('L3', row['l3_code'], row.get('l3_name', '')))
+                        if row.get('l2_code') and str(row['l2_code']).startswith('80'):
+                            candidate_codes.append(('L2', row['l2_code'], row.get('l2_name', '')))
+                        if row.get('l1_code'):
+                            candidate_codes.append(('L1', row['l1_code'], row.get('l1_name', '')))
+                        if candidate_codes:
+                            index_level, index_code, industry_name = candidate_codes[0]
                 except Exception:
                     pass
 
@@ -218,34 +217,41 @@ class PEHistoryAnalyzer:
                     except Exception:
                         industry_name = index_code
 
-                # 2. 获取行业指数历史PE数据
-                # 优先从DB缓存读取，避免sw_daily频率限制
+                # 2. 获取行业指数历史PE数据（L3无数据时降级到L2/L1）
+                # 部分L3指数（如农业综合Ⅲ850191.SI）在sw_daily中无数据，需逐级降级
                 df_index = None
-                try:
-                    from utils.db_manager import ValuationDB
-                    db = ValuationDB()
-                    df_index = db.load_industry_daily(index_code, start_date, end_date)
-                    if df_index is not None and not df_index.empty:
-                        print(f"  使用DB缓存的行业PE历史数据（{len(df_index)}条）")
-                except Exception:
-                    pass
+                for cand_level, cand_code, cand_name in candidate_codes:
+                    # 优先从DB缓存读取
+                    try:
+                        from utils.db_manager import ValuationDB
+                        db = ValuationDB()
+                        df_index = db.load_industry_daily(cand_code, start_date, end_date)
+                        if df_index is not None and not df_index.empty:
+                            index_code, index_level, industry_name = cand_code, cand_level, cand_name or cand_code
+                            print(f"  使用DB缓存的行业PE历史数据（{cand_level} {cand_code}，{len(df_index)}条）")
+                            break
+                    except Exception:
+                        pass
 
-                if df_index is None or df_index.empty:
+                    # sw_daily 查询
                     try:
                         df_index = self.pro.sw_daily(
-                            ts_code=index_code,
+                            ts_code=cand_code,
                             start_date=start_date,
                             end_date=end_date
                         )
-                    except Exception as api_error:
-                        print(f" 调用tushare sw_daily接口失败")
-                        print(f"   原因：{api_error}")
-                        print(f"   解决方案：将使用个股PE历史数据生成趋势图")
-                        return industry_name, index_code, None
+                        if df_index is not None and not df_index.empty:
+                            index_code, index_level, industry_name = cand_code, cand_level, cand_name or cand_code
+                            if cand_level != candidate_codes[0][0]:
+                                print(f"  L3无数据，降级使用{cand_level} {cand_code}({cand_name})")
+                            break
+                    except Exception:
+                        df_index = None
+                        continue
 
                 if df_index is None or df_index.empty:
                     print(f" {industry_name}({index_code})的历史PE数据不可用")
-                    print(f"   原因：数据为空")
+                    print(f"   原因：数据为空(L1/L2/L3均无sw_daily数据)")
                     print(f"   解决方案：将使用个股PE历史数据生成趋势图")
                     return industry_name, index_code, None
 
