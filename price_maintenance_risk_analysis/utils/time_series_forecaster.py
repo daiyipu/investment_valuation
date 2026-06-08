@@ -87,9 +87,9 @@ class TimeSeriesForecaster:
 
     def find_optimal_arima_order(
         self,
-        max_p: int = 3,
+        max_p: int = 2,
         max_d: int = 0,
-        max_q: int = 3,
+        max_q: int = 2,
         information_criterion: str = 'aic'
     ) -> Dict:
         """
@@ -196,9 +196,9 @@ class TimeSeriesForecaster:
         horizon: int = 120,
         order: tuple = None,
         auto_find_order: bool = True,
-        max_p: int = 3,
+        max_p: int = 2,
         max_d: int = 0,
-        max_q: int = 3
+        max_q: int = 2
     ) -> Dict:
         """
         使用ARIMA预测漂移率（年化收益率）
