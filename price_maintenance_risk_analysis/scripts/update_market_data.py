@@ -595,18 +595,28 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技', issu
     # 首先尝试获取指定发行日的价格，如果当天不是交易日，获取最近的交易日价格
     df_sorted = df.sort_values('trade_date').reset_index(drop=True)
 
-    # 找到发行日或之后的最近交易日
-    df_on_or_after_issue = df_sorted[df_sorted['trade_date'] >= issue_date]
-    if not df_on_or_after_issue.empty:
-        # 有发行日或之后的数据，使用第一个交易日（最接近发行日）
-        latest_date = df_on_or_after_issue['trade_date'].iloc[0]
-        current_price = df_on_or_after_issue['close'].iloc[0]
-        print(f"   使用{latest_date}的价格（最接近发行日{issue_date}）")
+    # 【关键】将分析数据截断到报价日及之前——所有波动率/收益率/胜率都"截至报价日"
+    # 这样风险分析是"站在报价日那天，用当时可见信息"的回溯分析
+    # （报价日后的数据是未来，分析时不可见）
+    df_before = df_sorted[df_sorted['trade_date'] <= issue_date]
+    if not df_before.empty:
+        if len(df_before) < len(df_sorted):
+            print(f"   📅 分析数据截断至报价日{issue_date}（{len(df_before)}个交易日，回溯分析基准）")
+        df_sorted = df_before.reset_index(drop=True)
+        df = df_sorted  # 后续计算统一用截断后的df
+
+    # 报价日价格：取报价日当天，或之前最近的交易日（截断后df的最后一天即报价日基准）
+    # 报价日精确匹配优先，否则取<=报价日的最后交易日
+    df_on_issue = df_sorted[df_sorted['trade_date'] == issue_date]
+    if not df_on_issue.empty:
+        latest_date = df_on_issue['trade_date'].iloc[0]
+        current_price = df_on_issue['close'].iloc[0]
+        print(f"   使用报价日{latest_date}当天的价格")
     else:
-        # 没有发行日或之后的数据，使用最新交易日
+        # 报价日不是交易日，取之前最近的交易日
         latest_date = df_sorted['trade_date'].iloc[-1]
         current_price = df_sorted['close'].iloc[-1]
-        print(f"   发行日{issue_date}暂无数据，使用最新交易日{latest_date}的价格")
+        print(f"   报价日{issue_date}非交易日，使用最近交易日{latest_date}的价格")
 
     print(f"\n📊 计算市场指标...")
     print(f"   发行日: {issue_date}")
