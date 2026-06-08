@@ -21,6 +21,8 @@ import sys
 import subprocess
 from datetime import datetime
 
+import openpyxl
+
 
 # 两个脚本的绝对路径
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -98,25 +100,63 @@ def main():
         print(f'❌ 筛选结果文件未生成: {screening_output}')
         sys.exit(1)
 
-    # ── Step 2: 财务评分 ──
-    step2_cmd = [
-        sys.executable, EFAES_SCRIPT,
-        screening_output,
-    ]
-    if not run_step('Step 2/2: 财务评分 (batch_financial_score)', step2_cmd):
+    if not run_step('Step 2/3: 财务评分 (batch_financial_score)', step2_cmd):
         sys.exit(1)
 
     # 最终输出
     scored_output = screening_output.replace('.xlsx', '_scored.xlsx')
-    print()
-    print('=' * 60)
-    if os.path.exists(scored_output):
-        print(f'🎉 全部完成!')
-        print(f'   筛选结果: {screening_output}')
-        print(f'   最终结果: {scored_output}')
-    else:
+    if not os.path.exists(scored_output):
         print(f'⚠️ 评分结果文件未生成: {scored_output}')
         sys.exit(1)
+
+    # ── Step 3: 追加最终结论列 ──
+    # 规则: 定增决策="建议参与" 且 成长能力_趋势="通过" → 最终"通过"
+    print()
+    print('=' * 60)
+    print('  Step 3/3: 生成最终结论')
+    print('=' * 60)
+
+    wb = openpyxl.load_workbook(scored_output)
+    ws = wb.active
+
+    # 定位关键列
+    header_row = [ws.cell(1, col).value for col in range(1, ws.max_column + 1)]
+    decision_col = header_row.index('定增决策') + 1
+    growth_col = header_row.index('成长能力_趋势') + 1
+
+    # 写入新列
+    final_col = ws.max_column + 1
+    ws.cell(1, final_col, '最终结论')
+
+    pass_count = 0
+    for row_idx in range(2, ws.max_row + 1):
+        decision = str(ws.cell(row_idx, decision_col).value or '')
+        growth = str(ws.cell(row_idx, growth_col).value or '')
+
+        # 定增决策: 包含"建议参与"即为通过
+        decision_pass = '建议参与' in decision
+        # 成长能力趋势: 精确匹配"通过"
+        growth_pass = growth.strip() == '通过'
+
+        conclusion = '通过' if (decision_pass and growth_pass) else '不通过'
+        ws.cell(row_idx, final_col, conclusion)
+        if conclusion == '通过':
+            pass_count += 1
+
+        stock_name = ws.cell(row_idx, header_row.index('股票简称') + 1).value or ''
+        stock_code = ws.cell(row_idx, header_row.index('股票代码') + 1).value or ''
+        print(f'  {stock_code} {stock_name}: 定增={"✓" if decision_pass else "✗"} 成长={"✓" if growth_pass else "✗"} → {conclusion}')
+
+    wb.save(scored_output)
+
+    total = ws.max_row - 1
+    print()
+    print(f'  最终结论: {pass_count}/{total} 通过')
+    print()
+    print('=' * 60)
+    print(f'🎉 全部完成!')
+    print(f'   筛选结果: {screening_output}')
+    print(f'   最终结果: {scored_output}')
     print('=' * 60)
 
 
