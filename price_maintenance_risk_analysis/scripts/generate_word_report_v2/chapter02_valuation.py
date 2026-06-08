@@ -45,6 +45,9 @@ def generate_chapter(context):
     project_params = context['project_params']
     IMAGES_DIR = context['IMAGES_DIR']
 
+    import time as _time
+    _t_ch2 = _time.time()
+
     stock_code = project_params.get('stock_code', '')  # 从project_params获取（与V2一致）
     stock_name = context.get('stock_name', stock_code)
     _script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -715,6 +718,7 @@ def generate_chapter(context):
     add_paragraph(document, '')
 
     # 尝试从tushare获取历史PE数据并生成趋势图
+    _t_pe = _time.time()
     try:
         from utils.pe_history_analyzer import PEHistoryAnalyzer
 
@@ -782,6 +786,8 @@ def generate_chapter(context):
             sw_index_pe_percentile = (industry_pe_data['pe_ttm'] < sw_index_pe_current).sum() / len(industry_pe_data) * 100
 
             # 获取同行公司的历史PE数据
+            print(f"  ⏱ [2.3] 个股+行业PE历史: {_time.time()-_t_pe:.1f}s")
+            _t_peer = _time.time()
             print("\n获取同行公司历史PE数据...")
             custom_peer_pe_current = None
             custom_peer_pe_min = None
@@ -941,6 +947,8 @@ def generate_chapter(context):
             add_paragraph(document, '')
 
             # 生成PE趋势图
+            print(f"  ⏱ [2.3] 同行PE历史: {_time.time()-_t_peer:.1f}s")
+            _t_chart = _time.time()
             pe_trend_chart_path = os.path.join(IMAGES_DIR, '02_4_pe_trend_analysis.png')
             chart_path = pe_analyzer.generate_pe_trend_chart(
                 stock_code, stock_pe_data,
@@ -1059,6 +1067,8 @@ def generate_chapter(context):
     add_paragraph(document, '')
 
     # ==================== 2.4 PE估值分析（绝对估值与修正估值） ====================
+    print(f"  ⏱ [2.3] PE趋势图生成: {_time.time()-_t_chart:.1f}s | [2.1-2.3]合计: {_time.time()-_t_ch2:.1f}s")
+    _t_24 = _time.time()
     add_title(document, '2.4 PE估值分析', level=2)
     add_paragraph(document, '基于行业净利率、净利润增长率等参数，对PE进行绝对估值和修正估值分析。')
 
