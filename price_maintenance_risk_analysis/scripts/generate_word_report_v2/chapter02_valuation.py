@@ -1061,10 +1061,17 @@ def generate_chapter(context):
                 l3_code = ind_info['l3_code']
                 ind_name = ind_info.get('l3_name', '')
 
-                # 获取行业数据
+                # 获取行业数据（优先从context复用，避免Ch2/Ch3重复获取）
                 print("  [2.4] 获取行业数据用于PE估值...")
-                ind_financials = fetcher.get_industry_financials(l3_code)
-                ind_pe_data = fetcher.get_industry_daily_basics(l3_code)
+                ind_financials = context.get('_industry_financials')
+                ind_pe_data = context.get('_industry_pe_data')
+                if not ind_financials or not ind_pe_data:
+                    ind_financials = fetcher.get_industry_financials(l3_code)
+                    ind_pe_data = fetcher.get_industry_daily_basics(l3_code)
+                    # 存入context供Ch3复用
+                    context['_industry_financials'] = ind_financials
+                    context['_industry_pe_data'] = ind_pe_data
+                    context['_industry_l3_code'] = l3_code
                 benchmark = calculator.calculate_industry_benchmark(ind_financials, industry_pe_data=ind_pe_data)
 
                 # 获取个股数据
