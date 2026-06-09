@@ -172,48 +172,60 @@ def run_batch_screening(stock_list, output_path=None):
         except Exception:
             pro = None
 
-    for idx, item in enumerate(stock_list, 1):
-        # stock_list 元素可为 (code, name) 或 (code, name, issue_date)
+    # ===== 并发处理（多线程，API调用为主，适合I/O并行）=====
+    import threading
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    _save_lock = threading.Lock()  # Excel/DB写入锁
+    _done_count = [0]  # 已完成数（用list包装以便闭包修改）
+
+    def _process_one(item):
+        """处理单只股票（线程内执行），返回结果行"""
         code, name = item[0], item[1]
         issue_date = item[2] if len(item) > 2 else None
         t_stock = time.time()
-        date_hint = f' (报价日: {issue_date})' if issue_date else ''
-        print(f'[{idx}/{total}] {code} {name}{date_hint}')
         headless_result = generate_report_headless(code, name, issue_date=issue_date)
-        stock_elapsed = time.time() - t_stock
-        raw_results.append(headless_result)
         row = _analyze_one(code, name, lambda c, n: headless_result)
-        row['报价日'] = issue_date or ''  # 供财务评分按报价日回溯年份
+        row['报价日'] = issue_date or ''
 
-        # 计算报价日后7个月涨跌幅（解禁后1个月的实际收益）
+        # 计算报价日后7个月涨跌幅
         if issue_date and pro:
             issue_p, target_p, target_date_actual, ret = _calc_post_issue_return(pro, code, issue_date, months=7)
             row['报价日价格'] = f"{issue_p:.2f}" if issue_p else '-'
             row['7个月后价格'] = f"{target_p:.2f}" if target_p else '-'
             row['7个月后涨跌幅'] = f"{ret*100:+.2f}%" if ret is not None else '-'
-            if ret is not None:
-                print(f'  📈 7个月后({target_date_actual}): {target_p:.2f}元, 涨跌幅={ret*100:+.2f}%')
-            time.sleep(0.3)
+            time.sleep(0.2)
         else:
             row['报价日价格'] = '-'
             row['7个月后价格'] = '-'
             row['7个月后涨跌幅'] = '-'
 
-        results.append(row)
-        # 增量写入：每只股票分析完立即保存Excel，中断不丢数据
-        try:
-            pd.DataFrame(results).to_excel(output_path, index=False, engine='openpyxl')
-        except Exception as _e:
-            print(f'  ⚠️ 增量保存失败: {_e}')
-        print(f'  ⏱ {code} 耗时 {stock_elapsed:.1f}s (已保存{len(results)}/{total})')
+        elapsed = time.time() - t_stock
+        # 线程安全地保存结果
+        with _save_lock:
+            results.append(row)
+            raw_results.append(headless_result)
+            _done_count[0] += 1
+            n = _done_count[0]
+            # 每3只或最后一只增量保存Excel
+            if n % 3 == 0 or n == total:
+                try:
+                    pd.DataFrame(results).to_excel(output_path, index=False, engine='openpyxl')
+                except Exception:
+                    pass
+            # DB保存
+            try:
+                from utils.db_manager import ValuationDB
+                db = ValuationDB()
+                db.save_screening_result(batch_id, code, name, headless_result)
+            except Exception:
+                pass
+        print(f'  ✅ [{n}/{total}] {code} {name} ({elapsed:.1f}s)')
 
-        # 保存到DB
-        try:
-            from utils.db_manager import ValuationDB
-            db = ValuationDB()
-            db.save_screening_result(batch_id, code, name, headless_result)
-        except Exception:
-            pass
+    MAX_WORKERS = min(5, total)  # 5并发（平衡速度与API限流）
+    print(f'并发模式：{MAX_WORKERS}线程并行处理\n')
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        list(executor.map(_process_one, stock_list))
 
     batch_elapsed = time.time() - t_batch_start
 
