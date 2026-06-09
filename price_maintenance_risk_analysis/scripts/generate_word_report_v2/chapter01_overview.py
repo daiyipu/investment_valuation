@@ -585,8 +585,9 @@ def generate_chapter(context):
 
             stock_volatility = market_data.get('volatility_60d', 0)
             industry_volatility = industry_data.get('volatility_60d', 0)
-            stock_return = market_data.get('annual_return_60d', 0)
-            industry_return = industry_data.get('annual_return_60d', 0)
+            # 用区间收益率(实际涨跌)与表格保持一致，不用年化
+            stock_return = market_data.get('period_return_60d', 0)
+            industry_return = industry_data.get('period_return_60d', 0)
 
             if stock_volatility > 0 and industry_volatility > 0:
                 if stock_volatility > industry_volatility:
