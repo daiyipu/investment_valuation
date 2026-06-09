@@ -2182,53 +2182,48 @@ def generate_chapter(context):
     # 汇总结果（统一使用区间形式，只包含有效的大类）
     thresholds = []
 
-    # 只有当历史场景形成有效交集时才加入
+    # ① 历史市场场景（市场指数+行业PE+个股PE，取交集）
     if historical_valid and historical_threshold is not None:
         total_count = sum(r['count'] for r in category_premium_ranges.values())
-        thresholds.append(('历史数据场景', {
+        thresholds.append(('历史市场场景', {
             'min_premium': historical_min_premium,
             'max_premium': historical_max_premium,
             'avg_premium': historical_threshold,
             'count': total_count
         }))
 
-    # 参数构造场景（只有当有符合条件的环境匹配场景时才有效）
+    # ② 参数构造场景（合并：参数构造+蒙特卡洛+反向推算，取并集）
+    other_ranges = []  # [(min, max), ...]
+    other_count = 0
     if param_valid and param_threshold is not None:
-        thresholds.append(('参数构造场景', {
-            'min_premium': param_min_premium,
-            'max_premium': param_max_premium,
-            'avg_premium': param_threshold,
-            'count': len(environment_matched_scenarios) if 'environment_matched_scenarios' in locals() else 0
-        }))
-
-    # 蒙特卡洛模拟场景（只有当有符合条件的溢价率时才有效）
+        other_ranges.append((param_min_premium, param_max_premium))
+        other_count += len(environment_matched_scenarios) if 'environment_matched_scenarios' in locals() else 0
     if 'qualified_mc_rates' in locals() and qualified_mc_rates:
         mc_min_premium = min(qualified_mc_rates)
         mc_max_premium = max(qualified_mc_rates)
-        mc_threshold = (mc_min_premium + mc_max_premium) / 2
-        thresholds.append(('蒙特卡洛模拟', {
-            'min_premium': mc_min_premium,
-            'max_premium': mc_max_premium,
-            'avg_premium': mc_threshold,
-            'count': len(qualified_mc_rates)
-        }))
-
-    # 反向推算（只有当上限 > -20%时才有效）
+        other_ranges.append((mc_min_premium, mc_max_premium))
+        other_count += len(qualified_mc_rates)
     if reverse_valid and 'premium_to_ma20_adjusted' in locals():
-        thresholds.append(('反向推算', {
-            'min_premium': reverse_min_premium,
-            'max_premium': reverse_max_premium,
-            'avg_premium': reverse_nominal_premium,
-            'count': 1  # 反向推算只有一个结果
+        other_ranges.append((reverse_min_premium, reverse_max_premium))
+        other_count += 1
+    if other_ranges:
+        # 三种前瞻方法取并集（最宽范围，任一方法有效即计入）
+        combined_min = min(r[0] for r in other_ranges)
+        combined_max = max(r[1] for r in other_ranges)
+        thresholds.append(('参数构造场景(含蒙特卡洛/反向推算)', {
+            'min_premium': combined_min,
+            'max_premium': combined_max,
+            'avg_premium': (combined_min + combined_max) / 2,
+            'count': other_count
         }))
 
-    # 修正PE估值场景
+    # ③ 预期估值场景（DCF绝对估值+修正PE估值）
     if 'qualified_pe' in locals() and qualified_pe:
         pe_premiums_list = [s['premium_rate'] for s in qualified_pe]
         pe_min_premium = min(pe_premiums_list)
         pe_max_premium = max(pe_premiums_list)
         pe_avg = (pe_min_premium + pe_max_premium) / 2
-        thresholds.append(('修正PE估值', {
+        thresholds.append(('预期估值场景', {
             'min_premium': pe_min_premium,
             'max_premium': pe_max_premium,
             'avg_premium': pe_avg,
