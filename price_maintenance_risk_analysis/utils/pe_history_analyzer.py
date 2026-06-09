@@ -103,15 +103,23 @@ class PEHistoryAnalyzer:
                         print(f"   建议：减少历史天数参数（如days=730获取2年数据）")
                         return None
 
-                # 仅当「当前PE」为亏损(末值NaN)时才用AKShare，避免历史亏损误触发导致数据源切换
-                # （盈利股始终用Tushare，保证数据源和日期一致）
-                current_is_loss = df['pe_ttm'].isna().iloc[-1] if len(df) > 0 else False
-                if current_is_loss:
+                # 有亏损期时用AKShare填补NaN（合并而非替换，保证日期/数据源一致）
+                # Tushare为主(盈利期值不变)，AKShare填补亏损期(负PE)
+                has_loss = df['pe_ttm'].isna().any()
+                if has_loss:
                     ak_df = self._fetch_pe_from_akshare(stock_code)
                     if ak_df is not None:
-                        print(f"  {stock_code} 当前亏损，使用AKShare百度估值PE（{len(ak_df)}条，负PE=亏损）")
-                        return self._modify_negative_pe(ak_df)
-                # 当前盈利或AKShare失败：用Tushare，仅去NaN
+                        # 按trade_date合并：Tushare有值用Tushare，NaN处用AKShare填补
+                        import pandas as _pd
+                        df = df.sort_values('trade_date').reset_index(drop=True)
+                        ak_aligned = ak_df[['trade_date', 'pe_ttm']].rename(columns={'pe_ttm': '_pe_ak'})
+                        df = df.merge(ak_aligned, on='trade_date', how='left')
+                        filled = df['pe_ttm'].isna() & df['_pe_ak'].notna()
+                        if filled.any():
+                            df.loc[filled, 'pe_ttm'] = df.loc[filled, '_pe_ak']
+                            print(f"  {stock_code} 用AKShare填补{filled.sum()}个亏损期(负PE)，盈利期保持Tushare值")
+                        df = df.drop(columns=['_pe_ak'])
+                # 去除仍为NaN的行(两边都没数据)，保留所有有效值(含负PE)
                 df = df.dropna(subset=['pe_ttm']).sort_values('trade_date').reset_index(drop=True)
                 if len(df) > 0:
                     return self._modify_negative_pe(df)
