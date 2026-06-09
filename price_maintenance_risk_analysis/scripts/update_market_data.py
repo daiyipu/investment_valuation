@@ -1225,6 +1225,7 @@ class TushareFinancialData:
             # c_pay_acq_const_fiolta: 购建固定资产、无形资产和其他长期资产支付的现金（资本支出）
             cashflow_df = self.pro.cashflow(
                 ts_code=self.ts_code,
+                ts_code=self.ts_code,
                 start_date=start_date,
                 end_date=end_date,
                 fields='ts_code,end_date,end_type,update_flag,n_cashflow_act,c_pay_acq_const_fiolta'
@@ -1237,6 +1238,15 @@ class TushareFinancialData:
             if balance_df.empty:
                 print(f"⚠️ 未获取到资产负债表数据")
                 return None
+
+            # 回溯分析：额外按报告期(end_date字段)过滤，确保不含报价日后的财年
+            # (API的start/end_date按ann_date过滤，但报告期可能晚于报价日)
+            if issue_date:
+                for _name, _df in [('利润表', income_df), ('资产负债表', balance_df), ('现金流量表', cashflow_df)]:
+                    if _df is not None and not _df.empty and 'end_date' in _df.columns:
+                        _before = len(_df)
+                        # end_date字段是报告期(如20241231)，过滤掉>报价日的
+                        _df.drop(_df[_df['end_date'].astype(str) > issue_date].index, inplace=True)
 
             # 筛选年报数据（只使用年报，跳过季报）
             # 使用end_type字段：4=年报, 3=三季报, 2=半年报, 1=一季报
