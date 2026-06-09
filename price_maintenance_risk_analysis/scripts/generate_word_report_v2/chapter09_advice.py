@@ -2276,6 +2276,19 @@ def generate_chapter(context):
     decision_result = calculate_decision_conclusion(
         thresholds, _qbc, _cpr, _qd, _qp,
     )
+    # 构建子场景通过状态（供batch_screener输出明细列）
+    sub_scenarios = {}
+    # ①历史市场场景
+    for cat in ['市场指数', '行业PE', '个股PE']:
+        sub_scenarios[cat] = bool(_qbc and _qbc.get(cat))
+    # ②预期估值场景
+    sub_scenarios['DCF估值'] = bool(_qd)
+    sub_scenarios['修正PE估值'] = bool(_qp)
+    # ③其他场景（参数构造/蒙特卡洛/反向推算）
+    sub_scenarios['参数构造'] = 'param_valid' in locals() and param_valid
+    sub_scenarios['蒙特卡洛'] = 'qualified_mc_rates' in locals() and bool(qualified_mc_rates)
+    sub_scenarios['反向推算'] = 'reverse_valid' in locals() and reverse_valid
+    decision_result['sub_scenarios'] = sub_scenarios
     # 写入context供外部调用
     context['results']['decision_conclusion'] = decision_result
 

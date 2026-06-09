@@ -36,7 +36,10 @@ def _analyze_one(stock_code, stock_name, headless_fn):
     result = headless_fn(stock_code, stock_name)
     decision = result.get('decision_conclusion') or {}
     pr = decision.get('premium_range')
-    error = result.get('error')
+    sub = decision.get('sub_scenarios', {}) or {}
+
+    def _pass(key):
+        return '✓' if sub.get(key) else '✗'
 
     return {
         '股票代码': stock_code,
@@ -44,11 +47,16 @@ def _analyze_one(stock_code, stock_name, headless_fn):
         '溢价率下限': f"{pr['min']:+.2f}%" if pr else '-',
         '溢价率上限': f"{pr['max']:+.2f}%" if pr else '-',
         '有效阈值数': decision.get('valid_thresholds', '-'),
-        '①历史数据场景': ('✓ 通过' if decision.get('step1', {}).get('pass') else '✗ 未通过') if decision else '-',
-        '②预期估值场景': ('✓ 通过' if decision.get('step2', {}).get('pass') else '✗ 未通过') if decision else '-',
-        '③其他场景': ('✓ 通过' if decision.get('step3', {}).get('pass') else '✗ 未通过') if decision else '-',
+        # 子场景明细（放在定增决策前）
+        '市场指数': _pass('市场指数'),
+        '行业PE': _pass('行业PE'),
+        '个股PE': _pass('个股PE'),
+        'DCF估值': _pass('DCF估值'),
+        '修正PE估值': _pass('修正PE估值'),
+        '参数构造': _pass('参数构造'),
+        '蒙特卡洛': _pass('蒙特卡洛'),
+        '反向推算': _pass('反向推算'),
         '定增决策': decision.get('decision', '分析失败') if decision else '分析失败',
-        '决策详情': decision.get('summary', error or '无结果') if decision else (error or '无结果'),
     }
 
 
