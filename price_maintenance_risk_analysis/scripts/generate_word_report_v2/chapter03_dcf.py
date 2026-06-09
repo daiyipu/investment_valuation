@@ -758,7 +758,7 @@ def generate_chapter(context):
             add_paragraph(document, f'• 历史CAGR: {cagr_fcf_display*100:.2f}%（从{first_fcf_year["year"]}年{first_fcf:.2f}亿到{last_fcf_year["year"]}年{last_fcf:.2f}亿，跨度{years_span}年）')
         else:
             add_paragraph(document, f'• 历史CAGR: {cagr_fcf_display*100:.2f}%（正FCF数据不足，使用默认增长率）')
-        add_paragraph(document, f'• 采用预测增长率: {fcf_growth_example*100:.1f}%（基于近3年FCFF的CAGR）')
+        add_paragraph(document, f'• 采用预测增长率: {fcf_growth_example*100:.1f}%（{fcf_growth_source}）')
 
         # 基于最新FCF，预测未来n年（用于DCF）
         for i in range(n_years):
