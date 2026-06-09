@@ -720,8 +720,9 @@ def generate_chapter(context):
                 pe_50 = industry_pe_values.quantile(0.50)
                 pe_25 = industry_pe_values.quantile(0.25)
 
-                # 获取标的个股当前PE值
-                stock_pe_current = stock_pe_data['pe_ttm'].iloc[-1]
+                # 获取标的个股当前PE值（用pe_compare修正值，与分位数体系一致）
+                pe_col = 'pe_compare' if 'pe_compare' in stock_pe_data.columns else 'pe_ttm'
+                stock_pe_current = stock_pe_data[pe_col].iloc[-1]
 
                 # 根据行业PE分位数与标的个股PE的比值计算漂移率
                 ratio_75 = pe_75 / stock_pe_current if stock_pe_current > 0 else 1.0
@@ -897,8 +898,9 @@ def generate_chapter(context):
                 stock_pe_50 = stock_pe_values.quantile(0.50)
                 stock_pe_25 = stock_pe_values.quantile(0.25)
 
-                # 获取标的个股当前PE值
-                stock_pe_current = stock_pe_data['pe_ttm'].iloc[-1]
+                # 获取标的个股当前PE值（用pe_compare修正值，与分位数体系一致）
+                pe_col = 'pe_compare' if 'pe_compare' in stock_pe_data.columns else 'pe_ttm'
+                stock_pe_current = stock_pe_data[pe_col].iloc[-1]
 
                 # 根据个股PE分位数与个股当前PE的比值计算漂移率
                 stock_ratio_75 = stock_pe_75 / stock_pe_current if stock_pe_current > 0 else 1.0
