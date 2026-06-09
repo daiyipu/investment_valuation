@@ -103,21 +103,19 @@ class PEHistoryAnalyzer:
                         print(f"   建议：减少历史天数参数（如days=730获取2年数据）")
                         return None
 
-                # 过滤掉PE为空或异常的数据
-                df = df[df['pe_ttm'] > 0].copy()
-                df = df.sort_values('trade_date').reset_index(drop=True)
-
-                if len(df) > 0:
-                    return df
-                else:
-                    # API有数据但过滤后全空 = 公司持续亏损(PE无定义)
-                    # 尝试AKShare百度估值兜底（含负PE，可显示亏损趋势）
+                # 检查是否有亏损期(pe_ttm为NaN)：有则用AKShare(含负PE)替代，不过滤亏损期
+                has_loss = df['pe_ttm'].isna().any()
+                if has_loss:
                     ak_df = self._fetch_pe_from_akshare(stock_code)
                     if ak_df is not None:
-                        print(f"  {stock_code} 使用AKShare百度估值PE兜底（{len(ak_df)}条，含亏损期负PE）")
+                        print(f"  {stock_code} 含亏损期，使用AKShare百度估值PE（{len(ak_df)}条，负PE=亏损）")
                         return ak_df
-                    print(f"⚠️ {stock_code}历史PE过滤后为空（持续亏损，PE无定义），AKShare也无数据，跳过PE趋势分析")
-                    return None
+                # 无亏损期或AKShare失败：用Tushare，仅去NaN（不过滤，保留真实值）
+                df = df.dropna(subset=['pe_ttm']).sort_values('trade_date').reset_index(drop=True)
+                if len(df) > 0:
+                    return df
+                print(f"⚠️ {stock_code}历史PE数据为空，跳过PE趋势分析")
+                return None
 
             except Exception as e:
                 if attempt < max_retries - 1:
