@@ -27,11 +27,19 @@ SCHEMA_VERSION = 'v2_issue_date'
 
 
 def _init_tushare_pro():
-    """Initialize tushare pro_api with token from env or config."""
+    """Initialize tushare pro_api with token from env or config.
+
+    并发安全: 直接传token给pro_api，避免多线程同时读写token文件(竞态条件)。
+    """
     token = os.environ.get('TUSHARE_TOKEN', '')
-    if token:
-        ts.set_token(token)
-    return ts.pro_api()
+    try:
+        if token:
+            ts.set_token(token)
+            return ts.pro_api(token)  # 直接传token，不读文件(并发安全)
+        return ts.pro_api()
+    except Exception as e:
+        print(f"⚠️ Tushare初始化失败: {e}")
+        return None
 
 
 def fetch_latest_data(stock_code='300735.SZ', days=500):
@@ -853,11 +861,11 @@ class TushareFinancialData:
         if not self.token:
             raise ValueError("TUSHARE_TOKEN未设置，请设置环境变量或传入token参数")
 
-        # 导入tushare（延迟导入）
+        # 导入tushare（延迟导入，直接传token避免并发读写文件）
         try:
             import tushare as ts
             ts.set_token(self.token)
-            self.pro = ts.pro_api()
+            self.pro = ts.pro_api(self.token)
         except ImportError:
             raise ImportError("请安装tushare: pip install tushare")
 

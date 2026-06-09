@@ -705,7 +705,8 @@ if __name__ == '__main__':
     # 测试完整计算（需要tushare API）
     try:
         import tushare as ts
-        pro = ts.pro_api()
+        _token = os.environ.get('TUSHARE_TOKEN', '')
+        pro = ts.pro_api(_token) if _token else ts.pro_api()
         calculator = WACCCalculator(pro_api=pro)
 
         print("2. 完整计算测试（光弘科技 300735.SZ）：")
