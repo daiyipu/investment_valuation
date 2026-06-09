@@ -652,8 +652,13 @@ def generate_report_headless(stock_code, stock_name=None, issue_date=None, force
         print(f"\n[headless] 分析 {stock_code} ({stock_name or ''})...")
 
         # 确保 market_data 文件存在且有效（必须在 load_placement_config 之前）
+        import io as _io
+        import contextlib as _ctx
+
         market_data_file = os.path.join(DATA_DIR, f"{stock_code.replace('.', '_')}_market_data.json")
-        _ensure_market_data(stock_code, stock_name, market_data_file, issue_date)
+        # 抑制市场数据/行业数据生成的详细输出
+        with _ctx.redirect_stdout(_io.StringIO()):
+            _ensure_market_data(stock_code, stock_name, market_data_file, issue_date)
 
         # 加载配置
         project_params, risk_params, market_data = load_placement_config(stock_code)
@@ -702,11 +707,13 @@ def generate_report_headless(stock_code, stock_name=None, issue_date=None, force
             'results': {},
         }
 
-        # headless模式：跳过图表生成（批量筛选不需要Word图表，大幅提速）
+        # headless模式：跳过图表生成 + 抑制内部输出（批量筛选只需计时和决策）
         import matplotlib
         matplotlib.use('Agg')  # 确保非交互后端
         import matplotlib.pyplot as _plt
         _plt.savefig = lambda *a, **kw: None  # 禁用savefig，跳过所有图表渲染
+        import io as _io
+        import contextlib as _ctx
 
         # 依次调用各章节（单章节失败不阻塞后续章节）
         chapters = [
@@ -724,7 +731,9 @@ def generate_report_headless(stock_code, stock_name=None, issue_date=None, force
         for ch_name, ch_fn in chapters:
             try:
                 t_ch = time.time()
-                context = ch_fn(context)
+                # 抑制章节内部所有输出（批量模式只需计时，不需调试信息）
+                with _ctx.redirect_stdout(_io.StringIO()):
+                    context = ch_fn(context)
                 ch_elapsed = time.time() - t_ch
                 print(f"  ⏱ {ch_name} {ch_elapsed:.1f}s")
             except Exception as ch_err:
