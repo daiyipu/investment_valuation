@@ -784,10 +784,8 @@ def generate_chapter(context):
             print(f"   行业: {industry_name} ({industry_code})")
 
             # 计算个股历史分位数统计
-            # 当前PE用current_metrics_val(与2.1同源)，亏损股显示负值而非最后盈利期
-            stock_pe_current = current_metrics_val.get('pe')
-            if stock_pe_current is None:
-                stock_pe_current = stock_pe_data.iloc[-1]['pe_ttm']  # 兜底
+            # 当前PE取序列最后值(已修正负PE→高正值，与分位数/增长率同体系)
+            stock_pe_current = stock_pe_data.iloc[-1]['pe_ttm']
             stock_pe_min = stock_pe_data['pe_ttm'].min()
             stock_pe_max = stock_pe_data['pe_ttm'].max()
             stock_pe_median = stock_pe_data['pe_ttm'].median()

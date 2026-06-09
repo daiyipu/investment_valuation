@@ -109,11 +109,11 @@ class PEHistoryAnalyzer:
                     ak_df = self._fetch_pe_from_akshare(stock_code)
                     if ak_df is not None:
                         print(f"  {stock_code} 含亏损期，使用AKShare百度估值PE（{len(ak_df)}条，负PE=亏损）")
-                        return ak_df
+                        return self._modify_negative_pe(ak_df)
                 # 无亏损期或AKShare失败：用Tushare，仅去NaN（不过滤，保留真实值）
                 df = df.dropna(subset=['pe_ttm']).sort_values('trade_date').reset_index(drop=True)
                 if len(df) > 0:
-                    return df
+                    return self._modify_negative_pe(df)
                 print(f"⚠️ {stock_code}历史PE数据为空，跳过PE趋势分析")
                 return None
 
@@ -151,6 +151,31 @@ class PEHistoryAnalyzer:
         except Exception as e:
             print(f"  AKShare百度估值PE获取失败({stock_code}): {e}")
             return None
+
+    def _modify_negative_pe(self, df):
+        """修正负PE(亏损期)，使其融入正向估值比较体系。
+
+        逻辑：亏损(负PE)相当于"比历史最贵的时候还贵"(花钱买亏损)。
+        - 有正PE时: 修正PE = max(正PE) - 负PE = max(正PE) + |负PE| (> max正PE)
+        - 持续亏损(全负): 用绝对值 |负PE|
+
+        这样亏损期在分位数中排名最高(最"贵")，与正常PE形成统一比较基础。
+        """
+        if df is None or df.empty:
+            return df
+        df = df.copy()
+        pos_pe = df.loc[df['pe_ttm'] > 0, 'pe_ttm']
+        if not pos_pe.empty:
+            max_positive = pos_pe.max()
+            neg_count = (df['pe_ttm'] < 0).sum()
+            if neg_count > 0:
+                print(f"  修正{neg_count}个亏损期PE: 负值→{max_positive:.2f}-负PE (>历史最高{max_positive:.2f})")
+                df['pe_ttm'] = df['pe_ttm'].apply(lambda x: max_positive - x if x < 0 else x)
+        else:
+            # 持续亏损(全负): 用绝对值
+            df['pe_ttm'] = df['pe_ttm'].abs()
+            print(f"  持续亏损股PE取绝对值(全负→正)")
+        return df
 
     def get_industry_pe_history(self, stock_code, days=1825, max_retries=3, end_date=None):
         """
