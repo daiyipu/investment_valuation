@@ -166,7 +166,12 @@ def run_batch_screening(stock_list, output_path=None):
             row['7个月后涨跌幅'] = '-'
 
         results.append(row)
-        print(f'  ⏱ {code} 耗时 {stock_elapsed:.1f}s')
+        # 增量写入：每只股票分析完立即保存Excel，中断不丢数据
+        try:
+            pd.DataFrame(results).to_excel(output_path, index=False, engine='openpyxl')
+        except Exception as _e:
+            print(f'  ⚠️ 增量保存失败: {_e}')
+        print(f'  ⏱ {code} 耗时 {stock_elapsed:.1f}s (已保存{len(results)}/{total})')
 
         # 保存到DB
         try:
