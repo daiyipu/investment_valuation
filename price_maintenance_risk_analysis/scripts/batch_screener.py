@@ -183,6 +183,7 @@ def run_batch_screening(stock_list, output_path=None):
         stock_elapsed = time.time() - t_stock
         raw_results.append(headless_result)
         row = _analyze_one(code, name, lambda c, n: headless_result)
+        row['报价日'] = issue_date or ''  # 供财务评分按报价日回溯年份
 
         # 计算报价日后7个月涨跌幅（解禁后1个月的实际收益）
         if issue_date and pro:
