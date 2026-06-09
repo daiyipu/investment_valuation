@@ -1225,7 +1225,6 @@ class TushareFinancialData:
             # c_pay_acq_const_fiolta: 购建固定资产、无形资产和其他长期资产支付的现金（资本支出）
             cashflow_df = self.pro.cashflow(
                 ts_code=self.ts_code,
-                ts_code=self.ts_code,
                 start_date=start_date,
                 end_date=end_date,
                 fields='ts_code,end_date,end_type,update_flag,n_cashflow_act,c_pay_acq_const_fiolta'
