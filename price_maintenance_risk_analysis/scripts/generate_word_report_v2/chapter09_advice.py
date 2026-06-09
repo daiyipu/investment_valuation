@@ -2249,6 +2249,8 @@ def generate_chapter(context):
 
         add_paragraph(document, f'• 有效阈值数量：{len(thresholds)}个')
         # 显示所有子场景通过状态（含未形成有效阈值的类别）
+        # sub_scenarios在后面的decision_conclusion处构建，这里先初始化避免未定义
+        sub_scenarios = locals().get('sub_scenarios', {}) or {}
         if sub_scenarios:
             _sub_groups = [
                 ('历史市场场景', ['市场指数', '行业PE', '个股PE']),
