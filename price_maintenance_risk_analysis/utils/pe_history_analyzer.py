@@ -110,13 +110,13 @@ class PEHistoryAnalyzer:
                     ak_df = self._fetch_pe_from_akshare(stock_code)
                     if ak_df is not None:
                         # 按trade_date合并：Tushare有值用Tushare，NaN处用AKShare填补
-                        import pandas as _pd
                         df = df.sort_values('trade_date').reset_index(drop=True)
                         ak_aligned = ak_df[['trade_date', 'pe_ttm']].rename(columns={'pe_ttm': '_pe_ak'})
                         df = df.merge(ak_aligned, on='trade_date', how='left')
+                        # 用combine_first填补NaN(避免.loc赋值卡死)
                         filled = df['pe_ttm'].isna() & df['_pe_ak'].notna()
                         if filled.any():
-                            df.loc[filled, 'pe_ttm'] = df.loc[filled, '_pe_ak']
+                            df['pe_ttm'] = df['pe_ttm'].combine_first(df['_pe_ak'])
                             print(f"  {stock_code} 用AKShare填补{filled.sum()}个亏损期(负PE)，盈利期保持Tushare值")
                         df = df.drop(columns=['_pe_ak'])
                 # 去除仍为NaN的行(两边都没数据)，保留所有有效值(含负PE)
