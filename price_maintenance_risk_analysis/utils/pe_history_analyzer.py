@@ -153,13 +153,15 @@ class PEHistoryAnalyzer:
             return None
 
     def _modify_negative_pe(self, df):
-        """修正负PE(亏损期)，使其融入正向估值比较体系。
+        """为负PE(亏损期)生成修正值，用于正向估值比较。
 
-        逻辑：亏损(负PE)相当于"比历史最贵的时候还贵"(花钱买亏损)。
-        - 有正PE时: 修正PE = max(正PE) - 负PE = max(正PE) + |负PE| (> max正PE)
-        - 持续亏损(全负): 用绝对值 |负PE|
+        保留原始pe_ttm，新增pe_compare列(修正值)和is_modified标记。
+        逻辑：亏损(负PE)相当于"比历史最贵还贵"(花钱买亏损)。
+        - 有正PE时: pe_compare = max(正PE) - 负PE (> max正PE)
+        - 持续亏损(全负): pe_compare = |负PE|
+        盈利期: pe_compare = pe_ttm (不变), is_modified=False
 
-        这样亏损期在分位数中排名最高(最"贵")，与正常PE形成统一比较基础。
+        分位数/统计/图表用pe_compare，显示原始pe_ttm时标注修正。
         """
         if df is None or df.empty:
             return df
@@ -169,12 +171,13 @@ class PEHistoryAnalyzer:
             max_positive = pos_pe.max()
             neg_count = (df['pe_ttm'] < 0).sum()
             if neg_count > 0:
-                print(f"  修正{neg_count}个亏损期PE: 负值→{max_positive:.2f}-负PE (>历史最高{max_positive:.2f})")
-                df['pe_ttm'] = df['pe_ttm'].apply(lambda x: max_positive - x if x < 0 else x)
+                print(f"  {neg_count}个亏损期PE生成修正值: max正PE({max_positive:.2f})-负PE (用于比较)")
+            df['pe_compare'] = df['pe_ttm'].apply(lambda x: max_positive - x if x < 0 else x)
         else:
             # 持续亏损(全负): 用绝对值
-            df['pe_ttm'] = df['pe_ttm'].abs()
-            print(f"  持续亏损股PE取绝对值(全负→正)")
+            print(f"  持续亏损股PE修正值取绝对值")
+            df['pe_compare'] = df['pe_ttm'].abs()
+        df['is_modified'] = df['pe_ttm'] < 0  # 标记哪些是亏损期(用了修正值)
         return df
 
     def get_industry_pe_history(self, stock_code, days=1825, max_retries=3, end_date=None):
@@ -339,12 +342,15 @@ class PEHistoryAnalyzer:
 
         df = df.copy()
 
+        # 分位数基于pe_compare(修正值)，亏损期用修正值排名
+        pe_col = 'pe_compare' if 'pe_compare' in df.columns else 'pe_ttm'
+
         # 计算累计分位数（到每个交易日为止的历史分位数）
         percentiles = []
         for i in range(len(df)):
             # 使用从开始到当前的数据计算分位数
-            historical_data = df['pe_ttm'].iloc[:i+1]
-            current_pe = df['pe_ttm'].iloc[i]
+            historical_data = df[pe_col].iloc[:i+1]
+            current_pe = df[pe_col].iloc[i]
             percentile = (historical_data < current_pe).sum() / len(historical_data) * 100
             percentiles.append(percentile)
 

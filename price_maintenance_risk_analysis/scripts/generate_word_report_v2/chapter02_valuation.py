@@ -784,14 +784,25 @@ def generate_chapter(context):
             print(f"   行业: {industry_name} ({industry_code})")
 
             # 计算个股历史分位数统计
-            # 当前PE取序列最后值(已修正负PE→高正值，与分位数/增长率同体系)
-            stock_pe_current = stock_pe_data.iloc[-1]['pe_ttm']
-            stock_pe_min = stock_pe_data['pe_ttm'].min()
-            stock_pe_max = stock_pe_data['pe_ttm'].max()
-            stock_pe_median = stock_pe_data['pe_ttm'].median()
-            stock_pe_25 = stock_pe_data['pe_ttm'].quantile(0.25)
-            stock_pe_75 = stock_pe_data['pe_ttm'].quantile(0.75)
-            stock_pe_percentile = (stock_pe_data['pe_ttm'] < stock_pe_current).sum() / len(stock_pe_data) * 100
+            # 统计量(min/max/median/分位数)用pe_compare(修正值,亏损期已映射为高值)
+            # 当前PE显示原始pe_ttm(真实值),亏损时标注
+            pe_col = 'pe_compare' if 'pe_compare' in stock_pe_data.columns else 'pe_ttm'
+            stock_pe_current = stock_pe_data.iloc[-1]['pe_ttm']  # 原始真实PE(可能为负)
+            stock_pe_current_compare = stock_pe_data.iloc[-1][pe_col]  # 修正值(用于分位数)
+            stock_pe_min = stock_pe_data[pe_col].min()
+            stock_pe_max = stock_pe_data[pe_col].max()
+            stock_pe_median = stock_pe_data[pe_col].median()
+            stock_pe_25 = stock_pe_data[pe_col].quantile(0.25)
+            stock_pe_75 = stock_pe_data[pe_col].quantile(0.75)
+            stock_pe_percentile = (stock_pe_data[pe_col] < stock_pe_current_compare).sum() / len(stock_pe_data) * 100
+            # 当前是否为亏损期(用了修正值)
+            stock_pe_is_loss = bool(stock_pe_data.iloc[-1].get('is_modified', False))
+            # 显示用: 亏损期显示真实值+修正说明，偏离度计算用修正值
+            if stock_pe_is_loss:
+                stock_pe_display = f'{stock_pe_current:.2f}(亏损,修正{stock_pe_current_compare:.0f})'
+            else:
+                stock_pe_display = f'{stock_pe_current:.2f}倍'
+            stock_pe_for_dev = stock_pe_current_compare  # 偏离度/差异用修正值
 
             # 计算申万行业指数历史分位数统计
             sw_index_pe_current = industry_pe_data.iloc[-1]['pe_ttm']
@@ -896,11 +907,11 @@ def generate_chapter(context):
                 pe_history_headers = ['指标', '标的股票', '行业指数(申万)', '行业指数(自定义)', '差异(vs申万)', '差异(vs自定义)']
                 pe_history_data = [
                     ['当前PE-TTM',
-                     f'{stock_pe_current:.2f}倍',
+                     stock_pe_display,
                      f'{sw_index_pe_current:.2f}倍',
                      f'{custom_peer_pe_current:.2f}倍',
-                     f'{(stock_pe_current/sw_index_pe_current-1)*100:+.1f}%',
-                     f'{(stock_pe_current/custom_peer_pe_current-1)*100:+.1f}%'],
+                     f'{(stock_pe_for_dev/sw_index_pe_current-1)*100:+.1f}%',
+                     f'{(stock_pe_for_dev/custom_peer_pe_current-1)*100:+.1f}%'],
                     ['历史最小PE',
                      f'{stock_pe_min:.2f}倍',
                      f'{sw_index_pe_min:.2f}倍',
@@ -942,7 +953,7 @@ def generate_chapter(context):
                 # 只有申万数据的简化表格
                 pe_history_headers = ['指标', '标的股票', '行业指数(申万)', '差异']
                 pe_history_data = [
-                    ['当前PE-TTM', f'{stock_pe_current:.2f}倍', f'{sw_index_pe_current:.2f}倍', f'{(stock_pe_current/sw_index_pe_current-1)*100:+.1f}%'],
+                    ['当前PE-TTM', stock_pe_display, f'{sw_index_pe_current:.2f}倍', f'{(stock_pe_for_dev/sw_index_pe_current-1)*100:+.1f}%'],
                     ['历史最小PE', f'{stock_pe_min:.2f}倍', f'{sw_index_pe_min:.2f}倍', f'{stock_pe_min-sw_index_pe_min:+.2f}倍'],
                     ['25%分位数PE', f'{stock_pe_25:.2f}倍', f'{sw_index_pe_25:.2f}倍', f'{stock_pe_25-sw_index_pe_25:+.2f}倍'],
                     ['历史中位数PE', f'{stock_pe_median:.2f}倍', f'{sw_index_pe_median:.2f}倍', f'{stock_pe_median-sw_index_pe_median:+.2f}倍'],
