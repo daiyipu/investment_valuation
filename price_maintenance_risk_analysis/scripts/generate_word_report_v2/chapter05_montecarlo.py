@@ -1161,7 +1161,7 @@ def generate_chapter(context):
             final_prices_premium = sim_premium.iloc[:, -1].values
             # 连续复利（对数收益率）
             log_returns_premium = np.log(final_prices_premium / simulated_issue_price)
-            # 年化收益率
+            # 年化收益率（Ch9会转回区间VaR: annual × 120/250 ≈ period）
             annualized_log_returns_premium = log_returns_premium * (252.0 / 120)
 
             # 统计
