@@ -2248,6 +2248,16 @@ def generate_chapter(context):
         premium_range = max_premium - min_premium
 
         add_paragraph(document, f'• 有效阈值数量：{len(thresholds)}个')
+        # 显示所有子场景通过状态（含未形成有效阈值的类别）
+        if sub_scenarios:
+            _sub_groups = [
+                ('历史市场场景', ['市场指数', '行业PE', '个股PE']),
+                ('预期估值场景', ['DCF估值', '修正PE估值']),
+                ('其他场景', ['参数构造', '蒙特卡洛', '反向推算']),
+            ]
+            for grp_name, keys in _sub_groups:
+                parts = [f'{k}{"✓" if sub_scenarios.get(k) else "✗"}' for k in keys]
+                add_paragraph(document, f'  - {grp_name}：{" ".join(parts)}')
         for name, threshold in thresholds:
             # 所有阈值都显示为区间形式
             count_val = threshold['count']
