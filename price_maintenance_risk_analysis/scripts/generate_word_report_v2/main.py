@@ -699,6 +699,12 @@ def generate_report_headless(stock_code, stock_name=None, issue_date=None, force
             'results': {},
         }
 
+        # headless模式：跳过图表生成（批量筛选不需要Word图表，大幅提速）
+        import matplotlib
+        matplotlib.use('Agg')  # 确保非交互后端
+        import matplotlib.pyplot as _plt
+        _plt.savefig = lambda *a, **kw: None  # 禁用savefig，跳过所有图表渲染
+
         # 依次调用各章节（单章节失败不阻塞后续章节）
         chapters = [
             ('Ch1 概况', chapter01_overview.generate_chapter),
