@@ -164,9 +164,17 @@ class WACCCalculator:
             df_stock = df_stock.sort_values('trade_date').reset_index(drop=True)
             df_market = df_market.sort_values('trade_date').reset_index(drop=True)
 
-            # 取最近window期数据
-            stock_returns = df_stock.iloc[-window:]['pct_chg']
-            market_returns = df_market.iloc[-window:]['pct_chg']
+            # 按trade_date对齐（关键！停牌/缺失会导致行数不一致，错位算出错误Beta）
+            df_stock_align = df_stock[['trade_date', 'pct_chg']].rename(columns={'pct_chg': 'pct_chg_stock'})
+            df_market_align = df_market[['trade_date', 'pct_chg']].rename(columns={'pct_chg': 'pct_chg_market'})
+            df_merged = df_stock_align.merge(df_market_align, on='trade_date', how='inner')
+
+            if len(df_merged) < 20:
+                return {'beta': 1.0, 'error': f'对齐后数据不足({len(df_merged)}期)'}
+
+            # 取最近window期对齐数据
+            stock_returns = df_merged.iloc[-window:]['pct_chg_stock']
+            market_returns = df_merged.iloc[-window:]['pct_chg_market']
 
             # 计算Beta
             beta = self.calculate_beta(stock_returns, market_returns)
