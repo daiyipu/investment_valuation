@@ -29,9 +29,7 @@ import openpyxl
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 SCREENER_SCRIPT = os.path.join(SCRIPTS_DIR, 'batch_screener.py')
 
-EFAES_SCRIPT = os.path.join(
-    os.path.expanduser('~'), 'github', 'EFAES', 'scripts', 'batch_financial_score.py'
-)
+EFAES_SCRIPT = os.path.join(SCRIPTS_DIR, 'batch_financial_score.py')  # 已集成到本项目
 
 DATA_DIR = os.path.join(os.path.dirname(SCRIPTS_DIR), 'data')
 
