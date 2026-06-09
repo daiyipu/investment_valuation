@@ -151,6 +151,19 @@ def generate_chapter(context):
                     'pb': float(df_target.iloc[0]['pb']) if pd.notna(df_target.iloc[0]['pb']) else None,
                     'ps': float(df_target.iloc[0]['ps_ttm']) if pd.notna(df_target.iloc[0]['ps_ttm']) else None
                 }
+                # 亏损股PE为None时，用AKShare百度估值取负PE(显示亏损程度)
+                if current_metrics_val['pe'] is None:
+                    try:
+                        import akshare as ak
+                        _ak_code = stock_code.split('.')[0]
+                        _ak_pe = ak.stock_zh_valuation_baidu(symbol=_ak_code, indicator='市盈率(TTM)', period='近一年')
+                        if _ak_pe is not None and not _ak_pe.empty:
+                            _pe_val = float(_ak_pe.iloc[-1]['value'])
+                            if pd.notna(_pe_val):
+                                current_metrics_val['pe'] = _pe_val
+                                print(f"  亏损股PE用AKShare百度估值兜底: {_pe_val:.2f}倍")
+                    except Exception:
+                        pass
                 print(f" 获取相对估值数据成功，交易日期: {trade_date}")
 
                 # 获取申万三级行业分类的同行公司（与 notebook 一致）
