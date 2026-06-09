@@ -114,8 +114,34 @@ def run_batch_screening(stock_list, output_path=None):
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-    total = len(stock_list)
-    print(f'共 {total} 只股票\n')
+    # 断点续传：读取已完成的股票，跳过它们
+    results = []
+    done_codes = set()
+    if os.path.exists(output_path):
+        try:
+            existing_df = pd.read_excel(output_path)
+            if not existing_df.empty and '股票代码' in existing_df.columns:
+                done_codes = set(existing_df['股票代码'].astype(str).str.strip())
+                results = existing_df.to_dict('records')
+                print(f'📎 检测到已有结果({len(done_codes)}只)，断点续传跳过已完成股票')
+        except Exception:
+            pass
+
+    # 过滤掉已完成的股票
+    pending = [t for t in stock_list if str(t[0]).strip() not in done_codes]
+    total_all = len(stock_list)
+    total = len(pending)
+    skipped_count = total_all - total
+    if skipped_count > 0:
+        print(f'共 {total_all} 只股票，跳过 {skipped_count} 只已完成，本次处理 {total} 只\n')
+    else:
+        print(f'共 {total} 只股票\n')
+
+    if total == 0:
+        print('✅ 所有股票已完成，无需重新处理')
+        return pd.DataFrame(results)
+
+    stock_list = pending  # 只处理未完成的
 
     # 延迟导入
     from main import generate_report_headless
@@ -124,8 +150,7 @@ def run_batch_screening(stock_list, output_path=None):
     from datetime import datetime
     batch_id = datetime.now().strftime('%Y%m%d_%H%M%S')
 
-    results = []
-    raw_results = []  # 保存原始headless结果用于DB
+    raw_results = []  # 保存原始headless结果用于DB（results已含续传数据）
     t_batch_start = time.time()
 
     # 初始化Tushare（用于计算报价日后7个月涨跌幅）
