@@ -103,14 +103,15 @@ class PEHistoryAnalyzer:
                         print(f"   建议：减少历史天数参数（如days=730获取2年数据）")
                         return None
 
-                # 检查是否有亏损期(pe_ttm为NaN)：有则用AKShare(含负PE)替代，不过滤亏损期
-                has_loss = df['pe_ttm'].isna().any()
-                if has_loss:
+                # 仅当「当前PE」为亏损(末值NaN)时才用AKShare，避免历史亏损误触发导致数据源切换
+                # （盈利股始终用Tushare，保证数据源和日期一致）
+                current_is_loss = df['pe_ttm'].isna().iloc[-1] if len(df) > 0 else False
+                if current_is_loss:
                     ak_df = self._fetch_pe_from_akshare(stock_code)
                     if ak_df is not None:
-                        print(f"  {stock_code} 含亏损期，使用AKShare百度估值PE（{len(ak_df)}条，负PE=亏损）")
+                        print(f"  {stock_code} 当前亏损，使用AKShare百度估值PE（{len(ak_df)}条，负PE=亏损）")
                         return self._modify_negative_pe(ak_df)
-                # 无亏损期或AKShare失败：用Tushare，仅去NaN（不过滤，保留真实值）
+                # 当前盈利或AKShare失败：用Tushare，仅去NaN
                 df = df.dropna(subset=['pe_ttm']).sort_values('trade_date').reset_index(drop=True)
                 if len(df) > 0:
                     return self._modify_negative_pe(df)
