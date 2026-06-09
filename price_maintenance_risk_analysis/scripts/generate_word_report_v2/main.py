@@ -657,6 +657,9 @@ def generate_report_headless(stock_code, stock_name=None, issue_date=None, force
 
         # 加载配置
         project_params, risk_params, market_data = load_placement_config(stock_code)
+        # 关键：把issue_date存入project_params，供各章节(Ch3等)回溯分析使用
+        if issue_date:
+            project_params['issue_date'] = issue_date
         if not stock_name:
             stock_name = project_params.get('company_name', stock_code)
             result['stock_name'] = stock_name
