@@ -29,9 +29,10 @@ class ValuationDB:
     # ==================== 基础操作 ====================
 
     def get_connection(self):
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)  # 30秒忙等待超时
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")  # 30秒忙等待
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
 
