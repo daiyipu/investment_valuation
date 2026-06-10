@@ -195,8 +195,15 @@ def train_classification(X, y, output_dir):
         import matplotlib
         matplotlib.use('Agg')
         import matplotlib.pyplot as plt
+        # 设置中文字体
+        from matplotlib.font_manager import FontProperties
+        font_path = '/System/Library/Fonts/STHeiti Medium.ttc'
+        if os.path.exists(font_path):
+            plt.rcParams['font.family'] = FontProperties(fname=font_path).get_name()
+        plt.rcParams['axes.unicode_minus'] = False
         fig, ax = plt.subplots(figsize=(10, 8))
         lgb.plot_importance(model, max_num_features=20, ax=ax)
+        plt.title('特征重要性 (LightGBM)', fontsize=14)
         plt.tight_layout()
         plt.savefig(os.path.join(output_dir, 'feature_importance.png'), dpi=150)
         plt.close()
