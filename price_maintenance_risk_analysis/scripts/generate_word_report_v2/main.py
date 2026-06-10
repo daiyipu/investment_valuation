@@ -656,8 +656,10 @@ def generate_report_headless(stock_code, stock_name=None, issue_date=None, force
         import contextlib as _ctx
 
         market_data_file = os.path.join(DATA_DIR, f"{stock_code.replace('.', '_')}_market_data.json")
-        # 市场数据生成不抑制输出（首次生成时用户需要看到进度，不是卡住）
-        _ensure_market_data(stock_code, stock_name, market_data_file, issue_date)
+        # 市场数据生成：只打印1行进度（避免5线程同时大量输出+API卡住）
+        print(f"  📊 生成市场数据...", flush=True)
+        with _ctx.redirect_stdout(_io.StringIO()):
+            _ensure_market_data(stock_code, stock_name, market_data_file, issue_date)
 
         # 加载配置
         project_params, risk_params, market_data = load_placement_config(stock_code)
