@@ -399,7 +399,7 @@ class ValuationDB:
         conn = self.get_connection()
         for _, row in df.iterrows():
             conn.execute("""
-                INSERT OR REPLACE INTO industry_daily
+                REPLACE INTO industry_daily
                     (index_code, trade_date, open, high, low, close, volume, amount, pct_chg, pe, pb, ps_ttm, data_source)
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """, (
@@ -632,7 +632,7 @@ class ValuationDB:
             # 用 index_name 作为 index_code（JSON 数据中无 index_code 字段）
             idx_code = data.get('index_code') or name
             conn.execute("""
-                INSERT OR REPLACE INTO market_indices (
+                REPLACE INTO market_indices (
                     index_code, index_name, locked_date, current_level,
                     volatility_20d, volatility_60d, volatility_120d, volatility_250d,
                     return_20d, return_60d, return_120d, return_250d,
