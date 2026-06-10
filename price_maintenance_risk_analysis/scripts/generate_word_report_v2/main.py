@@ -743,6 +743,19 @@ def generate_report_headless(stock_code, stock_name=None, issue_date=None, force
         decision = context.get('results', {}).get('decision_conclusion')
         result['decision_conclusion'] = decision
 
+        # 章节执行后保存更新过的数据到DB（FCF/财报等在Ch3才生成）
+        try:
+            from utils.db_manager import ValuationDB
+            db = ValuationDB()
+            # 保存FCF数据（Ch3生成的historical_fcf_data）
+            hfcf = project_params.get('historical_fcf_data', {})
+            if hfcf and hfcf.get('data'):
+                db.save_historical_fcf(stock_code, hfcf['data'])
+            # 保存更新后的placement_params（含Ch3的净利润/净债务等）
+            db.save_placement_params(stock_code, project_params)
+        except Exception:
+            pass
+
         if decision:
             print(f"  → 决策: {decision['decision']}")
         else:

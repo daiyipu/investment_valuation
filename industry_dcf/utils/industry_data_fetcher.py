@@ -216,27 +216,84 @@ class IndustryDataFetcher:
             return None
 
     def _save_cache(self, l3_code: str, data: dict) -> str:
-        """Save industry data to JSON cache file."""
-        filepath = os.path.join(self.cache_dir, f'{l3_code}_financials.json')
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        return filepath
+        """Save industry data to DB (valuation.db)。"""
+        try:
+            import sqlite3
+            db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__))))),
+                'price_maintenance_risk_analysis', 'data', 'valuation.db')
+            conn = sqlite3.connect(db_path)
+            # 确保表存在
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS industry_financials (
+                    l3_code TEXT PRIMARY KEY,
+                    l3_name TEXT,
+                    fetch_date TEXT,
+                    company_count INTEGER,
+                    data_json TEXT,
+                    created_at TEXT
+                )
+            """)
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            conn.execute("""
+                INSERT OR REPLACE INTO industry_financials
+                    (l3_code, l3_name, fetch_date, company_count, data_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                l3_code,
+                data.get('l3_name', ''),
+                data.get('fetch_date', ''),
+                data.get('company_count', 0),
+                json.dumps(data, ensure_ascii=False),
+                now
+            ))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"  ⚠️ DB缓存保存失败({l3_code}): {e}，降级到JSON")
+            # 降级：写JSON
+            filepath = os.path.join(self.cache_dir, f'{l3_code}_financials.json')
+            os.makedirs(self.cache_dir, exist_ok=True)
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        return l3_code
 
     def _load_cache(self, l3_code: str, max_age_hours: int = 24) -> Optional[dict]:
-        """Load cached data if fresh enough. Returns None if missing/stale."""
+        """Load cached data from DB (valuation.db)。"""
+        # 优先从DB读取
+        try:
+            import sqlite3
+            db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__))))),
+                'price_maintenance_risk_analysis', 'data', 'valuation.db')
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM industry_financials WHERE l3_code=?", (l3_code,)
+            ).fetchone()
+            conn.close()
+
+            if row:
+                # 检查过期
+                created = row['created_at']
+                created_dt = datetime.strptime(created[:19], '%Y-%m-%d %H:%M:%S')
+                age_hours = (datetime.now() - created_dt).total_seconds() / 3600
+                if age_hours > max_age_hours:
+                    return None
+                return json.loads(row['data_json'])
+        except Exception:
+            pass
+
+        # 降级：读JSON（兼容旧缓存）
         filepath = os.path.join(self.cache_dir, f'{l3_code}_financials.json')
         if not os.path.exists(filepath):
             return None
-
         try:
-            # Check file age
             mtime = os.path.getmtime(filepath)
             age_hours = (time.time() - mtime) / 3600
             if age_hours > max_age_hours:
                 return None
-
             with open(filepath, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except (json.JSONDecodeError, IOError) as e:
-            print(f"  缓存文件损坏: {e}")
+        except (json.JSONDecodeError, IOError):
             return None
