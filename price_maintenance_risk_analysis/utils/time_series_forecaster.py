@@ -524,7 +524,9 @@ class TimeSeriesForecaster:
 
             # 拟合GARCH(p,q)模型（限制迭代次数防止卡死）
             model = arch_model(returns_decimal, vol='Garch', p=p, q=q, mean='Constant')
-            fitted = model.fit(disp='off', options={'maxiter': 30})
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                fitted = model.fit(disp='off', options={'maxiter': 30})
 
             # 提取模型参数
             params = fitted.params
