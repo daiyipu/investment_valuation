@@ -23,15 +23,12 @@ import pandas as pd
 
 warnings.filterwarnings('ignore')
 
-# 特征定义
+# 特征定义（去除高基数噪声/无区分度特征）
 NUMERIC_FEATURES = [
-    # PE估值
-    '溢价率下限', '溢价率上限', '有效阈值数',
     # 财务评分（取最新年）
     '总分_最新', '盈利能力_最新', '成长能力_最新',
+    # 财务趋势（斜率）
     '总分_斜率', '盈利能力_斜率', '成长能力_斜率',
-    # 报价日价格
-    '报价日价格',
 ]
 
 CATEGORICAL_FEATURES = [
@@ -76,23 +73,7 @@ def load_and_prepare(filepath, threshold=-10):
     # ===== 构建特征 =====
     features = pd.DataFrame(index=df.index)
 
-    # 1. 数值特征
-    # 溢价率（转数值）
-    for col in ['溢价率下限', '溢价率上限']:
-        if col in df.columns:
-            features[col] = pd.to_numeric(
-                df[col].astype(str).str.replace('%', '').str.replace('+', ''),
-                errors='coerce'
-            )
-
-    if '有效阈值数' in df.columns:
-        features['有效阈值数'] = pd.to_numeric(df['有效阈值数'], errors='coerce').fillna(0)
-
-    # 报价日价格
-    if '报价日价格' in df.columns:
-        features['报价日价格'] = pd.to_numeric(df['报价日价格'], errors='coerce')
-
-    # 2. 财务评分（找最新年份的列）
+    # 1. 财务评分（找最新年份的列）
     score_cols = [c for c in df.columns if c.startswith('总分_') and c[3:].isdigit()]
     if score_cols:
         latest = max(c.split('_')[1] for c in score_cols)
