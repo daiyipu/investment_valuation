@@ -656,7 +656,7 @@ def generate_report_headless(stock_code, stock_name=None, issue_date=None, force
         import contextlib as _ctx
 
         market_data_file = os.path.join(DATA_DIR, f"{stock_code.replace('.', '_')}_market_data.json")
-        # 市场数据生成：只打印1行进度（避免5线程同时大量输出+API卡住）
+        # 市场数据生成：抑制详细输出
         print(f"  📊 生成市场数据...", flush=True)
         with _ctx.redirect_stdout(_io.StringIO()):
             _ensure_market_data(stock_code, stock_name, market_data_file, issue_date)
@@ -717,10 +717,11 @@ def generate_report_headless(stock_code, stock_name=None, issue_date=None, force
         import io as _io
         import contextlib as _ctx
 
-        print(f"  🔍 分析中...", flush=True)  # 章节执行前的进度提示
+        print(f"  🔍 分析中...", flush=True)
 
-        # 依次调用各章节（单章节失败不阻塞后续章节）
-        # 不抑制章节输出——让用户看到实时进度，避免"卡住"假象
+        # 依次调用各章节（抑制详细输出，只保留计时）
+        import io as _io
+        import contextlib as _ctx
         chapters = [
             ('Ch1 概况', chapter01_overview.generate_chapter),
             ('Ch2 相对估值', chapter02_valuation.generate_chapter),
@@ -736,11 +737,12 @@ def generate_report_headless(stock_code, stock_name=None, issue_date=None, force
         for ch_name, ch_fn in chapters:
             try:
                 t_ch = time.time()
-                context = ch_fn(context)
+                with _ctx.redirect_stdout(_io.StringIO()):
+                    context = ch_fn(context)
                 ch_elapsed = time.time() - t_ch
-                print(f"  ⏱ {ch_name} {ch_elapsed:.1f}s")
+                print(f"  ⏱ {ch_name} {ch_elapsed:.1f}s", flush=True)
             except Exception as ch_err:
-                print(f"  ⚠️ {ch_name} 失败: {ch_err}")
+                print(f"  ⚠️ {ch_name} 失败: {ch_err}", flush=True)
 
         # 提取决策结论
         decision = context.get('results', {}).get('decision_conclusion')
