@@ -6,6 +6,16 @@ import numpy as np
 import pandas as pd
 from typing import Dict, Optional, List, Tuple
 import warnings
+
+# 全局抑制收敛警告（ARIMA/GARCH优化器maxiter=30时常见，不影响结果）
+warnings.filterwarnings('ignore', message='.*convergence.*', category=Warning)
+warnings.filterwarnings('ignore', message='.*Iteration limit.*', category=Warning)
+warnings.filterwarnings('ignore', message='.*optimizer returned.*', category=Warning)
+try:
+    from statsmodels.tools.sm_exceptions import ConvergenceWarning as SMConvergenceWarning
+    warnings.simplefilter('ignore', SMConvergenceWarning)
+except ImportError:
+    pass
 warnings.filterwarnings('ignore')
 
 
