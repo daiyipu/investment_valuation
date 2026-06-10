@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+import sys
+sys.stdout.reconfigure(line_buffering=True)  # 并发线程下强制行缓冲(每行flush)
 """
 批量定增决策筛选工具
 
@@ -220,7 +222,7 @@ def run_batch_screening(stock_list, output_path=None):
                 db.save_screening_result(batch_id, code, name, headless_result)
             except Exception:
                 pass
-        print(f'  ✅ [{n}/{total}] {code} {name} ({elapsed:.1f}s)')
+        print(f'  ✅ [{n}/{total}] {code} {name} ({elapsed:.1f}s)', flush=True)
 
     MAX_WORKERS = min(5, total)  # 5并发（MySQL支持完全并发）
     print(f'并发模式：{MAX_WORKERS}线程并行处理\n')
