@@ -257,13 +257,16 @@ class TimeSeriesForecaster:
             elif order is None:
                 order = (1, 0, 1)  # 默认值，d=0
 
-            # 拟合ARIMA模型（限制迭代次数防止卡死）
+            # 拟合ARIMA模型
             model = ARIMA(log_returns, order=order)
 
-            # 抑制收敛警告，限制maxiter防止优化器无限循环
+            # 抑制收敛警告
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                fitted = model.fit(maxiter=30)
+                try:
+                    fitted = model.fit(maxiter=30)
+                except TypeError:
+                    fitted = model.fit()  # 旧版statsmodels不支持maxiter
 
             # 预测未来horizon期
             forecast = fitted.forecast(steps=horizon)
