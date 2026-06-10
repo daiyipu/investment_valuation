@@ -218,12 +218,10 @@ class IndustryDataFetcher:
     def _save_cache(self, l3_code: str, data: dict) -> str:
         """Save industry data to DB (valuation.db)。"""
         try:
-            import sqlite3
-            db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
-                os.path.dirname(os.path.abspath(__file__))))),
-                'price_maintenance_risk_analysis', 'data', 'valuation.db')
-            conn = sqlite3.connect(db_path, timeout=30)
-            conn.execute("PRAGMA busy_timeout=30000")
+            import pymysql
+            conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', password='',
+                                   database='investment_valuation', charset='utf8mb4')
+            cur = conn.cursor()
             # 确保表存在
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS industry_financials (
@@ -237,9 +235,9 @@ class IndustryDataFetcher:
             """)
             now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             conn.execute("""
-                INSERT OR REPLACE INTO industry_financials
+                REPLACE INTO industry_financials
                     (l3_code, l3_name, fetch_date, company_count, data_json, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s)
             """, (
                 l3_code,
                 data.get('l3_name', ''),
@@ -263,13 +261,11 @@ class IndustryDataFetcher:
         """Load cached data from DB (valuation.db)。"""
         # 优先从DB读取
         try:
-            import sqlite3
-            db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
-                os.path.dirname(os.path.abspath(__file__))))),
-                'price_maintenance_risk_analysis', 'data', 'valuation.db')
-            conn = sqlite3.connect(db_path, timeout=30)
-            conn.execute("PRAGMA busy_timeout=30000")
-            conn.row_factory = sqlite3.Row
+            import pymysql
+            conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', password='',
+                                   database='investment_valuation', charset='utf8mb4')
+            cur = conn.cursor()
+            cur = conn.cursor()
             row = conn.execute(
                 "SELECT * FROM industry_financials WHERE l3_code=?", (l3_code,)
             ).fetchone()

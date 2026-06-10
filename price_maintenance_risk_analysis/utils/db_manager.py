@@ -8,36 +8,63 @@ SQLite 数据库管理器
 
 import json
 import os
-import sqlite3
+import pymysql
+from pymysql.cursors import DictCursor
 from datetime import datetime, timedelta
 
 DB_FILENAME = 'valuation.db'
 
 
+class _MySQLConnAdapter:
+    """适配层：让pymysql连接支持conn.execute()（兼容原sqlite3代码）。"""
+    def __init__(self, conn):
+        self._conn = conn
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor()
+        cur.execute(sql, params)
+        return cur
+    def executemany(self, sql, params):
+        cur = self._conn.cursor()
+        cur.executemany(sql, params)
+        return cur
+    def commit(self):
+        self._conn.commit()
+    def close(self):
+        self._conn.close()
+    @property
+    def row_factory(self):
+        return None
+    @row_factory.setter
+    def row_factory(self, val):
+        pass  # DictCursor已经返回dict，忽略
+
+
 class ValuationDB:
     """定增分析数据库访问层。"""
 
+    # MySQL配置
+    MYSQL_CONFIG = {
+        'host': '127.0.0.1', 'port': 3306,
+        'user': 'root', 'password': '',
+        'database': 'investment_valuation', 'charset': 'utf8mb4',
+    }
+
     def __init__(self, db_path=None):
-        if db_path is None:
-            # 默认 data/valuation.db
-            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            db_path = os.path.join(base_dir, 'data', DB_FILENAME)
-        self.db_path = db_path
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        self._ensure_db()
+        # db_path保留兼容(不再使用，改用MySQL)
+        self.db_path = db_path or 'investment_valuation'
 
     # ==================== 基础操作 ====================
 
     def get_connection(self):
-        conn = sqlite3.connect(self.db_path, timeout=30)  # 30秒忙等待超时
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=30000")  # 30秒忙等待
-        conn.execute("PRAGMA foreign_keys=ON")
-        return conn
+        conn = pymysql.connect(cursorclass=DictCursor, **self.MYSQL_CONFIG)
+        return _MySQLConnAdapter(conn)
 
     def _ensure_db(self):
-        """建表（如不存在）。"""
+        """MySQL表已通过migrate_to_mysql.py创建，无需运行时建表。"""
+        pass
+
+    def _legacy_ensure_db(self):
+        """旧SQLite建表（保留备用）。"""
         conn = self.get_connection()
         conn.executescript(SCHEMA)
         conn.commit()
@@ -61,7 +88,7 @@ class ValuationDB:
         if existing:
             sets = ', '.join(f"{k}=?" for k in fields)
             vals = list(fields.values()) + [stock_code]
-            conn.execute(f"UPDATE stocks SET {sets}, updated_at=datetime('now') WHERE stock_code=?", vals)
+            conn.execute(f"UPDATE stocks SET {sets}, updated_at=NOW() WHERE stock_code=?", vals)
         else:
             cols = ['stock_code'] + list(fields.keys())
             placeholders = ','.join(['?'] * len(cols))
@@ -74,7 +101,7 @@ class ValuationDB:
         conn = self.get_connection()
         row = conn.execute("SELECT * FROM stocks WHERE stock_code=?", (stock_code,)).fetchone()
         conn.close()
-        return dict(row) if row else None
+        return row if row else None
 
     # ==================== placement_params ====================
 
@@ -88,7 +115,7 @@ class ValuationDB:
             conn.close()
             return None
 
-        result = dict(row)
+        result = row
         # 移除元数据字段
         result.pop('created_at', None)
         result.pop('updated_at', None)
@@ -98,7 +125,7 @@ class ValuationDB:
             "SELECT * FROM historical_fcf WHERE stock_code=? ORDER BY year", (stock_code,)
         ).fetchall()
         if fcf_rows:
-            fcf_list = [dict(r) for r in fcf_rows]
+            fcf_list = [r for r in fcf_rows]
             for item in fcf_list:
                 item.pop('id', None)
                 item.pop('stock_code', None)
@@ -137,7 +164,7 @@ class ValuationDB:
         conn.execute(f"""
             INSERT INTO placement_params ({','.join(cols)})
             VALUES ({','.join(['?'] * len(cols))})
-            ON CONFLICT(stock_code) DO UPDATE SET
+            ON DUPLICATE KEY UPDATE
                 financing_amount=excluded.financing_amount,
                 lockup_period=excluded.lockup_period,
                 pricing_method=excluded.pricing_method,
@@ -149,7 +176,7 @@ class ValuationDB:
                 revenue_growth=excluded.revenue_growth,
                 operating_margin=excluded.operating_margin,
                 beta=excluded.beta,
-                updated_at=datetime('now')
+                updated_at=NOW()
         """, vals)
 
         # 保存 historical_fcf_data（如果有）
@@ -175,7 +202,7 @@ class ValuationDB:
                 INSERT INTO historical_fcf (stock_code, year, revenue, operate_profit,
                     net_income, nopat, depreciation, capex, wc_change, fcf)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(stock_code, year) DO UPDATE SET
+                ON DUPLICATE KEY UPDATE
                     revenue=excluded.revenue, operate_profit=excluded.operate_profit,
                     net_income=excluded.net_income, nopat=excluded.nopat,
                     depreciation=excluded.depreciation, capex=excluded.capex,
@@ -200,7 +227,7 @@ class ValuationDB:
         conn.close()
         if row is None:
             return None
-        result = dict(row)
+        result = row
         # 反序列化 JSON 字段
         for key in ('price_series', 'market_turnover'):
             if result.get(key) and isinstance(result[key], str):
@@ -233,7 +260,7 @@ class ValuationDB:
                 price_series, market_turnover,
                 data_source, generated_at
             ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            ON CONFLICT(stock_code) DO UPDATE SET
+            ON DUPLICATE KEY UPDATE
                 analysis_date=excluded.analysis_date,
                 latest_trading_date=excluded.latest_trading_date,
                 issue_date=excluded.issue_date,
@@ -297,7 +324,7 @@ class ValuationDB:
         conn = self.get_connection()
         row = conn.execute("SELECT * FROM industry_data WHERE stock_code=?", (stock_code,)).fetchone()
         conn.close()
-        return dict(row) if row else None
+        return row if row else None
 
     def save_industry_data(self, stock_code, data):
         conn = self.get_connection()
@@ -320,7 +347,7 @@ class ValuationDB:
                 total_days, drift, volatility,
                 data_source, generated_at
             ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            ON CONFLICT(stock_code) DO UPDATE SET
+            ON DUPLICATE KEY UPDATE
                 index_code=excluded.index_code, industry_name=excluded.industry_name,
                 sw_l1_code=excluded.sw_l1_code, sw_l1_name=excluded.sw_l1_name,
                 sw_l2_code=excluded.sw_l2_code, sw_l2_name=excluded.sw_l2_name,
@@ -435,7 +462,7 @@ class ValuationDB:
         if not rows:
             return None
         import pandas as pd
-        return pd.DataFrame([dict(r) for r in rows])
+        return pd.DataFrame([r for r in rows])
 
     def is_industry_data_stale(self, stock_code, max_days=7):
         """检查行业数据是否过期。"""
@@ -474,7 +501,7 @@ class ValuationDB:
             conn.close()
             return None
 
-        result = dict(row)
+        result = row
         result.pop('created_at', None)
 
         # 加载 peer_companies
@@ -504,7 +531,7 @@ class ValuationDB:
                 sw_index_pe, sw_index_pb, sw_index_ps,
                 target_index_code, target_industry_l3
             ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
-            ON CONFLICT(stock_code) DO UPDATE SET
+            ON DUPLICATE KEY UPDATE
                 cache_date=excluded.cache_date, trade_date=excluded.trade_date,
                 current_pe=excluded.current_pe, current_pb=excluded.current_pb,
                 current_ps=excluded.current_ps,
@@ -512,7 +539,7 @@ class ValuationDB:
                 sw_index_ps=excluded.sw_index_ps,
                 target_index_code=excluded.target_index_code,
                 target_industry_l3=excluded.target_industry_l3,
-                created_at=datetime('now')
+                created_at=NOW()
         """, (
             stock_code, data.get('cache_date'), data.get('trade_date'),
             metrics.get('pe'), metrics.get('pb'), metrics.get('ps'),
@@ -541,7 +568,7 @@ class ValuationDB:
             (stock_code, issue_date),
         ).fetchone()
         conn.close()
-        return dict(row) if row else None
+        return row if row else None
 
     def save_issue_date_locked(self, stock_code, issue_date, data):
         conn = self.get_connection()
@@ -550,7 +577,7 @@ class ValuationDB:
             INSERT INTO issue_date_locked (stock_code, issue_date, issue_date_price, ma_20,
                 current_price, analysis_date, locked_timestamp)
             VALUES (?,?,?,?,?,?,?)
-            ON CONFLICT(stock_code, issue_date) DO UPDATE SET
+            ON DUPLICATE KEY UPDATE
                 issue_date_price=excluded.issue_date_price,
                 ma_20=excluded.ma_20,
                 current_price=excluded.current_price,
@@ -586,7 +613,7 @@ class ValuationDB:
 
         result = {}
         for row in rows:
-            r = dict(row)
+            r = row
             name = r.pop('index_name')
             r.pop('index_code', None)
             r.pop('locked_date', None)
@@ -671,7 +698,7 @@ class ValuationDB:
             (batch_id,),
         ).fetchall()
         conn.close()
-        return [dict(r) for r in rows]
+        return [r for r in rows]
 
     def list_batches(self):
         conn = self.get_connection()
@@ -684,7 +711,7 @@ class ValuationDB:
             ORDER BY created_at DESC
         """).fetchall()
         conn.close()
-        return [dict(r) for r in rows]
+        return [r for r in rows]
 
     # ==================== 迁移工具 ====================
 
@@ -769,7 +796,7 @@ class ValuationDB:
                          total_mv, turnover_rate, up_count, down_count,
                          leading_stock, leading_pct, updated_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(board_code) DO UPDATE SET
+                    ON DUPLICATE KEY UPDATE
                         board_name=excluded.board_name,
                         total_count=excluded.total_count,
                         latest_price=excluded.latest_price,
@@ -841,7 +868,7 @@ class ValuationDB:
             cur = conn.execute(
                 "SELECT board_code, board_name, total_count FROM em_industry_boards ORDER BY board_code"
             )
-            return [dict(row) for row in cur.fetchall()]
+            return [row for row in cur.fetchall()]
         finally:
             conn.close()
 
@@ -857,7 +884,7 @@ class ValuationDB:
                 "SELECT * FROM em_industry_stocks WHERE board_code = ? ORDER BY stock_code",
                 (board_code,)
             )
-            return [dict(row) for row in cur.fetchall()]
+            return [row for row in cur.fetchall()]
         finally:
             conn.close()
 
@@ -876,7 +903,7 @@ class ValuationDB:
                 WHERE s.stock_code = ?
                 ORDER BY b.board_code
             """, (stock_code,))
-            return [dict(row) for row in cur.fetchall()]
+            return [row for row in cur.fetchall()]
         finally:
             conn.close()
 
@@ -905,8 +932,8 @@ CREATE TABLE IF NOT EXISTS stocks (
     sw_l1_code   TEXT, sw_l1_name   TEXT,
     sw_l2_code   TEXT, sw_l2_name   TEXT,
     sw_l3_code   TEXT, sw_l3_name   TEXT,
-    created_at   TEXT DEFAULT (datetime('now')),
-    updated_at   TEXT DEFAULT (datetime('now'))
+    created_at   TEXT DEFAULT (NOW()),
+    updated_at   TEXT DEFAULT (NOW())
 );
 
 CREATE TABLE IF NOT EXISTS placement_params (
@@ -922,8 +949,8 @@ CREATE TABLE IF NOT EXISTS placement_params (
     revenue_growth   REAL DEFAULT 0.15,
     operating_margin REAL DEFAULT 0.15,
     beta             REAL DEFAULT 1.0,
-    created_at       TEXT DEFAULT (datetime('now')),
-    updated_at       TEXT DEFAULT (datetime('now'))
+    created_at       TEXT DEFAULT (NOW()),
+    updated_at       TEXT DEFAULT (NOW())
 );
 
 CREATE TABLE IF NOT EXISTS historical_fcf (
@@ -952,7 +979,7 @@ CREATE TABLE IF NOT EXISTS market_data (
     price_series     TEXT,
     market_turnover  TEXT,
     data_source      TEXT DEFAULT 'tushare_realtime',
-    generated_at     TEXT DEFAULT (datetime('now'))
+    generated_at     TEXT DEFAULT (NOW())
 );
 
 CREATE TABLE IF NOT EXISTS industry_data (
@@ -970,7 +997,7 @@ CREATE TABLE IF NOT EXISTS industry_data (
     win_rate_20d REAL, win_rate_60d REAL, win_rate_120d REAL, win_rate_250d REAL,
     total_days INTEGER, drift REAL, volatility REAL,
     data_source TEXT DEFAULT 'tushare_sw_index',
-    generated_at TEXT DEFAULT (datetime('now'))
+    generated_at TEXT DEFAULT (NOW())
 );
 
 CREATE TABLE IF NOT EXISTS relative_valuation (
@@ -980,7 +1007,7 @@ CREATE TABLE IF NOT EXISTS relative_valuation (
     current_pe        REAL, current_pb REAL, current_ps REAL,
     sw_index_pe       REAL, sw_index_pb REAL, sw_index_ps REAL,
     target_index_code TEXT, target_industry_l3 TEXT,
-    created_at        TEXT DEFAULT (datetime('now'))
+    created_at        TEXT DEFAULT (NOW())
 );
 
 CREATE TABLE IF NOT EXISTS peer_companies (
@@ -1013,7 +1040,7 @@ CREATE TABLE IF NOT EXISTS market_indices (
     ma_20 REAL, ma_60 REAL, ma_120 REAL, ma_250 REAL,
     win_rate_20d REAL, win_rate_60d REAL, win_rate_120d REAL, win_rate_250d REAL,
     data_date   TEXT,
-    created_at  TEXT DEFAULT (datetime('now')),
+    created_at  TEXT DEFAULT (NOW()),
     PRIMARY KEY (index_code, locked_date)
 );
 
@@ -1030,7 +1057,7 @@ CREATE TABLE IF NOT EXISTS screening_results (
     decision        TEXT,
     summary         TEXT,
     error           TEXT,
-    created_at      TEXT DEFAULT (datetime('now'))
+    created_at      TEXT DEFAULT (NOW())
 );
 CREATE INDEX IF NOT EXISTS idx_screening_batch ON screening_results(batch_id);
 
@@ -1067,8 +1094,8 @@ CREATE TABLE IF NOT EXISTS em_industry_boards (
     down_count     INTEGER,          -- 下跌家数
     leading_stock  TEXT,             -- 领涨股票
     leading_pct    REAL,             -- 领涨股票涨跌幅
-    created_at     TEXT DEFAULT (datetime('now')),
-    updated_at     TEXT DEFAULT (datetime('now'))
+    created_at     TEXT DEFAULT (NOW()),
+    updated_at     TEXT DEFAULT (NOW())
 );
 
 -- 东方财富行业板块成份股
@@ -1090,7 +1117,7 @@ CREATE TABLE IF NOT EXISTS em_industry_stocks (
     turnover_rate  REAL,             -- 换手率
     pe_dynamic     REAL,             -- 市盈率-动态
     pb             REAL,             -- 市净率
-    created_at     TEXT DEFAULT (datetime('now')),
+    created_at     TEXT DEFAULT (NOW()),
     UNIQUE(board_code, stock_code)
 );
 CREATE INDEX IF NOT EXISTS idx_em_industry_stocks_board ON em_industry_stocks(board_code);

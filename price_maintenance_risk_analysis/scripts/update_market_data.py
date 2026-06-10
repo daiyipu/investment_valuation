@@ -1658,11 +1658,9 @@ def _get_industry_name_from_db(sw_index_code):
     try:
         from utils.db_manager import ValuationDB
         db = ValuationDB()
-        import sqlite3
-        conn = sqlite3.connect(db.db_path)
-        conn.row_factory = sqlite3.Row
+        conn = db.get_connection()
         row = conn.execute(
-            "SELECT sw_l3_name, sw_l2_name, sw_l1_name FROM industry_data WHERE index_code=?",
+            "SELECT sw_l3_name, sw_l2_name, sw_l1_name FROM industry_data WHERE index_code=%s",
             (sw_index_code,)
         ).fetchone()
         conn.close()

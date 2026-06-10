@@ -17,25 +17,28 @@
 
 import sys
 import os
-import sqlite3
+import sqlite3  # 兼容旧导入，实际用pymysql
+import pymysql
 import argparse
 import numpy as np
 import pandas as pd
 
 
 def load_sqlite_features(db_path, stock_codes):
-    """从valuation.db加载行情/估值/FCF等特征"""
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    """从MySQL加载行情/估值/FCF等特征"""
+    conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', password='',
+                           database='investment_valuation', charset='utf8mb4',
+                           cursorclass=pymysql.cursors.DictCursor)
+    cur = conn.cursor()
 
     features = []
     for code in stock_codes:
         f = {'股票代码': code}
 
         # 1. market_data 行情特征
-        row = conn.execute('SELECT * FROM market_data WHERE stock_code=?', (code,)).fetchone()
+        row = cur.execute('SELECT * FROM market_data WHERE stock_code=%s', (code,)).fetchone()
         if row:
-            d = dict(row)
+            d = row
             # 波动率×4窗口
             for w in ['20d', '60d', '120d', '250d']:
                 f[f'波动率_{w}'] = d.get(f'volatility_{w}')
@@ -53,9 +56,9 @@ def load_sqlite_features(db_path, stock_codes):
             f['schema_version'] = d.get('schema_version')
 
         # 2. relative_valuation 估值特征
-        row = conn.execute('SELECT * FROM relative_valuation WHERE stock_code=?', (code,)).fetchone()
+        row = cur.execute('SELECT * FROM relative_valuation WHERE stock_code=%s', (code,)).fetchone()
         if row:
-            d = dict(row)
+            d = row
             f['个股PE'] = d.get('current_pe')
             f['个股PB'] = d.get('current_pb')
             f['个股PS'] = d.get('current_ps')
@@ -66,8 +69,8 @@ def load_sqlite_features(db_path, stock_codes):
             f['行业名称'] = d.get('target_industry_l3', '')
 
         # 3. historical_fcf FCF特征(取最近5年)
-        rows = conn.execute(
-            'SELECT * FROM historical_fcf WHERE stock_code=? ORDER BY year DESC LIMIT 5', (code,)
+        rows = cur.execute(
+            'SELECT * FROM historical_fcf WHERE stock_code=%s ORDER BY year DESC LIMIT 5', (code,)
         ).fetchall()
         for i, r in enumerate(rows):
             d = dict(r)
@@ -78,17 +81,17 @@ def load_sqlite_features(db_path, stock_codes):
             f[f'FCF年份{suffix}'] = d.get('year')
 
         # 4. issue_date_locked 锁定价
-        row = conn.execute('SELECT * FROM issue_date_locked WHERE stock_code=?', (code,)).fetchone()
+        row = cur.execute('SELECT * FROM issue_date_locked WHERE stock_code=%s', (code,)).fetchone()
         if row:
-            d = dict(row)
+            d = row
             f['报价日'] = d.get('issue_date')
             f['报价日价格'] = d.get('issue_date_price')
             f['报价日MA20'] = d.get('ma_20')
 
         # 5. placement_params 定增参数
-        row = conn.execute('SELECT * FROM placement_params WHERE stock_code=?', (code,)).fetchone()
+        row = cur.execute('SELECT * FROM placement_params WHERE stock_code=%s', (code,)).fetchone()
         if row:
-            d = dict(row)
+            d = row
             f['发行价'] = d.get('issue_price')
             f['锁定期'] = d.get('lockup_period')
             f['净债务'] = d.get('total_debt')
@@ -96,11 +99,11 @@ def load_sqlite_features(db_path, stock_codes):
             f['净资产负债表'] = d.get('net_assets')
 
         # 6. screening_results 最新筛选结果
-        row = conn.execute(
-            'SELECT * FROM screening_results WHERE stock_code=? ORDER BY id DESC LIMIT 1', (code,)
+        row = cur.execute(
+            'SELECT * FROM screening_results WHERE stock_code=%s ORDER BY id DESC LIMIT 1', (code,)
         ).fetchone()
         if row:
-            d = dict(row)
+            d = row
             f['溢价率下限'] = d.get('premium_min')
             f['溢价率上限'] = d.get('premium_max')
             f['有效阈值数'] = d.get('valid_thresholds')
