@@ -247,13 +247,13 @@ class TimeSeriesForecaster:
             elif order is None:
                 order = (1, 0, 1)  # 默认值，d=0
 
-            # 拟合ARIMA模型
+            # 拟合ARIMA模型（限制迭代次数防止卡死）
             model = ARIMA(log_returns, order=order)
 
-            # 抑制收敛警告，使用默认参数
+            # 抑制收敛警告，限制maxiter防止优化器无限循环
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                fitted = model.fit()
+                fitted = model.fit(maxiter=30)
 
             # 预测未来horizon期
             forecast = fitted.forecast(steps=horizon)
@@ -522,9 +522,9 @@ class TimeSeriesForecaster:
                 else:
                     p, q = 1, 1
 
-            # 拟合GARCH(p,q)模型（输入小数形式的收益率）
+            # 拟合GARCH(p,q)模型（限制迭代次数防止卡死）
             model = arch_model(returns_decimal, vol='Garch', p=p, q=q, mean='Constant')
-            fitted = model.fit(disp='off')
+            fitted = model.fit(disp='off', options={'maxiter': 30})
 
             # 提取模型参数
             params = fitted.params
