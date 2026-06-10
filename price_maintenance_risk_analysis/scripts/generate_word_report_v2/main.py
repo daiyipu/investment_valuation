@@ -720,6 +720,7 @@ def generate_report_headless(stock_code, stock_name=None, issue_date=None, force
         print(f"  🔍 分析中...", flush=True)  # 章节执行前的进度提示
 
         # 依次调用各章节（单章节失败不阻塞后续章节）
+        # 不抑制章节输出——让用户看到实时进度，避免"卡住"假象
         chapters = [
             ('Ch1 概况', chapter01_overview.generate_chapter),
             ('Ch2 相对估值', chapter02_valuation.generate_chapter),
@@ -735,9 +736,7 @@ def generate_report_headless(stock_code, stock_name=None, issue_date=None, force
         for ch_name, ch_fn in chapters:
             try:
                 t_ch = time.time()
-                # 抑制章节内部所有输出（批量模式只需计时，不需调试信息）
-                with _ctx.redirect_stdout(_io.StringIO()):
-                    context = ch_fn(context)
+                context = ch_fn(context)
                 ch_elapsed = time.time() - t_ch
                 print(f"  ⏱ {ch_name} {ch_elapsed:.1f}s")
             except Exception as ch_err:
