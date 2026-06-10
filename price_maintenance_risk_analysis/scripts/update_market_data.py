@@ -59,7 +59,27 @@ def fetch_latest_data(stock_code='300735.SZ', days=500):
     # 获取数据（多获取一些，确保有足够的交易日）
     df = pro.daily(ts_code=stock_code, start_date=start_date, end_date=end_date)
 
-    if df.empty:
+    # 北交所(.BJ)或Tushare空数据时，用AKShare降级
+    if df.empty or stock_code.endswith('.BJ'):
+        try:
+            import akshare as ak
+            ak_code = stock_code.split('.')[0]
+            ak_df = ak.stock_zh_a_hist(symbol=ak_code, period='daily',
+                                        start_date=start_date, end_date=end_date, adjust='qfq')
+            if ak_df is not None and not ak_df.empty:
+                # 转换列名对齐Tushare格式
+                df = ak_df.rename(columns={
+                    '日期': 'trade_date', '开盘': 'open', '收盘': 'close',
+                    '最高': 'high', '最低': 'low', '成交量': 'vol',
+                    '成交额': 'amount', '涨跌幅': 'pct_chg', '换手率': 'turnover_rate'
+                })
+                df['ts_code'] = stock_code
+                df['trade_date'] = df['trade_date'].astype(str).str.replace('-', '')
+                print(f"   使用AKShare获取{stock_code}数据: {len(df)}条")
+        except Exception as e:
+            print(f"   AKShare降级也失败: {e}")
+
+    if df is None or df.empty:
         print(f"❌ 未获取到数据")
         return None
 

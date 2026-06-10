@@ -767,10 +767,8 @@ def generate_report_headless(stock_code, stock_name=None, issue_date=None, force
             pass
 
     except Exception as e:
-        import traceback
         result['error'] = str(e)
-        print(f"  ✗ 分析失败: {e}")
-        traceback.print_exc()
+        print(f"  ⚠️ 分析失败: {e}", flush=True)
 
     return result
 

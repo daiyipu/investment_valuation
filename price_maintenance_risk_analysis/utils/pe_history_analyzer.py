@@ -308,6 +308,13 @@ class PEHistoryAnalyzer:
                             index_code, index_level, industry_name = cand_code, cand_level, cand_name or cand_code
                             if cand_level != candidate_codes[0][0]:
                                 print(f"  L3无数据，降级使用{cand_level} {cand_code}({cand_name})")
+                            # 保存到DB（下次直接读缓存，不再调sw_daily）
+                            try:
+                                from utils.db_manager import ValuationDB
+                                db = ValuationDB()
+                                db.save_industry_daily(cand_code, df_index, data_source='tushare_sw')
+                            except Exception:
+                                pass
                             break
                     except Exception:
                         df_index = None
