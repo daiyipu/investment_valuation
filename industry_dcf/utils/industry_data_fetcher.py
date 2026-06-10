@@ -222,7 +222,8 @@ class IndustryDataFetcher:
             db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
                 os.path.dirname(os.path.abspath(__file__))))),
                 'price_maintenance_risk_analysis', 'data', 'valuation.db')
-            conn = sqlite3.connect(db_path)
+            conn = sqlite3.connect(db_path, timeout=30)
+            conn.execute("PRAGMA busy_timeout=30000")
             # 确保表存在
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS industry_financials (
@@ -266,7 +267,8 @@ class IndustryDataFetcher:
             db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
                 os.path.dirname(os.path.abspath(__file__))))),
                 'price_maintenance_risk_analysis', 'data', 'valuation.db')
-            conn = sqlite3.connect(db_path)
+            conn = sqlite3.connect(db_path, timeout=30)
+            conn.execute("PRAGMA busy_timeout=30000")
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM industry_financials WHERE l3_code=?", (l3_code,)
