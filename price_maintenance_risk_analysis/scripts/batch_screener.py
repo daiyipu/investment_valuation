@@ -182,12 +182,17 @@ def run_batch_screening(stock_list, output_path=None):
     _done_count = [0]  # 已完成数（用list包装以便闭包修改）
 
     def _process_one(item):
-        """处理单只股票（线程内执行），返回结果行"""
+        """处理单只股票（线程内执行），返回结果行。线程级try/except防崩溃。"""
         code, name = item[0], item[1]
         issue_date = item[2] if len(item) > 2 else None
         t_stock = time.time()
-        headless_result = generate_report_headless(code, name, issue_date=issue_date)
-        row = _analyze_one(code, name, lambda c, n: headless_result)
+        try:
+            headless_result = generate_report_headless(code, name, issue_date=issue_date)
+            row = _analyze_one(code, name, lambda c, n: headless_result)
+        except Exception as e:
+            print(f'  ⚠️ {code} 线程异常: {e}', flush=True)
+            headless_result = {'error': str(e), 'decision_conclusion': None}
+            row = _analyze_one(code, name, lambda c, n: headless_result)
         row['报价日'] = issue_date or ''
 
         # 计算报价日后7个月涨跌幅
