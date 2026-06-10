@@ -656,9 +656,8 @@ def generate_report_headless(stock_code, stock_name=None, issue_date=None, force
         import contextlib as _ctx
 
         market_data_file = os.path.join(DATA_DIR, f"{stock_code.replace('.', '_')}_market_data.json")
-        # 抑制市场数据/行业数据生成的详细输出
-        with _ctx.redirect_stdout(_io.StringIO()):
-            _ensure_market_data(stock_code, stock_name, market_data_file, issue_date)
+        # 市场数据生成不抑制输出（首次生成时用户需要看到进度，不是卡住）
+        _ensure_market_data(stock_code, stock_name, market_data_file, issue_date)
 
         # 加载配置
         project_params, risk_params, market_data = load_placement_config(stock_code)
@@ -669,8 +668,9 @@ def generate_report_headless(stock_code, stock_name=None, issue_date=None, force
             stock_name = project_params.get('company_name', stock_code)
             result['stock_name'] = stock_name
 
-        # 加载行业数据（失败时用空dict，不阻塞后续分析）
-        industry_data = _load_industry_data(stock_code, issue_date=issue_date)
+        # 加载行业数据（失败时用空dict，不阻塞后续分析）— 抑制输出
+        with _ctx.redirect_stdout(_io.StringIO()):
+            industry_data = _load_industry_data(stock_code, issue_date=issue_date)
         if industry_data is None:
             print(f"  ⚠️ 行业数据加载失败，将跳过行业相关分析")
             industry_data = {}
