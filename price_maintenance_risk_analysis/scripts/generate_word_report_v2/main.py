@@ -717,6 +717,8 @@ def generate_report_headless(stock_code, stock_name=None, issue_date=None, force
         import io as _io
         import contextlib as _ctx
 
+        print(f"  🔍 分析中...", flush=True)  # 章节执行前的进度提示
+
         # 依次调用各章节（单章节失败不阻塞后续章节）
         chapters = [
             ('Ch1 概况', chapter01_overview.generate_chapter),
