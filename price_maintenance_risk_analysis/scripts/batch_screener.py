@@ -222,7 +222,7 @@ def run_batch_screening(stock_list, output_path=None):
                 pass
         print(f'  ✅ [{n}/{total}] {code} {name} ({elapsed:.1f}s)')
 
-    MAX_WORKERS = min(3, total)  # 3并发（避免Tushare API频率超限卡住）
+    MAX_WORKERS = min(5, total)  # 5并发（MySQL支持完全并发）
     print(f'并发模式：{MAX_WORKERS}线程并行处理\n')
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         list(executor.map(_process_one, stock_list))
