@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-批量财务评分脚本（集成版，属于 investment_valuation 项目）
-读取定增筛选结果，自动计算财务评分，结果写回Excel
-
-依赖 EFAES 项目的财务评分引擎（src.core.*）。
+批量财务评分脚本
+读取上市公司清单，自动计算近5年财务评分，结果写回Excel
 
 用法:
-    python price_maintenance_risk_analysis/scripts/batch_financial_score.py <excel_path>
+    python price_maintenance_risk_analysis/scripts/batch_financial_score.py
+    python scripts/batch_financial_score.py <excel_path>
 """
 
 import sys
@@ -23,7 +22,6 @@ import warnings
 
 warnings.filterwarnings('ignore', category=FutureWarning)
 
-# EFAES项目根目录（财务评分引擎所在）
 _EFAES_ROOT = os.path.expanduser('~/github/EFAES')
 sys.path.insert(0, _EFAES_ROOT)
 
@@ -37,7 +35,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 CURRENT_YEAR = 2026
-SCORE_YEARS = list(range(CURRENT_YEAR - 5, CURRENT_YEAR))  # [2021, 2022, 2023, 2024, 2025]
+SCORE_YEARS = list(range(CURRENT_YEAR - 5, CURRENT_YEAR))  # 默认，会被每只股票的报价日覆盖
+RELATIVE_YEAR_LABELS = ['T-4', 'T-3', 'T-2', 'T-1', 'T']  # 相对年份表头
 
 # 行业阈值缓存，同行业不重复计算
 _industry_thresholds_cache = {}
@@ -63,10 +62,11 @@ def get_company_industry(pro, ts_code: str) -> dict:
     return result
 
 
-def fetch_financial_data(fetcher: TushareDataFetcher, ts_code: str):
-    """获取公司近6年的三张报表数据（用于计算5年指标，需要前一年做同比）"""
-    start_date = f'{SCORE_YEARS[0] - 1}0101'
-    end_date = f'{SCORE_YEARS[-1]}1231'
+def fetch_financial_data(fetcher: TushareDataFetcher, ts_code: str, score_years=None):
+    """获取公司三张报表数据，范围覆盖score_years（需前一年做同比）"""
+    years = score_years if score_years else SCORE_YEARS
+    start_date = f'{min(years) - 1}0101'
+    end_date = f'{max(years)}1231'
 
     bs = fetcher.fetch_balance_sheet(ts_code, start_date, end_date)
     inc = fetcher.fetch_income_statement(ts_code, start_date, end_date)
@@ -136,9 +136,14 @@ def get_industry_thresholds(threshold_calc: IndustryThresholdCalculator, industr
 
 
 def score_company(fetcher: TushareDataFetcher, threshold_calc: IndustryThresholdCalculator,
-                  ts_code: str, company_name: str) -> dict:
-    """计算单个公司近5年的财务评分"""
+                  ts_code: str, company_name: str, score_years=None) -> dict:
+    """计算单个公司近5年的财务评分
+
+    Args:
+        score_years: 评分年份列表（从报价日回溯），None则用全局SCORE_YEARS
+    """
     pro = fetcher.pro
+    years_to_score = score_years if score_years else SCORE_YEARS
     logger.info(f"{'='*60}")
     logger.info(f"开始处理: {ts_code} {company_name}")
     logger.info(f"{'='*60}")
@@ -160,8 +165,8 @@ def score_company(fetcher: TushareDataFetcher, threshold_calc: IndustryThreshold
     valid_count = sum(1 for v in thresholds.values() if v is not None)
     logger.info(f"有效阈值: {valid_count}/{len(thresholds)}")
 
-    # 3. 获取财务数据
-    bs, inc, cf = fetch_financial_data(fetcher, ts_code)
+    # 3. 获取财务数据（按各自报价日年份范围查询）
+    bs, inc, cf = fetch_financial_data(fetcher, ts_code, score_years=years_to_score)
     if bs.empty or inc.empty:
         logger.error(f"{ts_code} 财务数据为空，跳过")
         return {}
@@ -171,7 +176,7 @@ def score_company(fetcher: TushareDataFetcher, threshold_calc: IndustryThreshold
     scorer = FinancialScoringCard(DB_CONFIG)
     scorer.set_industry_thresholds(thresholds)
 
-    for year in SCORE_YEARS:
+    for year in years_to_score:
         try:
             bs_year = bs[bs['report_year'] == year]
             inc_year = inc[inc['report_year'] == year]
@@ -270,8 +275,8 @@ def main():
     fields = ['总分', '评级', '盈利能力', '成长能力']
     headers = []
     for field in fields:
-        for year in SCORE_YEARS:
-            headers.append(f'{field}_{year}')
+        for label in RELATIVE_YEAR_LABELS:
+            headers.append(f'{field}_{label}')
 
     for i, h in enumerate(headers):
         ws.cell(1, data_start_col + i, h)
@@ -296,17 +301,27 @@ def main():
     _total = ws.max_row - 1
 
     def _score_one(row_idx):
-        """评分单只股票（线程内），返回(row_idx, results)"""
+        """评分单只股票（线程内），返回(row_idx, results, score_years)"""
         ts_code = ws.cell(row_idx, code_col).value
         company_name = ws.cell(row_idx, name_col).value
         if not ts_code:
-            return row_idx, None
+            return row_idx, None, None
         ts_code = str(ts_code).strip()
-        results = score_company(fetcher, threshold_calc, ts_code, company_name)
-        return row_idx, results
+        # 读取该股票的报价日，计算各自回溯的评分年份
+        stock_years = SCORE_YEARS  # 默认
+        if quote_date_col:
+            qd = ws.cell(row_idx, quote_date_col).value
+            if qd and str(qd).strip() and len(str(qd).strip()) >= 4:
+                try:
+                    base_year = int(str(qd).strip()[:4])
+                    stock_years = list(range(base_year - 4, base_year + 1))
+                except ValueError:
+                    pass
+        results = score_company(fetcher, threshold_calc, ts_code, company_name, score_years=stock_years)
+        return row_idx, results, stock_years
 
-    def _write_results(row_idx, results):
-        """将评分结果写入Excel（线程安全，需持有_write_lock）"""
+    def _write_results(row_idx, results, stock_years):
+        """将评分结果写入Excel（线程安全，按相对年份顺序写入）"""
         if results is None:
             return
         # 写入三级行业信息
@@ -317,9 +332,10 @@ def main():
             ws.cell(row_idx, start_col + 2, info.get('l3_name', ''))
             results.pop('行业')
 
+        # 按stock_years顺序写入（对应表头T-4,T-3,...,T）
         col_offset = data_start_col
         for field in fields:
-            for year in SCORE_YEARS:
+            for year in stock_years:
                 if year in results:
                     ws.cell(row_idx, col_offset, results[year].get(field, 'N/A'))
                 else:
@@ -331,7 +347,7 @@ def main():
             thresholds = {'总分': -2, '盈利能力': -1, '成长能力': -1}
             fail_count = 0
             for field in check_fields_t:
-                scores = [results[y][field] for y in SCORE_YEARS if y in results and isinstance(results[y].get(field), (int, float))]
+                scores = [results[y][field] for y in stock_years if y in results and isinstance(results[y].get(field), (int, float))]
                 slope = np.polyfit(range(len(scores)), scores, 1)[0] if len(scores) >= 2 else 0
                 slope = round(slope, 2)
                 status = '不通过' if slope < thresholds[field] else '通过'
@@ -341,8 +357,8 @@ def main():
                 ws.cell(row_idx, col_offset + 1, status)
                 col_offset += 2
 
-            latest_year = max(results.keys())
-            latest_score = results[latest_year].get('总分', 0)
+            latest_year = max(results.keys()) if results else 0
+            latest_score = results.get(latest_year, {}).get('总分', 0)
             if isinstance(latest_score, (int, float)) and latest_score < 60:
                 final = '不通过'
             else:
@@ -358,9 +374,9 @@ def main():
         for future in as_completed(futures):
             ridx = futures[future]
             try:
-                row_idx, results = future.result()
+                row_idx, results, stock_years = future.result()
                 with _write_lock:
-                    _write_results(row_idx, results)
+                    _write_results(row_idx, results, stock_years)
                     _done_count[0] += 1
                     n = _done_count[0]
                     if n % 10 == 0 or n == _total:
