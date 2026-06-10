@@ -393,7 +393,7 @@ def main():
 
             latest_year = max(results.keys()) if results else 0
             latest_score = results.get(latest_year, {}).get('总分', 0)
-            if isinstance(latest_score, (int, float)) and latest_score < 60:
+            if isinstance(latest_score, (int, float)) and latest_score < 55:
                 final = '不通过'
             else:
                 final = '不通过' if fail_count >= 2 else '通过'
