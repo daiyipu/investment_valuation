@@ -87,14 +87,18 @@ def calculate_decision_conclusion(thresholds, qualified_by_category=None,
         val_parts.append('修正PE估值')
     step2_detail = f'{val_count}/2个大场景符合（' + ('、'.join(val_parts) if val_parts else '均无符合') + '）'
 
-    # ③ 其他场景（参数构造，含蒙特卡洛/反向推算）
-    # 阈值已合并为'参数构造场景(含蒙特卡洛/反向推算)'，存在即通过
+    # ③ 其他场景（参数构造/蒙特卡洛/反向推算，要求≥2个有效）
+    # 从thresholds中识别各子方法是否有效（有阈值=有效）
     method_names = {name for name, _ in thresholds}
-    other_methods = [name for name in method_names
-                     if '历史' not in name and '预期估值' not in name]
-    method_count = len(other_methods)
-    method_details = other_methods
-    step3_pass = method_count >= 1
+    method_details = []
+    if any('参数构造' in n for n in method_names):
+        method_details.append('参数构造')
+    if any('蒙特卡洛' in n for n in method_names):
+        method_details.append('蒙特卡洛')
+    if any('反向推算' in n for n in method_names):
+        method_details.append('反向推算')
+    method_count = len(method_details)
+    step3_pass = method_count >= 2
     step3_detail = f'{method_count}/3个有效（' + '、'.join(method_details) + '）' if method_details else f'{method_count}/3个有效'
 
     all_pass = step1_pass and step2_pass and step3_pass
