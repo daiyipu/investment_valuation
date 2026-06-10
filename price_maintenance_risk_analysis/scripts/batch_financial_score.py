@@ -102,27 +102,31 @@ def get_industry_thresholds(threshold_calc: IndustryThresholdCalculator, industr
     base_year = target_year if target_year else SCORE_YEARS[-1]
     try_years = [base_year - i for i in range(4)]  # target_year, T-1, T-2, T-3
 
-    # 原始数据缓存：同一行业只取一次数（用最宽end_date覆盖所有年份）
-    # end_date用CURRENT_YEAR确保覆盖所有报价日年份
+    # 原始数据缓存：同一行业只取一次数，范围覆盖所有可能的报价日年份
+    # start_date要足够早（最早报价日2020的前5年=2015），end_date用CURRENT_YEAR
+    fetch_start_year = min(base_year - 5, 2010)  # 至少回溯到报价日前5年
     fetch_end_year = CURRENT_YEAR
     df_with_stats = None
     if industry_name in _industry_raw_cache:
-        cached_stats, cached_end_year = _industry_raw_cache[industry_name]
-        if cached_end_year >= base_year:
+        cached_stats, cached_start, cached_end = _industry_raw_cache[industry_name]
+        # 缓存数据需同时覆盖start和end
+        if cached_start <= fetch_start_year and cached_end >= base_year:
             df_with_stats = cached_stats
-            logger.info(f"复用 '{industry_name}' 已缓存的原始数据（覆盖至{cached_end_year}年）")
+            logger.info(f"复用 '{industry_name}' 已缓存的原始数据（{cached_start}~{cached_end}年）")
 
     if df_with_stats is None:
+        start_date = f'{fetch_start_year}0101'
         end_date = f'{fetch_end_year}1231'
         try:
-            logger.info(f"获取 '{industry_name}' 行业原始数据（end_date={end_date}）...")
+            logger.info(f"获取 '{industry_name}' 行业原始数据（{start_date}~{end_date}）...")
             ts_codes = threshold_calc.get_industry_stocks(industry_name)
             if not ts_codes:
                 logger.error(f"行业 '{industry_name}' 无成分股")
                 _industry_thresholds_cache[cache_key] = {}
                 return {}
 
-            df_fina = threshold_calc.fetch_financial_data(ts_codes, end_date=end_date)
+            # 同时传入start_date和end_date，确保覆盖所有年份
+            df_fina = threshold_calc.fetch_financial_data(ts_codes, start_date=start_date, end_date=end_date)
             if df_fina.empty:
                 logger.error(f"行业 '{industry_name}' 财务数据为空")
                 _industry_thresholds_cache[cache_key] = {}
@@ -132,8 +136,8 @@ def get_industry_thresholds(threshold_calc: IndustryThresholdCalculator, industr
             df_processed = threshold_calc.process_financial_data(df_fina, df_income)
             from src.core.tushare_tools import add_industry_statistics
             df_with_stats = add_industry_statistics(df_processed)
-            _industry_raw_cache[industry_name] = (df_with_stats, fetch_end_year)
-            logger.info(f"✅ '{industry_name}' 原始数据已缓存（{len(df_with_stats)}条），后续年份复用")
+            _industry_raw_cache[industry_name] = (df_with_stats, fetch_start_year, fetch_end_year)
+            logger.info(f"✅ '{industry_name}' 原始数据已缓存（{len(df_with_stats)}条, {fetch_start_year}~{fetch_end_year}），后续年份复用")
         except Exception as e:
             logger.error(f"获取 '{industry_name}' 原始数据失败: {e}")
             _industry_thresholds_cache[cache_key] = {}
