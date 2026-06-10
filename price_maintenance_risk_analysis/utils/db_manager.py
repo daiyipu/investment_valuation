@@ -76,7 +76,7 @@ class ValuationDB:
         """插入或更新股票基本信息。"""
         conn = self.get_connection()
         existing = conn.execute(
-            "SELECT stock_code FROM stocks WHERE stock_code=?", (stock_code,)
+            "SELECT stock_code FROM stocks WHERE stock_code=%s", (stock_code,)
         ).fetchone()
 
         fields = {'stock_name': stock_name}
@@ -86,12 +86,12 @@ class ValuationDB:
                 fields[k] = kwargs[k]
 
         if existing:
-            sets = ', '.join(f"{k}=?" for k in fields)
+            sets = ', '.join(f"{k}=%s" for k in fields)
             vals = list(fields.values()) + [stock_code]
-            conn.execute(f"UPDATE stocks SET {sets}, updated_at=NOW() WHERE stock_code=?", vals)
+            conn.execute(f"UPDATE stocks SET {sets}, updated_at=NOW() WHERE stock_code=%s", vals)
         else:
             cols = ['stock_code'] + list(fields.keys())
-            placeholders = ','.join(['?'] * len(cols))
+            placeholders = ','.join(['%s'] * len(cols))
             vals = [stock_code] + list(fields.values())
             conn.execute(f"INSERT INTO stocks ({','.join(cols)}) VALUES ({placeholders})", vals)
         conn.commit()
@@ -99,7 +99,7 @@ class ValuationDB:
 
     def get_stock(self, stock_code):
         conn = self.get_connection()
-        row = conn.execute("SELECT * FROM stocks WHERE stock_code=?", (stock_code,)).fetchone()
+        row = conn.execute("SELECT * FROM stocks WHERE stock_code=%s", (stock_code,)).fetchone()
         conn.close()
         return row if row else None
 
@@ -109,7 +109,7 @@ class ValuationDB:
         """加载定增参数配置，返回 dict（兼容原 JSON 格式，含 historical_fcf_data）。"""
         conn = self.get_connection()
         row = conn.execute(
-            "SELECT * FROM placement_params WHERE stock_code=?", (stock_code,)
+            "SELECT * FROM placement_params WHERE stock_code=%s", (stock_code,)
         ).fetchone()
         if row is None:
             conn.close()
@@ -122,7 +122,7 @@ class ValuationDB:
 
         # 附加 historical_fcf_data
         fcf_rows = conn.execute(
-            "SELECT * FROM historical_fcf WHERE stock_code=? ORDER BY year", (stock_code,)
+            "SELECT * FROM historical_fcf WHERE stock_code=%s ORDER BY year", (stock_code,)
         ).fetchall()
         if fcf_rows:
             fcf_list = [r for r in fcf_rows]
@@ -163,19 +163,19 @@ class ValuationDB:
 
         conn.execute(f"""
             INSERT INTO placement_params ({','.join(cols)})
-            VALUES ({','.join(['?'] * len(cols))})
+            VALUES ({','.join(['%s'] * len(cols))})
             ON DUPLICATE KEY UPDATE
-                financing_amount=excluded.financing_amount,
-                lockup_period=excluded.lockup_period,
-                pricing_method=excluded.pricing_method,
-                premium_rate=excluded.premium_rate,
-                risk_free_rate=excluded.risk_free_rate,
-                net_assets=excluded.net_assets,
-                total_debt=excluded.total_debt,
-                net_income=excluded.net_income,
-                revenue_growth=excluded.revenue_growth,
-                operating_margin=excluded.operating_margin,
-                beta=excluded.beta,
+                financing_amount=VALUES(financing_amount),
+                lockup_period=VALUES(lockup_period),
+                pricing_method=VALUES(pricing_method),
+                premium_rate=VALUES(premium_rate),
+                risk_free_rate=VALUES(risk_free_rate),
+                net_assets=VALUES(net_assets),
+                total_debt=VALUES(total_debt),
+                net_income=VALUES(net_income),
+                revenue_growth=VALUES(revenue_growth),
+                operating_margin=VALUES(operating_margin),
+                beta=VALUES(beta),
                 updated_at=NOW()
         """, vals)
 
@@ -201,12 +201,12 @@ class ValuationDB:
             conn.execute("""
                 INSERT INTO historical_fcf (stock_code, year, revenue, operate_profit,
                     net_income, nopat, depreciation, capex, wc_change, fcf)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON DUPLICATE KEY UPDATE
-                    revenue=excluded.revenue, operate_profit=excluded.operate_profit,
-                    net_income=excluded.net_income, nopat=excluded.nopat,
-                    depreciation=excluded.depreciation, capex=excluded.capex,
-                    wc_change=excluded.wc_change, fcf=excluded.fcf
+                    revenue=VALUES(revenue), operate_profit=VALUES(operate_profit),
+                    net_income=VALUES(net_income), nopat=VALUES(nopat),
+                    depreciation=VALUES(depreciation), capex=VALUES(capex),
+                    wc_change=VALUES(wc_change), fcf=VALUES(fcf)
             """, (
                 stock_code, item.get('year'), item.get('revenue'),
                 item.get('operate_profit'), item.get('net_income'),
@@ -223,7 +223,7 @@ class ValuationDB:
     def load_market_data(self, stock_code):
         """加载市场数据，返回 dict（兼容原 JSON 格式）。"""
         conn = self.get_connection()
-        row = conn.execute("SELECT * FROM market_data WHERE stock_code=?", (stock_code,)).fetchone()
+        row = conn.execute("SELECT * FROM market_data WHERE stock_code=%s", (stock_code,)).fetchone()
         conn.close()
         if row is None:
             return None
@@ -259,41 +259,41 @@ class ValuationDB:
                 total_days, drift, volatility,
                 price_series, market_turnover,
                 data_source, generated_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON DUPLICATE KEY UPDATE
-                analysis_date=excluded.analysis_date,
-                latest_trading_date=excluded.latest_trading_date,
-                issue_date=excluded.issue_date,
-                invitation_date=excluded.invitation_date,
-                current_price=excluded.current_price,
-                avg_price_all=excluded.avg_price_all,
-                median_price=excluded.median_price,
-                price_std=excluded.price_std,
-                volatility_20d=excluded.volatility_20d,
-                volatility_60d=excluded.volatility_60d,
-                volatility_120d=excluded.volatility_120d,
-                volatility_250d=excluded.volatility_250d,
-                annual_return_20d=excluded.annual_return_20d,
-                annual_return_60d=excluded.annual_return_60d,
-                annual_return_120d=excluded.annual_return_120d,
-                annual_return_250d=excluded.annual_return_250d,
-                period_return_20d=excluded.period_return_20d,
-                period_return_60d=excluded.period_return_60d,
-                period_return_120d=excluded.period_return_120d,
-                period_return_250d=excluded.period_return_250d,
-                ma_20=excluded.ma_20, ma_30=excluded.ma_30,
-                ma_60=excluded.ma_60, ma_120=excluded.ma_120, ma_250=excluded.ma_250,
-                win_rate_20d=excluded.win_rate_20d,
-                win_rate_60d=excluded.win_rate_60d,
-                win_rate_120d=excluded.win_rate_120d,
-                win_rate_250d=excluded.win_rate_250d,
-                total_days=excluded.total_days,
-                drift=excluded.drift,
-                volatility=excluded.volatility,
-                price_series=excluded.price_series,
-                market_turnover=excluded.market_turnover,
-                data_source=excluded.data_source,
-                generated_at=excluded.generated_at
+                analysis_date=VALUES(analysis_date),
+                latest_trading_date=VALUES(latest_trading_date),
+                issue_date=VALUES(issue_date),
+                invitation_date=VALUES(invitation_date),
+                current_price=VALUES(current_price),
+                avg_price_all=VALUES(avg_price_all),
+                median_price=VALUES(median_price),
+                price_std=VALUES(price_std),
+                volatility_20d=VALUES(volatility_)20d,
+                volatility_60d=VALUES(volatility_)60d,
+                volatility_120d=VALUES(volatility_)120d,
+                volatility_250d=VALUES(volatility_)250d,
+                annual_return_20d=VALUES(annual_return_)20d,
+                annual_return_60d=VALUES(annual_return_)60d,
+                annual_return_120d=VALUES(annual_return_)120d,
+                annual_return_250d=VALUES(annual_return_)250d,
+                period_return_20d=VALUES(period_return_)20d,
+                period_return_60d=VALUES(period_return_)60d,
+                period_return_120d=VALUES(period_return_)120d,
+                period_return_250d=VALUES(period_return_)250d,
+                ma_20=VALUES(ma_)20, ma_30=VALUES(ma_)30,
+                ma_60=VALUES(ma_)60, ma_120=VALUES(ma_)120, ma_250=VALUES(ma_)250,
+                win_rate_20d=VALUES(win_rate_)20d,
+                win_rate_60d=VALUES(win_rate_)60d,
+                win_rate_120d=VALUES(win_rate_)120d,
+                win_rate_250d=VALUES(win_rate_)250d,
+                total_days=VALUES(total_days),
+                drift=VALUES(drift),
+                volatility=VALUES(volatility),
+                price_series=VALUES(price_series),
+                market_turnover=VALUES(market_turnover),
+                data_source=VALUES(data_source),
+                generated_at=VALUES(generated_at)
         """, (
             stock_code,
             data.get('analysis_date'), data.get('latest_trading_date'),
@@ -322,7 +322,7 @@ class ValuationDB:
 
     def load_industry_data(self, stock_code):
         conn = self.get_connection()
-        row = conn.execute("SELECT * FROM industry_data WHERE stock_code=?", (stock_code,)).fetchone()
+        row = conn.execute("SELECT * FROM industry_data WHERE stock_code=%s", (stock_code,)).fetchone()
         conn.close()
         return row if row else None
 
@@ -346,24 +346,24 @@ class ValuationDB:
                 win_rate_20d, win_rate_60d, win_rate_120d, win_rate_250d,
                 total_days, drift, volatility,
                 data_source, generated_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON DUPLICATE KEY UPDATE
-                index_code=excluded.index_code, industry_name=excluded.industry_name,
-                sw_l1_code=excluded.sw_l1_code, sw_l1_name=excluded.sw_l1_name,
-                sw_l2_code=excluded.sw_l2_code, sw_l2_name=excluded.sw_l2_name,
-                sw_l3_code=excluded.sw_l3_code, sw_l3_name=excluded.sw_l3_name,
-                analysis_date=excluded.analysis_date, current_level=excluded.current_level,
-                volatility_20d=excluded.volatility_20d, volatility_60d=excluded.volatility_60d,
-                volatility_120d=excluded.volatility_120d, volatility_250d=excluded.volatility_250d,
-                annual_return_20d=excluded.annual_return_20d, annual_return_60d=excluded.annual_return_60d,
-                annual_return_120d=excluded.annual_return_120d, annual_return_250d=excluded.annual_return_250d,
-                period_return_20d=excluded.period_return_20d, period_return_60d=excluded.period_return_60d,
-                period_return_120d=excluded.period_return_120d, period_return_250d=excluded.period_return_250d,
-                ma_20=excluded.ma_20, ma_60=excluded.ma_60, ma_120=excluded.ma_120, ma_250=excluded.ma_250,
-                win_rate_20d=excluded.win_rate_20d, win_rate_60d=excluded.win_rate_60d,
-                win_rate_120d=excluded.win_rate_120d, win_rate_250d=excluded.win_rate_250d,
-                total_days=excluded.total_days, drift=excluded.drift, volatility=excluded.volatility,
-                data_source=excluded.data_source, generated_at=excluded.generated_at
+                index_code=VALUES(index_code), industry_name=VALUES(industry_name),
+                sw_l1_code=VALUES(sw_l)1_code, sw_l1_name=VALUES(sw_l)1_name,
+                sw_l2_code=VALUES(sw_l)2_code, sw_l2_name=VALUES(sw_l)2_name,
+                sw_l3_code=VALUES(sw_l)3_code, sw_l3_name=VALUES(sw_l)3_name,
+                analysis_date=VALUES(analysis_date), current_level=VALUES(current_level),
+                volatility_20d=VALUES(volatility_)20d, volatility_60d=VALUES(volatility_)60d,
+                volatility_120d=VALUES(volatility_)120d, volatility_250d=VALUES(volatility_)250d,
+                annual_return_20d=VALUES(annual_return_)20d, annual_return_60d=VALUES(annual_return_)60d,
+                annual_return_120d=VALUES(annual_return_)120d, annual_return_250d=VALUES(annual_return_)250d,
+                period_return_20d=VALUES(period_return_)20d, period_return_60d=VALUES(period_return_)60d,
+                period_return_120d=VALUES(period_return_)120d, period_return_250d=VALUES(period_return_)250d,
+                ma_20=VALUES(ma_)20, ma_60=VALUES(ma_)60, ma_120=VALUES(ma_)120, ma_250=VALUES(ma_)250,
+                win_rate_20d=VALUES(win_rate_)20d, win_rate_60d=VALUES(win_rate_)60d,
+                win_rate_120d=VALUES(win_rate_)120d, win_rate_250d=VALUES(win_rate_)250d,
+                total_days=VALUES(total_days), drift=VALUES(drift), volatility=VALUES(volatility),
+                data_source=VALUES(data_source), generated_at=VALUES(generated_at)
         """, (
             stock_code, data.get('index_code'), data.get('industry_name'),
             data.get('sw_l1_code'), data.get('sw_l1_name'),
@@ -401,7 +401,7 @@ class ValuationDB:
             conn.execute("""
                 INSERT OR REPLACE INTO industry_daily
                     (index_code, trade_date, open, high, low, close, volume, amount, pct_chg, pe, pb, ps_ttm, data_source)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """, (
                 index_code,
                 str(row.get('trade_date', '')),
@@ -428,34 +428,34 @@ class ValuationDB:
         if data_source:
             if start_date and end_date:
                 rows = conn.execute(
-                    "SELECT * FROM industry_daily WHERE index_code=? AND data_source=? AND trade_date>=? AND trade_date<=? ORDER BY trade_date",
+                    "SELECT * FROM industry_daily WHERE index_code=%s AND data_source=%s AND trade_date>=%s AND trade_date<=%s ORDER BY trade_date",
                     (index_code, data_source, start_date, end_date)
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT * FROM industry_daily WHERE index_code=? AND data_source=? ORDER BY trade_date",
+                    "SELECT * FROM industry_daily WHERE index_code=%s AND data_source=%s ORDER BY trade_date",
                     (index_code, data_source)
                 ).fetchall()
         else:
             # 优先取申万数据(tushare_sw)，无数据时再取同花顺(akshare_ths)
             if start_date and end_date:
                 rows = conn.execute(
-                    "SELECT * FROM industry_daily WHERE index_code=? AND data_source='tushare_sw' AND trade_date>=? AND trade_date<=? ORDER BY trade_date",
+                    "SELECT * FROM industry_daily WHERE index_code=%s AND data_source='tushare_sw' AND trade_date>=%s AND trade_date<=%s ORDER BY trade_date",
                     (index_code, start_date, end_date)
                 ).fetchall()
                 if not rows:
                     rows = conn.execute(
-                        "SELECT * FROM industry_daily WHERE index_code=? AND data_source='akshare_ths' AND trade_date>=? AND trade_date<=? ORDER BY trade_date",
+                        "SELECT * FROM industry_daily WHERE index_code=%s AND data_source='akshare_ths' AND trade_date>=%s AND trade_date<=%s ORDER BY trade_date",
                         (index_code, start_date, end_date)
                     ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT * FROM industry_daily WHERE index_code=? AND data_source='tushare_sw' ORDER BY trade_date",
+                    "SELECT * FROM industry_daily WHERE index_code=%s AND data_source='tushare_sw' ORDER BY trade_date",
                     (index_code,)
                 ).fetchall()
                 if not rows:
                     rows = conn.execute(
-                        "SELECT * FROM industry_daily WHERE index_code=? AND data_source='akshare_ths' ORDER BY trade_date",
+                        "SELECT * FROM industry_daily WHERE index_code=%s AND data_source='akshare_ths' ORDER BY trade_date",
                         (index_code,)
                     ).fetchall()
         conn.close()
@@ -467,7 +467,7 @@ class ValuationDB:
     def is_industry_data_stale(self, stock_code, max_days=7):
         """检查行业数据是否过期。"""
         conn = self.get_connection()
-        row = conn.execute("SELECT generated_at FROM industry_data WHERE stock_code=?", (stock_code,)).fetchone()
+        row = conn.execute("SELECT generated_at FROM industry_data WHERE stock_code=%s", (stock_code,)).fetchone()
         conn.close()
         if row is None:
             return True
@@ -483,7 +483,7 @@ class ValuationDB:
         """检查相对估值缓存是否有效（cache_date == 今天）。"""
         conn = self.get_connection()
         row = conn.execute(
-            "SELECT cache_date FROM relative_valuation WHERE stock_code=?", (stock_code,)
+            "SELECT cache_date FROM relative_valuation WHERE stock_code=%s", (stock_code,)
         ).fetchone()
         conn.close()
         if row is None:
@@ -495,7 +495,7 @@ class ValuationDB:
         """加载相对估值缓存（含 peer_companies）。"""
         conn = self.get_connection()
         row = conn.execute(
-            "SELECT * FROM relative_valuation WHERE stock_code=?", (stock_code,)
+            "SELECT * FROM relative_valuation WHERE stock_code=%s", (stock_code,)
         ).fetchone()
         if row is None:
             conn.close()
@@ -507,7 +507,7 @@ class ValuationDB:
         # 加载 peer_companies
         peers = conn.execute(
             "SELECT peer_name as name, peer_code as code, pe, ps, pb, market_cap "
-            "FROM peer_companies WHERE stock_code=?", (stock_code,)
+            "FROM peer_companies WHERE stock_code=%s", (stock_code,)
         ).fetchall()
         result['peer_companies'] = [dict(p) for p in peers]
         result['current_metrics'] = {
@@ -530,15 +530,15 @@ class ValuationDB:
                 current_pe, current_pb, current_ps,
                 sw_index_pe, sw_index_pb, sw_index_ps,
                 target_index_code, target_industry_l3
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON DUPLICATE KEY UPDATE
-                cache_date=excluded.cache_date, trade_date=excluded.trade_date,
-                current_pe=excluded.current_pe, current_pb=excluded.current_pb,
-                current_ps=excluded.current_ps,
-                sw_index_pe=excluded.sw_index_pe, sw_index_pb=excluded.sw_index_pb,
-                sw_index_ps=excluded.sw_index_ps,
-                target_index_code=excluded.target_index_code,
-                target_industry_l3=excluded.target_industry_l3,
+                cache_date=VALUES(cache_date), trade_date=VALUES(trade_date),
+                current_pe=VALUES(current_pe), current_pb=VALUES(current_pb),
+                current_ps=VALUES(current_ps),
+                sw_index_pe=VALUES(sw_index_pe), sw_index_pb=VALUES(sw_index_pb),
+                sw_index_ps=VALUES(sw_index_ps),
+                target_index_code=VALUES(target_index_code),
+                target_industry_l3=VALUES(target_industry_l)3,
                 created_at=NOW()
         """, (
             stock_code, data.get('cache_date'), data.get('trade_date'),
@@ -548,11 +548,11 @@ class ValuationDB:
         ))
 
         # 清除旧 peer_companies 并重新写入
-        conn.execute("DELETE FROM peer_companies WHERE stock_code=?", (stock_code,))
+        conn.execute("DELETE FROM peer_companies WHERE stock_code=%s", (stock_code,))
         for p in data.get('peer_companies', []):
             conn.execute("""
                 INSERT INTO peer_companies (stock_code, peer_name, peer_code, pe, ps, pb, market_cap)
-                VALUES (?,?,?,?,?,?,?)
+                VALUES (%s,%s,%s,%s,%s,%s,%s)
             """, (stock_code, p.get('name'), p.get('code'),
                   p.get('pe'), p.get('ps'), p.get('pb'), p.get('market_cap')))
 
@@ -564,7 +564,7 @@ class ValuationDB:
     def load_issue_date_locked(self, stock_code, issue_date):
         conn = self.get_connection()
         row = conn.execute(
-            "SELECT * FROM issue_date_locked WHERE stock_code=? AND issue_date=?",
+            "SELECT * FROM issue_date_locked WHERE stock_code=%s AND issue_date=%s",
             (stock_code, issue_date),
         ).fetchone()
         conn.close()
@@ -576,13 +576,13 @@ class ValuationDB:
         conn.execute("""
             INSERT INTO issue_date_locked (stock_code, issue_date, issue_date_price, ma_20,
                 current_price, analysis_date, locked_timestamp)
-            VALUES (?,?,?,?,?,?,?)
+            VALUES (%s,%s,%s,%s,%s,%s,%s)
             ON DUPLICATE KEY UPDATE
-                issue_date_price=excluded.issue_date_price,
-                ma_20=excluded.ma_20,
-                current_price=excluded.current_price,
-                analysis_date=excluded.analysis_date,
-                locked_timestamp=excluded.locked_timestamp
+                issue_date_price=VALUES(issue_date_price),
+                ma_20=VALUES(ma_)20,
+                current_price=VALUES(current_price),
+                analysis_date=VALUES(analysis_date),
+                locked_timestamp=VALUES(locked_timestamp)
         """, (
             stock_code, issue_date, data.get('issue_date_price'),
             data.get('ma_20'), data.get('current_price'),
@@ -594,8 +594,8 @@ class ValuationDB:
     def update_issue_date_current_price(self, stock_code, issue_date, price, analysis_date):
         conn = self.get_connection()
         conn.execute("""
-            UPDATE issue_date_locked SET current_price=?, analysis_date=?
-            WHERE stock_code=? AND issue_date=?
+            UPDATE issue_date_locked SET current_price=%s, analysis_date=%s
+            WHERE stock_code=%s AND issue_date=%s
         """, (price, analysis_date, stock_code, issue_date))
         conn.commit()
         conn.close()
@@ -606,7 +606,7 @@ class ValuationDB:
         """加载市场指数数据。返回 dict，key 为指数名称。"""
         conn = self.get_connection()
         rows = conn.execute(
-            "SELECT * FROM market_indices WHERE locked_date=?",
+            "SELECT * FROM market_indices WHERE locked_date=%s",
             (locked_date or '',),
         ).fetchall()
         conn.close()
@@ -626,7 +626,7 @@ class ValuationDB:
         conn = self.get_connection()
         ld = locked_date or ''
         # 先清除同 locked_date 的旧数据
-        conn.execute("DELETE FROM market_indices WHERE locked_date=?", (ld,))
+        conn.execute("DELETE FROM market_indices WHERE locked_date=%s", (ld,))
 
         for name, data in indices_data.items():
             # 用 index_name 作为 index_code（JSON 数据中无 index_code 字段）
@@ -641,7 +641,7 @@ class ValuationDB:
                     ma_20, ma_60, ma_120, ma_250,
                     win_rate_20d, win_rate_60d, win_rate_120d, win_rate_250d,
                     data_date
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """, (
                 idx_code, name, ld, data.get('current_level'),
                 data.get('volatility_20d'), data.get('volatility_60d'),
@@ -674,7 +674,7 @@ class ValuationDB:
                 step2_pass, step2_detail,
                 step3_pass, step3_detail,
                 decision, summary, error
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, (
             batch_id, stock_code, stock_name,
             pr.get('min'), pr.get('max'), decision.get('valid_thresholds'),
@@ -694,7 +694,7 @@ class ValuationDB:
     def get_screening_results(self, batch_id):
         conn = self.get_connection()
         rows = conn.execute(
-            "SELECT * FROM screening_results WHERE batch_id=? ORDER BY id",
+            "SELECT * FROM screening_results WHERE batch_id=%s ORDER BY id",
             (batch_id,),
         ).fetchall()
         conn.close()
@@ -795,19 +795,19 @@ class ValuationDB:
                         (board_code, board_name, total_count, latest_price, change_pct,
                          total_mv, turnover_rate, up_count, down_count,
                          leading_stock, leading_pct, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
-                        board_name=excluded.board_name,
-                        total_count=excluded.total_count,
-                        latest_price=excluded.latest_price,
-                        change_pct=excluded.change_pct,
-                        total_mv=excluded.total_mv,
-                        turnover_rate=excluded.turnover_rate,
-                        up_count=excluded.up_count,
-                        down_count=excluded.down_count,
-                        leading_stock=excluded.leading_stock,
-                        leading_pct=excluded.leading_pct,
-                        updated_at=excluded.updated_at
+                        board_name=VALUES(board_name),
+                        total_count=VALUES(total_count),
+                        latest_price=VALUES(latest_price),
+                        change_pct=VALUES(change_pct),
+                        total_mv=VALUES(total_mv),
+                        turnover_rate=VALUES(turnover_rate),
+                        up_count=VALUES(up_count),
+                        down_count=VALUES(down_count),
+                        leading_stock=VALUES(leading_stock),
+                        leading_pct=VALUES(leading_pct),
+                        updated_at=VALUES(updated_at)
                 """, (
                     row.get('板块代码'), row.get('板块名称'), 0,
                     row.get('最新价'), row.get('涨跌幅'),
@@ -831,7 +831,7 @@ class ValuationDB:
         try:
             # 先删除该板块旧的成份股
             conn.execute(
-                "DELETE FROM em_industry_stocks WHERE board_code = ?",
+                "DELETE FROM em_industry_stocks WHERE board_code = %s",
                 (board_code,)
             )
             for _, row in cons_df.iterrows():
@@ -842,7 +842,7 @@ class ValuationDB:
                          volume, amount, amplitude,
                          high, low, open, prev_close,
                          turnover_rate, pe_dynamic, pb, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     board_code,
                     row.get('代码'), row.get('名称'),
@@ -854,7 +854,7 @@ class ValuationDB:
                 ))
             # 更新板块的成份股数量
             conn.execute(
-                "UPDATE em_industry_boards SET total_count = ?, updated_at = ? WHERE board_code = ?",
+                "UPDATE em_industry_boards SET total_count = %s, updated_at = %s WHERE board_code = %s",
                 (len(cons_df), now, board_code)
             )
             conn.commit()
@@ -881,7 +881,7 @@ class ValuationDB:
         conn = self.get_connection()
         try:
             cur = conn.execute(
-                "SELECT * FROM em_industry_stocks WHERE board_code = ? ORDER BY stock_code",
+                "SELECT * FROM em_industry_stocks WHERE board_code = %s ORDER BY stock_code",
                 (board_code,)
             )
             return [row for row in cur.fetchall()]
@@ -900,7 +900,7 @@ class ValuationDB:
                 SELECT b.board_code, b.board_name
                 FROM em_industry_stocks s
                 JOIN em_industry_boards b ON s.board_code = b.board_code
-                WHERE s.stock_code = ?
+                WHERE s.stock_code = %s
                 ORDER BY b.board_code
             """, (stock_code,))
             return [row for row in cur.fetchall()]
