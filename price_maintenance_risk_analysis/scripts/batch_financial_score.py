@@ -169,6 +169,51 @@ def get_industry_thresholds(threshold_calc: IndustryThresholdCalculator, industr
     return clean_thresholds
 
 
+def _save_financial_indicators(stock_code, report_year, ratios):
+    """将计算好的财务指标保存到 investment_valuation.financial_indicators 表"""
+    import pymysql
+
+    # 指标字段列表(与表结构一一对应)
+    indicator_fields = [
+        'current_ratio', 'quick_ratio', 'inv_turn', 'ar_turn', 'ca_turn', 'assets_turn',
+        'roa', 'npta', 'roe', 'roe_dt', 'netprofit_margin', 'grossprofit_margin',
+        'debt_to_assets', 'int_to_talcap', 'debt_to_eqt', 'ebit_to_interest',
+        'cash_to_liqdebt', 'cash_to_liqdebt_withinterest', 'rd_exp_ratio',
+        'op_yoy', 'ebt_yoy', 'netprofit_yoy', 'dt_netprofit_yoy', 'roe_yoy',
+        'tr_yoy', 'or_yoy', 'equity_yoy',
+    ]
+
+    # 构建 VALUES 部分
+    values = [stock_code, report_year]
+    placeholders = ['%s', '%s']
+    update_parts = []
+    for f in indicator_fields:
+        values.append(ratios.get(f))
+        placeholders.append('%s')
+        update_parts.append(f'{f}=VALUES({f})')
+
+    values.append(1 if ratios.get('used_average_values') else 0)
+    placeholders.append('%s')
+    update_parts.append('used_average_values=VALUES(used_average_values)')
+
+    values.append(ratios.get('valid_indicator_count', 0))
+    placeholders.append('%s')
+    update_parts.append('valid_indicator_count=VALUES(valid_indicator_count)')
+
+    conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', password='',
+                           database='investment_valuation', charset='utf8mb4')
+    try:
+        with conn.cursor() as cur:
+            cols = ', '.join(['stock_code', 'report_year'] + indicator_fields +
+                             ['used_average_values', 'valid_indicator_count'])
+            ph = ', '.join(placeholders)
+            sql = f"INSERT INTO financial_indicators ({cols}) VALUES ({ph}) ON DUPLICATE KEY UPDATE {', '.join(update_parts)}"
+            cur.execute(sql, values)
+            conn.commit()
+    finally:
+        conn.close()
+
+
 def score_company(fetcher: TushareDataFetcher, threshold_calc: IndustryThresholdCalculator,
                   ts_code: str, company_name: str, score_years=None) -> dict:
     """计算单个公司近5年的财务评分
@@ -223,6 +268,12 @@ def score_company(fetcher: TushareDataFetcher, threshold_calc: IndustryThreshold
             if not ratios:
                 logger.warning(f"{ts_code} {year}年 指标计算失败，跳过")
                 continue
+
+            # 落库: 保存财务指标到 investment_valuation.financial_indicators
+            try:
+                _save_financial_indicators(ts_code, year, ratios)
+            except Exception as e:
+                logger.debug(f"{ts_code} {year}年 指标落库失败(不影响评分): {e}")
 
             scorer.load_company_data(ratios, company_name)
             score_result = scorer.calculate_score()

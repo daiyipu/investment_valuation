@@ -12,8 +12,11 @@
 流程:
   Step 1: batch_screener.py  → data/batch_screening_result_<date>.xlsx
   Step 2: batch_financial_score.py → data/batch_screening_result_<date>_scored.xlsx
+  Step 3: 生成最终结论列
+  Step 4: ML模型预测盈利概率（LightGBM + 逻辑回归）
 
 最终输出: data/batch_screening_result_<date>_scored.xlsx
+  最后两列: 盈利概率_LightGBM, 盈利概率_逻辑回归
 """
 
 import os
@@ -25,13 +28,17 @@ from datetime import datetime
 import openpyxl
 
 
-# 两个脚本的绝对路径
+# ── 脚本路径 ──
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 SCREENER_SCRIPT = os.path.join(SCRIPTS_DIR, 'batch_screener.py')
-
-EFAES_SCRIPT = os.path.join(SCRIPTS_DIR, 'batch_financial_score.py')  # 已集成到本项目
+EFAES_SCRIPT = os.path.join(SCRIPTS_DIR, 'batch_financial_score.py')
+PREDICT_SCRIPT = os.path.join(os.path.dirname(SCRIPTS_DIR), 'ml_training', 'predict_profitability.py')
 
 DATA_DIR = os.path.join(os.path.dirname(SCRIPTS_DIR), 'data')
+
+# ── Python 解释器（优先 vnpy 环境） ──
+VNPY_PYTHON = os.path.expanduser('~/anaconda3/envs/vnpy/bin/python')
+PYTHON = VNPY_PYTHON if os.path.exists(VNPY_PYTHON) else sys.executable
 
 
 def run_step(description, cmd):
@@ -92,7 +99,7 @@ def main():
 
     # ── Step 1: 定增决策筛选 ──
     step1_cmd = [
-        sys.executable, SCREENER_SCRIPT,
+        PYTHON, SCREENER_SCRIPT,
         '--input', args.input,
         '--output', screening_output,
         '--sheet', args.sheet,
@@ -106,7 +113,7 @@ def main():
         sys.exit(1)
 
     if not run_step('Step 2/3: 财务评分 (batch_financial_score)', [
-        sys.executable, EFAES_SCRIPT,
+        PYTHON, EFAES_SCRIPT,
         screening_output,
     ]):
         sys.exit(1)
@@ -122,7 +129,7 @@ def main():
     t_step3 = time.time()
     print()
     print('=' * 60)
-    print('  Step 3/3: 生成最终结论')
+    print('  Step 3/4: 生成最终结论')
     print('=' * 60)
 
     wb = openpyxl.load_workbook(scored_output)
@@ -162,6 +169,22 @@ def main():
     total = ws.max_row - 1
     print()
     print(f'  最终结论: {pass_count}/{total} 通过 [耗时 {step3_elapsed:.1f}s]')
+
+    # ── Step 4: ML模型预测盈利概率 ──
+    if not os.path.exists(PREDICT_SCRIPT):
+        print(f'\n⚠️ ML预测脚本不存在: {PREDICT_SCRIPT}，跳过 Step 4')
+    else:
+        print()
+        print('=' * 60)
+        print('  Step 4/4: ML模型预测盈利概率（LightGBM + 逻辑回归）')
+        print('=' * 60)
+        step4_cmd = [
+            PYTHON, PREDICT_SCRIPT,
+            scored_output,
+        ]
+        if not run_step('Step 4/4: ML盈利概率预测', step4_cmd):
+            print('⚠️ ML预测失败，不影响前面步骤的结果')
+
     print()
     total_elapsed = time.time() - t_total
     print('=' * 60)
