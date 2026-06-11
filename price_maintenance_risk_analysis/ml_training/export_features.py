@@ -773,14 +773,13 @@ def main():
     matched_peer = db_feats['同行公司数'].notna().sum()
     print(f'   同行数据: {matched_peer}/{len(stock_codes)}')
 
-    # ── 3. 从fund_risk_control加载财务比率和三表 ──
+    # ── 3. 从fund_risk_control加载财务比率（三表已弃用：fund_risk_control 仅7家数据，
+    #        覆盖率0.43%，且与 financial_indicators API 比率表重复，全部 importance=0）──
     if not args.no_mysql:
-        print('3. 加载fund_risk_control财务数据...')
+        print('3. 加载财务比率(financial_indicators)...')
         ratio_feats = load_financial_ratios(stock_codes)
-        stmt_feats = load_financial_statements(stock_codes)
     else:
         ratio_feats = pd.DataFrame()
-        stmt_feats = pd.DataFrame()
 
     # ── 4. 合并所有特征 ──
     print('4. 合并全部特征...')
@@ -795,11 +794,31 @@ def main():
     db_feat_cols = [c for c in db_feats.columns if c not in _dup_cols]
     merged = pd.concat([scored, db_feats[db_feat_cols]], axis=1)
 
-    # 财务比率和三表用股票代码merge（非重复股票，left join安全）
+    # 财务比率用股票代码merge（非重复股票，left join安全）
     if not ratio_feats.empty:
         merged = merged.merge(ratio_feats, on='股票代码', how='left')
-    if not stmt_feats.empty:
-        merged = merged.merge(stmt_feats, on='股票代码', how='left')
+
+    # ── 剔除死字段（importance=0 且 IV<0.02，模型从未使用）──
+    # 来源：三表已不加载；以下是其余无预测力的标识/稀疏/重复字段
+    EXCLUDE_FIELDS = {
+        # 行业代码/时间标识（文本，本不该入模）
+        'sw_l1_code', 'sw_l1_name', 'sw_l2_code', 'sw_l2_name', 'sw_l3_code', 'sw_l3_name',
+        'report_year', '财报年份',
+        # 子场景/筛选通过标记（近常数）
+        '市场指数_通过', '参数构造_通过', '反向推算_通过', 'step1通过', 'step3通过',
+        '定增建议参与', '有效阈值数', '行情_时间匹配',
+        # 定增参数（IV=0）
+        '溢价率', '溢价率下限', '锁定期', '融资金额', '无风险利率', 'Beta',
+        # 稀疏 FCF 营运资金变动（全0/极稀疏）
+        '营运资金变动_T', '营运资金变动_T1', '营运资金变动_T2', '营运资金变动_T3', '营运资金变动_T4',
+        # 弱/重复比率
+        '营业利润率', '营收增长率', '行业PS', '市场_above_MA250',
+        '净债务', '净资产负债表',
+    }
+    drop_present = [c for c in EXCLUDE_FIELDS if c in merged.columns]
+    if drop_present:
+        merged = merged.drop(columns=drop_present)
+        print(f'   剔除死字段: {len(drop_present)} 个')
 
     # 列数统计
     total_cols = len(merged.columns)

@@ -511,6 +511,34 @@ def main():
     # ====== 清理 ======
     df = df.replace([np.inf, -np.inf], np.nan)
 
+    # ====== 末尾闸门：剔除确认无信号的字段（IV=0 标记/常数/标识）======
+    # 放在最后一步，拦住本脚本自己重新生成的字段（如 市场_above_MA250）
+    DROP_FIELDS = {
+        # 子场景通过标记（近常数，IV=0）
+        '市场指数_通过', '行业PE_通过', '个股PE_通过', 'DCF估值_通过',
+        '修正PE估值_通过', '参数构造_通过', '蒙特卡洛_通过', '反向推算_通过',
+        '子场景通过数', 'step1通过', 'step2通过', 'step3通过',
+        # 日期/行情标识（IV=0，不该入模）
+        '最新交易日', '行情_时间匹配', '财报年份', 'report_year',
+        # derive 重新生成的无信号字段
+        '市场_above_MA250',
+        # 定增参数（IV=0）
+        '溢价率', '溢价率下限', '锁定期', '融资金额', '无风险利率', 'Beta',
+        '定增建议参与', '有效阈值数',
+        # 行业代码文本（不该入模）
+        'sw_l1_code', 'sw_l1_name', 'sw_l2_code', 'sw_l2_name', 'sw_l3_code', 'sw_l3_name',
+        # 稀疏 FCF 营运资金变动
+        '营运资金变动_T', '营运资金变动_T1', '营运资金变动_T2', '营运资金变动_T3', '营运资金变动_T4',
+        # 弱/重复
+        '营业利润率', '营收增长率', '行业PS', '净债务', '净资产负债表',
+        # 行业级别：1391个唯一值(几乎每行不同)，非干净分级，脏数据
+        '行业级别',
+    }
+    drop_present = [c for c in DROP_FIELDS if c in df.columns]
+    if drop_present:
+        df = df.drop(columns=drop_present)
+        print(f'  末尾剔除无信号字段: {len(drop_present)} 个')
+
     # ====== 保存 ======
     new_cols_count = len(df.columns) - orig_cols
     df.to_parquet(output_path, index=False)

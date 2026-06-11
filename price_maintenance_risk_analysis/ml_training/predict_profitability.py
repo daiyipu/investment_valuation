@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-定增盈利概率预测 - 加载训练好的双模型对新样本预测
+定增盈利概率预测 - 加载训练好的模型对新样本预测
 
-模型: 全量数值特征版本（320特征）
-  - lgb_classifier_full.txt  (LightGBM, CV AUC=0.746)
-  - lr_classifier_full.pkl   (逻辑回归, CV AUC=0.655)
+模型版本由 model_registry 的 current.full / current.scorecard 指针决定
+（见 manage_models.py current）。不再写死具体版本/AUC。
 
 支持两种用法:
   1. 独立运行: python ml_training/predict_profitability.py <scored_excel> [--output result.xlsx]
   2. 被调用:   from predict_profitability import predict; df = predict(scored_excel_path)
 
-输出两个模型的盈利概率:
+输出三列:
   - 盈利概率_LightGBM
   - 盈利概率_逻辑回归
+  - 评分卡得分（base=600，PDO=20；scorecard 未注册时省略）
 """
 
 import sys
@@ -119,7 +119,7 @@ def predict(scored_excel_path):
         DataFrame: columns = [股票代码, 盈利概率_LightGBM, 盈利概率_逻辑回归]
     """
     import lightgbm as lgb
-    from export_features import load_db_features, load_scored_features, load_financial_ratios, load_financial_statements
+    from export_features import load_db_features, load_scored_features, load_financial_ratios
     from derive_features import (
         derive_fcf_growth_rates, derive_fcf_cross_metrics,
         derive_financial_score_deltas, derive_valuation_relative,
@@ -167,26 +167,27 @@ def predict(scored_excel_path):
     matched_price = db_feats.get('当前价', pd.Series()).notna().sum()
     print(f'    行情匹配: {matched_price}/{len(scored)}')
 
-    # 财务比率 + 三表（可选，失败不中断）
+    # 财务比率（financial_indicators API；三表已弃用，覆盖率0.43%且与比率表重复）
     try:
         ratio_feats = load_financial_ratios(stock_codes)
-        stmt_feats = load_financial_statements(stock_codes)
     except Exception as e:
         print(f'    财务比率跳过: {e}')
         ratio_feats = pd.DataFrame()
-        stmt_feats = pd.DataFrame()
 
     # ═══════════════════════════════════════════════
     # 3. 合并
     # ═══════════════════════════════════════════════
     scored = scored.reset_index(drop=True)
-    db_feat_cols = [c for c in db_feats.columns if c != '股票代码']
+    # 去掉 db_feats 中与 scored 同名的列（报价日/定增决策/报价日价格…），
+    # 一律取 scored（权威源），避免 concat 后出现重名列导致 df[c] 变成多列。
+    _dup_cols = (set(scored.columns) & set(db_feats.columns)) - {'股票代码'}
+    if _dup_cols:
+        print(f'    去重列(取scored版): {sorted(_dup_cols)}')
+    db_feat_cols = [c for c in db_feats.columns if c != '股票代码' and c not in _dup_cols]
     df = pd.concat([scored, db_feats[db_feat_cols].reset_index(drop=True)], axis=1)
 
     if not ratio_feats.empty:
         df = df.merge(ratio_feats, on='股票代码', how='left')
-    if not stmt_feats.empty:
-        df = df.merge(stmt_feats, on='股票代码', how='left')
 
     # 清理类型
     str_keep = {'股票代码', '股票简称', '最终结论', '一级行业', '二级行业', '三级行业',
