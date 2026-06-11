@@ -18,6 +18,7 @@
 
 import sys
 import os
+import re
 import json
 import warnings
 import pickle
@@ -28,6 +29,76 @@ warnings.filterwarnings('ignore')
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
+
+
+_INTERVAL_RE = re.compile(r'^[\[(](.*?),\s*(.*?)[\])]$')
+
+
+def _parse_interval(key):
+    """解析 pandas 区间字符串 '(0.33, 2.145]' → (0.33, 2.145)。失败返回 None。"""
+    m = _INTERVAL_RE.match(str(key).strip())
+    if not m:
+        return None
+    try:
+        return float(m.group(1)), float(m.group(2))
+    except ValueError:
+        return None
+
+
+def score_with_scorecard(df, sc_dir):
+    """用评分卡模型对 df 每行打分。
+
+    score = base_points + Σ(B · coef_i · woe_i)
+    缺失/越界特征按最近 bin 兜底；NaN 贡献 0（与训练时 evaluate_scorecard 的
+    fillna(0) 行为一致）。
+
+    Args:
+        df: 已构造完整特征的 DataFrame
+        sc_dir: 评分卡版本目录（含 scorecard_model.pkl）
+
+    Returns:
+        np.array[float] 每行得分
+    """
+    with open(os.path.join(sc_dir, 'scorecard_model.pkl'), 'rb') as f:
+        sc = pickle.load(f)
+    model = sc['model']
+    features = sc['features']
+    woe_bins = sc['woe_bins']
+    base_points = float(sc['scoring_params']['base_points'])
+    B = float(sc['scoring_params']['B'])
+    coefs = dict(zip(features, model.coef_[0]))
+
+    scores = np.full(len(df), base_points, dtype=float)
+    for feat in features:
+        if feat not in df.columns or feat not in woe_bins:
+            continue
+        # 预解析该特征的 bins: [(left, right, woe), ...] 按 left 排序
+        parsed = []
+        for k, woe in woe_bins[feat].get('woe_map', {}).items():
+            iv = _parse_interval(k)
+            if iv is not None:
+                parsed.append((iv[0], iv[1], float(woe)))
+        if not parsed:
+            continue
+        parsed.sort(key=lambda x: x[0])
+        min_left = parsed[0][0]
+        first_woe = parsed[0][2]
+        last_woe = parsed[-1][2]
+
+        vals = pd.to_numeric(df[feat], errors='coerce').values
+        coef = coefs[feat]
+        for i, v in enumerate(vals):
+            if v != v:  # NaN → 跳过（贡献 0）
+                continue
+            woe = None
+            for l, r, w in parsed:
+                if l < v <= r:
+                    woe = w
+                    break
+            if woe is None:
+                woe = first_woe if v <= min_left else last_woe  # 越界兜底
+            scores[i] += B * coef * woe
+    return scores
 
 
 def predict(scored_excel_path):
@@ -55,8 +126,22 @@ def predict(scored_excel_path):
         derive_market_momentum, derive_industry_valuation_growth,
         derive_market_index_features,
     )
+    from model_registry import require_current_dir, get_current
 
     output_dir = os.path.join(SCRIPT_DIR, 'output')
+    # 模型从 registry 的当前生产版本读取（见 manage_models.py current）
+    version = get_current('full')
+    model_dir = require_current_dir('full')
+    print(f'  [ML-0] 使用 full 模型版本: {version}')
+    # 评分卡（可选：未注册则跳过评分卡得分列）
+    sc_version = get_current('scorecard')
+    sc_dir = None
+    if sc_version:
+        try:
+            sc_dir = require_current_dir('scorecard')
+            print(f'  [ML-0] 使用 scorecard 模型版本: {sc_version}')
+        except RuntimeError as e:
+            print(f'  [ML-0] 评分卡版本目录缺失，跳过评分卡得分: {e}')
 
     # ═══════════════════════════════════════════════
     # 1. 从 Excel 提取特征
@@ -73,7 +158,7 @@ def predict(scored_excel_path):
     sample_keys = []
     for _, row in scored.iterrows():
         code = row['股票代码']
-        issue_date = str(row.get('报价日_excel', '')).replace('.0', '').strip()
+        issue_date = str(row.get('报价日', '')).replace('.0', '').strip()
         if not issue_date or issue_date == 'nan' or len(issue_date) < 8:
             issue_date = None
         sample_keys.append((code, issue_date))
@@ -133,7 +218,7 @@ def predict(scored_excel_path):
     # 5. 加载全量特征模型的 meta
     # ═══════════════════════════════════════════════
     print('  [ML-4] 加载模型 meta...')
-    with open(os.path.join(output_dir, 'lgb_full_meta.json'), 'r') as f:
+    with open(os.path.join(model_dir, 'lgb_full_meta.json'), 'r') as f:
         meta = json.load(f)
     model_features = meta['features']
     train_medians = meta['medians']
@@ -169,7 +254,7 @@ def predict(scored_excel_path):
     # 7. LightGBM 预测
     # ═══════════════════════════════════════════════
     print('  [ML-6] LightGBM 预测...')
-    booster = lgb.Booster(model_file=os.path.join(output_dir, 'lgb_classifier_full.txt'))
+    booster = lgb.Booster(model_file=os.path.join(model_dir, 'lgb_classifier_full.txt'))
     lgb_feature_names = booster.feature_name()
 
     # 对齐特征
@@ -185,7 +270,7 @@ def predict(scored_excel_path):
     # 8. 逻辑回归 预测
     # ═══════════════════════════════════════════════
     print('  [ML-7] 逻辑回归 预测...')
-    with open(os.path.join(output_dir, 'lr_classifier_full.pkl'), 'rb') as f:
+    with open(os.path.join(model_dir, 'lr_classifier_full.pkl'), 'rb') as f:
         lr_data = pickle.load(f)
     lr_model = lr_data['model']
     lr_scaler = lr_data['scaler']
@@ -201,13 +286,29 @@ def predict(scored_excel_path):
     print(f'    概率范围: [{lr_proba.min():.3f}, {lr_proba.max():.3f}]')
 
     # ═══════════════════════════════════════════════
-    # 9. 返回
+    # 9. 评分卡得分（可选）
+    # ═══════════════════════════════════════════════
+    sc_scores = None
+    if sc_dir is not None:
+        print('  [ML-8] 评分卡得分...')
+        try:
+            sc_scores = score_with_scorecard(df, sc_dir)
+            print(f'    得分范围: [{sc_scores.min():.0f}, {sc_scores.max():.0f}]'
+                  f'  均值: {sc_scores.mean():.0f}')
+        except Exception as e:
+            print(f'    ⚠ 评分卡打分失败，跳过: {e}')
+            sc_scores = None
+
+    # ═══════════════════════════════════════════════
+    # 10. 返回
     # ═══════════════════════════════════════════════
     result = pd.DataFrame({
         '股票代码': df['股票代码'],
         '盈利概率_LightGBM': lgb_proba,
         '盈利概率_逻辑回归': lr_proba,
     })
+    if sc_scores is not None:
+        result['评分卡得分'] = np.round(sc_scores).astype(int)
 
     print(f'  ✅ ML预测完成: {len(result)} 条\n')
     return result
@@ -225,20 +326,25 @@ def write_to_excel(scored_excel_path, result_df, output_path=None):
     wb = openpyxl.load_workbook(target)
     ws = wb.active
 
+    # 待写入列（评分卡得分仅在 result_df 中存在时写）
+    out_cols = ['盈利概率_LightGBM', '盈利概率_逻辑回归']
+    if '评分卡得分' in result_df.columns:
+        out_cols.append('评分卡得分')
+
     # 如果已有旧列则先删除（幂等写入）
     header_row = [ws.cell(1, col).value for col in range(1, ws.max_column + 1)]
-    for col_name in ['盈利概率_LightGBM', '盈利概率_逻辑回归']:
+    for col_name in list(out_cols):
         if col_name in header_row:
             col_idx = header_row.index(col_name) + 1
             ws.delete_cols(col_idx)
-            # 重新读取 header（删除列后索引变化）
             header_row = [ws.cell(1, col).value for col in range(1, ws.max_column + 1)]
 
-    # 写入两列
-    lgb_col = ws.max_column + 1
-    lr_col = lgb_col + 1
-    ws.cell(1, lgb_col, '盈利概率_LightGBM')
-    ws.cell(1, lr_col, '盈利概率_逻辑回归')
+    # 依次写入列
+    col_map = {}
+    for col_name in out_cols:
+        c = ws.max_column + 1
+        ws.cell(1, c, col_name)
+        col_map[col_name] = c
 
     # 按行序写入（row 2 = 第1条数据, 与 result_df 第0行对应）
     matched = 0
@@ -246,12 +352,16 @@ def write_to_excel(scored_excel_path, result_df, output_path=None):
     n = min(len(result_df), data_rows)
     for i in range(n):
         r = i + 2  # Excel 行号
-        ws.cell(r, lgb_col, f'{result_df.iloc[i]["盈利概率_LightGBM"]*100:.1f}%')
-        ws.cell(r, lr_col, f'{result_df.iloc[i]["盈利概率_逻辑回归"]*100:.1f}%')
+        ws.cell(r, col_map['盈利概率_LightGBM'],
+                f'{result_df.iloc[i]["盈利概率_LightGBM"]*100:.1f}%')
+        ws.cell(r, col_map['盈利概率_逻辑回归'],
+                f'{result_df.iloc[i]["盈利概率_逻辑回归"]*100:.1f}%')
+        if '评分卡得分' in col_map:
+            ws.cell(r, col_map['评分卡得分'], int(result_df.iloc[i]['评分卡得分']))
         matched += 1
 
     wb.save(target)
-    print(f'  ✅ 写入 Excel: {matched} 条 → {target}')
+    print(f'  ✅ 写入 Excel: {matched} 条 → {target} (列: {", ".join(out_cols)})')
     return matched
 
 
@@ -276,6 +386,10 @@ def main():
     high_lr = (result_df['盈利概率_逻辑回归'] > 0.5).sum()
     print(f'    LightGBM >50%: {high_lgb} ({high_lgb/len(result_df)*100:.1f}%)')
     print(f'    逻辑回归 >50%: {high_lr} ({high_lr/len(result_df)*100:.1f}%)')
+    if '评分卡得分' in result_df.columns:
+        s = result_df['评分卡得分']
+        print(f'    评分卡得分: 均值 {s.mean():.0f}, 区间 [{s.min()}, {s.max()}], >600 占比 '
+              f'{(s>600).sum()/len(s)*100:.1f}%')
 
     # 写入 Excel
     write_to_excel(args.scored_excel, result_df, args.output)

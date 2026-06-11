@@ -164,6 +164,59 @@ def remove_correlated(X, features, iv_df, threshold=0.7):
     return selected
 
 
+# ====== Step 3.5: VIF 筛选 ======
+
+def filter_by_vif(X, features, max_vif=5.0):
+    """逐步回归式 VIF 筛选: 每次剔除 VIF 最大的特征，直到所有 VIF < max_vif
+
+    Args:
+        X: DataFrame
+        features: 候选特征列表
+        max_vif: VIF 阈值，默认5.0（严格标准，10.0为宽松标准）
+
+    Returns:
+        筛选后的特征列表
+    """
+    from statsmodels.stats.outliers_influence import variance_inflation_factor
+
+    remaining = list(features)
+
+    for _ in range(len(features)):
+        X_sel = X[remaining].copy()
+        X_sel = X_sel.replace([np.inf, -np.inf], np.nan).fillna(X_sel.median())
+
+        # 计算 VIF
+        vif_values = []
+        for i, col in enumerate(remaining):
+            try:
+                vif = variance_inflation_factor(X_sel.values, i)
+                vif_values.append(vif if np.isfinite(vif) else 999)
+            except Exception:
+                vif_values.append(999)
+
+        max_vif_val = max(vif_values)
+        if max_vif_val <= max_vif:
+            break
+
+        # 剔除 VIF 最大的特征
+        drop_idx = vif_values.index(max_vif_val)
+        drop_feat = remaining[drop_idx]
+        print(f'    VIF剔除: {drop_feat:25s} VIF={max_vif_val:.1f}')
+        remaining.pop(drop_idx)
+
+    # 输出最终 VIF
+    print(f'    VIF筛选后: {len(remaining)}个特征 (阈值<{max_vif})')
+    X_final = X[remaining].replace([np.inf, -np.inf], np.nan).fillna(X[remaining].median())
+    for i, col in enumerate(remaining):
+        try:
+            vif = variance_inflation_factor(X_final.values, i)
+            print(f'      {col:25s} VIF={vif:.2f}')
+        except Exception:
+            pass
+
+    return remaining
+
+
 # ====== Step 5: WOE 变换 ======
 
 def woe_transform(X, y, features, n_bins=5):
@@ -440,6 +493,71 @@ def save_scorecard_artifacts(output_dir, model, bins_dict, features, medians,
         f.write(f'IV分析见: iv_analysis.csv\n')
     print(f'  报告: {report_path}')
 
+    # 6. 版本归档 + 注册到 model_registry
+    _archive_and_register_scorecard(
+        output_dir, features, eval_results, args,
+        files=[pkl_path, bins_path, sc_path, iv_path, report_path],
+    )
+
+
+def _archive_and_register_scorecard(output_dir, features, eval_results, args, files):
+    """把评分卡产物归档到版本子目录，并注册到 model_registry。"""
+    import shutil
+    from datetime import datetime
+
+    auc = eval_results.get('auc', 0) or 0
+    date_str = datetime.now().strftime('%Y%m%d_%H%M')
+    auc_tag = f'auc{auc:.2f}'.replace('.', '')
+    version_name = f'v_{date_str}_scorecard_{len(features)}feat_{auc_tag}'
+    version_dir = os.path.join(output_dir, version_name)
+    os.makedirs(version_dir, exist_ok=True)
+
+    archived = []
+    for fpath in files:
+        if os.path.exists(fpath):
+            shutil.copy2(fpath, os.path.join(version_dir, os.path.basename(fpath)))
+            archived.append(os.path.basename(fpath))
+
+    # VERSION.md
+    with open(os.path.join(version_dir, 'VERSION.md'), 'w', encoding='utf-8') as f:
+        f.write(f'# 评分卡版本: {version_name}\n\n')
+        f.write(f'**训练时间**: {datetime.now().strftime("%Y-%m-%d %H:%M")}\n')
+        f.write(f'**入模特征数**: {len(features)}\n')
+        f.write(f'**训练样本**: {eval_results.get("n_samples", "?")} '
+                f'(盈利{eval_results.get("n_profit", "?")} / 亏损{eval_results.get("n_loss", "?")})\n')
+        f.write(f'**盈利阈值**: {args.threshold}%\n')
+        f.write(f'**5折CV AUC**: {eval_results.get("auc_cv", "?"):.3f}\n')
+        f.write(f'**得分AUC**: {eval_results.get("auc", "?"):.3f}\n')
+        f.write(f'**KS**: {eval_results.get("ks", "?"):.3f}\n\n')
+        f.write('## 入模特征\n')
+        for x in features:
+            f.write(f'- {x}\n')
+
+    try:
+        from model_registry import register_version
+        n = eval_results.get('n_samples')
+        pos = eval_results.get('n_profit')
+        pos_rate = float(pos) / float(n) if n else None
+        register_version(
+            model_type='scorecard',
+            version=version_name,
+            dir=version_dir,
+            metrics={'auc_cv': float(eval_results.get('auc_cv', 0) or 0),
+                     'auc': float(eval_results.get('auc', 0) or 0),
+                     'ks': float(eval_results.get('ks', 0) or 0)},
+            n_features=len(features),
+            threshold=args.threshold,
+            n_samples=n,
+            positive_rate=pos_rate,
+            files=archived,
+            note=f'评分卡 {len(features)}特征',
+            set_current=True,
+        )
+        print(f'  版本归档: {version_dir}')
+        print(f'  registry: 已注册为 scorecard 当前版本 → {version_name}')
+    except Exception as e:
+        print(f'  ⚠ registry 注册失败(不影响模型文件): {e}')
+
 
 # ====== 主流程 ======
 
@@ -490,15 +608,19 @@ def main():
     print(f'\n3. LightGBM重要性交叉验证...')
     iv_df = cross_reference_lgbm(iv_df, output_dir)
 
-    # ── Step 3: IV 筛选 + 去相关 ──
-    print(f'\n4. 特征筛选: IV>={args.iv_min} → 去相关 → Top {args.n_features}...')
+    # ── Step 3: IV 筛选 + 去相关 + VIF ──
+    print(f'\n4. 特征筛选: IV>={args.iv_min} → 去相关 → VIF → Top {args.n_features}...')
     iv_pass = iv_df[iv_df['iv'] >= args.iv_min]['feature'].tolist()
     print(f'   IV筛选后: {len(iv_pass)}个')
 
     decorrelated = remove_correlated(X, iv_pass, iv_df, threshold=0.7)
     print(f'   去相关后: {len(decorrelated)}个')
 
-    final_features = decorrelated[:args.n_features]
+    # VIF 筛选（排除多重共线性）
+    print(f'   VIF筛选 (阈值<5.0)...')
+    vif_filtered = filter_by_vif(X, decorrelated, max_vif=5.0)
+
+    final_features = vif_filtered[:args.n_features]
     print(f'   最终选择: {len(final_features)}个')
     for i, f in enumerate(final_features, 1):
         iv_val = iv_df.loc[iv_df['feature'] == f, 'iv'].values[0]

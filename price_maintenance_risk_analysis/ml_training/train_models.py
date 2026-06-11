@@ -398,6 +398,32 @@ def main():
             if os.path.exists(os.path.join(version_dir, fname)):
                 f.write(f'- {fname}\n')
 
+    # ═══════════════════════════════════════════════
+    # 注册到 model_registry（predict_profitability 从 registry 读 current 版本）
+    # ═══════════════════════════════════════════════
+    if not args.classic:
+        try:
+            from model_registry import register_version
+            version_name = os.path.basename(version_dir)
+            archived = [f for f in archive_files
+                        if os.path.exists(os.path.join(version_dir, f))]
+            register_version(
+                model_type='full',
+                version=version_name,
+                dir=version_dir,
+                metrics={'lgb_auc': float(lgb_auc), 'lr_auc': float(lr_auc)},
+                n_features=X.shape[1],
+                threshold=args.threshold,
+                n_samples=len(y),
+                positive_rate=float(y.mean()),
+                files=archived,
+                note='全量数值特征 LGB+LR',
+                set_current=True,
+            )
+            print(f'   registry: 已注册为 full 当前版本 → {version_name}')
+        except Exception as e:
+            print(f'   ⚠ registry 注册失败(不影响模型文件): {e}')
+
     print(f'\n✅ 完成! 输出目录: {output_dir}')
     print(f'   版本归档: {version_dir}')
 

@@ -1,0 +1,80 @@
+{
+  "current": {
+    "full": "v_20260611_1539_306feat_auc074",
+    "scorecard": "v_20260611_1539_scorecard_12feat_auc069"
+  },
+  "versions": [
+    {
+      "version": "v_20260611_1539_306feat_auc074",
+      "model_type": "full",
+      "created_at": "2026-06-11 15:39",
+      "n_features": 306,
+      "threshold": -10.0,
+      "n_samples": 1485,
+      "positive_rate": 0.49292929292929294,
+      "metrics": {
+        "lgb_auc": 0.7414154095034851,
+        "lr_auc": 0.6772353769473558
+      },
+      "dir": "v_20260611_1539_306feat_auc074",
+      "files": [
+        "lgb_classifier_full.txt",
+        "lgb_feature_importance_full.csv",
+        "lgb_feature_importance_full.png",
+        "lr_classifier_full.pkl",
+        "lr_coefficients_full.csv",
+        "evaluation_report.txt",
+        "lgb_full_meta.json"
+      ],
+      "note": "全量数值特征 LGB+LR"
+    },
+    {
+      "version": "v_20260611_1539_scorecard_12feat_auc069",
+      "model_type": "scorecard",
+      "created_at": "2026-06-11 15:39",
+      "n_features": 12,
+      "threshold": -10.0,
+      "n_samples": 1485,
+      "positive_rate": 0.49292929292929294,
+      "metrics": {
+        "auc_cv": 0.6716075050661954,
+        "auc": 0.686791994136387,
+        "ks": 0.28457209413711276
+      },
+      "dir": "v_20260611_1539_scorecard_12feat_auc069",
+      "files": [
+        "scorecard_model.pkl",
+        "scorecard_bins.json",
+        "scorecard_table.csv",
+        "iv_analysis.csv",
+        "scorecard_report.txt"
+      ],
+      "note": "评分卡 12特征"
+    },
+    {
+      "version": "v_20260611_1138_308feat_auc068",
+      "model_type": "full",
+      "created_at": "2026-06-11 15:40",
+      "n_features": 308,
+      "threshold": -10,
+      "n_samples": 1485,
+      "positive_rate": 0.493,
+      "metrics": {
+        "lgb_auc": 0.68,
+        "lr_auc": 0.62
+      },
+      "dir": "v_20260611_1138_308feat_auc068",
+      "files": [
+        "lgb_feature_importance_full.csv",
+        "evaluation_report.txt",
+        "lgb_full_meta.json",
+        "VERSION.md",
+        "lr_coefficients_full.csv",
+        "lgb_feature_importance_full.png",
+        "lgb_classifier_full.txt",
+        "lr_classifier_full.pkl"
+      ],
+      "note": "bug修复前的旧版本(对照组)"
+    }
+  ]
+}
