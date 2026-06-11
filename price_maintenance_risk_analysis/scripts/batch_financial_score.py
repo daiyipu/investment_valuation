@@ -214,6 +214,40 @@ def _save_financial_indicators(stock_code, report_year, ratios):
         conn.close()
 
 
+def _save_annual_scores_to_db(stock_code, results, stock_years):
+    """将年度财务评分保存到 investment_valuation.company_annual_scores"""
+    import sys as _sys
+    _proj_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _proj_root not in _sys.path:
+        _sys.path.insert(0, _proj_root)
+    from utils.db_manager import ValuationDB
+    db = ValuationDB()
+
+    scores_by_year = {}
+    for year in stock_years:
+        if year in results and isinstance(results[year], dict):
+            r = results[year]
+            scores_by_year[year] = {
+                'stock_name': None,
+                'total_score': r.get('总分'),
+                'rating': r.get('评级'),
+                'profitability': r.get('盈利能力'),
+                'growth': r.get('成长能力'),
+                'operating': r.get('运营能力'),
+                'solvency': r.get('偿债能力'),
+            }
+
+    # 补充行业信息
+    industry_info = results.get('行业') or {}
+    for year_data in scores_by_year.values():
+        year_data['industry_l1'] = industry_info.get('l1_name')
+        year_data['industry_l2'] = industry_info.get('l2_name')
+        year_data['industry_l3'] = industry_info.get('l3_name')
+
+    if scores_by_year:
+        db.save_annual_scores(stock_code, scores_by_year)
+
+
 def score_company(fetcher: TushareDataFetcher, threshold_calc: IndustryThresholdCalculator,
                   ts_code: str, company_name: str, score_years=None) -> dict:
     """计算单个公司近5年的财务评分
@@ -449,6 +483,12 @@ def main():
             else:
                 final = '不通过' if fail_count >= 2 else '通过'
             ws.cell(row_idx, col_offset, final)
+
+            # ── 落库: 保存年度评分到 company_annual_scores ──
+            try:
+                _save_annual_scores_to_db(ts_code, results, stock_years)
+            except Exception as e:
+                logger.debug(f'{ts_code} 年度评分落库失败(不影响评分): {e}')
 
     row_indices = list(range(2, ws.max_row + 1))
     MAX_WORKERS_SCORE = min(5, len(row_indices))

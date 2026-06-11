@@ -5,11 +5,13 @@
 
 数据源:
   1. investment_valuation MySQL - 行情/估值/FCF/筛选/行业/定增参数
-  2. scored Excel - 财务评分/子场景/7个月涨跌幅
+  2. investment_valuation MySQL - 财务评分/子场景/7个月涨跌幅
+     (placement_evaluation + company_annual_scores，由 backfill_evaluations.py / batch 落库)
   3. fund_risk_control MySQL - 财务比率/资产负债表/利润表/现金流量表
 
 用法:
-    python ml_training/export_features.py <scored_excel_path> [--output features.parquet]
+    python ml_training/export_features.py [--output features.parquet]
+    # 评分/标签脊柱完全来自 DB (placement_evaluation)，无需 Excel
 
 输出:
     ml_training/data/features.parquet - 一行一只股票，所有特征平铺
@@ -382,6 +384,130 @@ def load_scored_features(excel_path):
     return result
 
 
+def load_scored_features_from_db(sample_keys):
+    """从 investment_valuation DB 加载财务评分/子场景/标签（替代 Excel）
+
+    Args:
+        sample_keys: list of (stock_code, issue_date) 元组
+    """
+    conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', password='',
+                           database='investment_valuation', charset='utf8mb4')
+
+    stock_codes = list(set(code for code, _ in sample_keys))
+    codes_str = ','.join([f"'{c}'" for c in stock_codes])
+
+    # 1. 从 placement_evaluation 获取评估记录
+    pe_df = pd.read_sql(
+        f'SELECT * FROM placement_evaluation WHERE stock_code IN ({codes_str})', conn
+    )
+
+    # 2. 从 company_annual_scores 获取年度评分
+    cas_df = pd.read_sql(
+        f'SELECT * FROM company_annual_scores WHERE stock_code IN ({codes_str}) ORDER BY report_year DESC', conn
+    )
+    conn.close()
+
+    if pe_df.empty:
+        print(f'  DB评分数据: 无匹配记录')
+        return pd.DataFrame()
+
+    # 构建结果: 每条 sample_key 一行
+    results = []
+    for code, issue_date in sample_keys:
+        r = {'股票代码': code}
+
+        # 匹配 placement_evaluation (按 stock_code + issue_date)
+        pe_match = pe_df[pe_df['stock_code'] == code]
+        if issue_date:
+            pe_match_exact = pe_match[pe_match['issue_date'] == str(issue_date)]
+            if not pe_match_exact.empty:
+                pe_match = pe_match_exact
+            elif not pe_match.empty:
+                pe_match = pe_match.iloc[[0]]  # fallback: 取第一条
+        else:
+            pe_match = pe_match.iloc[[0]] if not pe_match.empty else pd.DataFrame()
+
+        if not pe_match.empty:
+            pe = pe_match.iloc[0]
+            r['股票简称'] = pe.get('stock_name', '')
+            r['报价日'] = pe.get('issue_date')
+            r['报价日价格'] = pe.get('issue_date_price')
+
+            # 子场景
+            sub_map = {
+                'sub_market_index': '市场指数', 'sub_industry_pe': '行业PE', 'sub_stock_pe': '个股PE',
+                'sub_dcf': 'DCF估值', 'sub_adj_pe': '修正PE估值', 'sub_param_build': '参数构造',
+                'sub_monte_carlo': '蒙特卡洛', 'sub_reverse_calc': '反向推算',
+            }
+            for db_col, cn_name in sub_map.items():
+                r[f'{cn_name}_通过'] = int(pe.get(db_col, 0) or 0)
+
+            sub_cols = [f'{v}_通过' for v in sub_map.values()]
+            r['子场景通过数'] = sum(r.get(c, 0) for c in sub_cols)
+
+            # 行业
+            r['一级行业'] = pe.get('industry_l1') or ''
+            r['二级行业'] = pe.get('industry_l2') or ''
+            r['三级行业'] = pe.get('industry_l3') or ''
+
+            # 趋势
+            r['总分_斜率'] = pe.get('total_slope')
+            r['总分_趋势'] = pe.get('total_trend')
+            r['盈利能力_斜率'] = pe.get('profit_slope')
+            r['盈利能力_趋势'] = pe.get('profit_trend')
+            r['成长能力_斜率'] = pe.get('growth_slope')
+            r['成长能力_趋势'] = pe.get('growth_trend')
+            r['综合趋势'] = pe.get('combined_trend')
+
+            # 筛选
+            r['有效阈值数'] = pe.get('valid_thresholds')
+            r['溢价率下限'] = pe.get('premium_min')
+            r['溢价率上限'] = pe.get('premium_max')
+            r['定增决策'] = pe.get('decision')
+            r['定增建议参与'] = 1 if '建议参与' in str(pe.get('decision', '')) else 0
+
+            # 标签
+            ret_7m = pe.get('return_7m')
+            if pd.notna(ret_7m):
+                r['7个月涨跌幅'] = float(ret_7m)
+                r['标签_盈利_0'] = int(float(ret_7m) > 0)
+                r['标签_盈利_-10'] = int(float(ret_7m) > -10)
+                r['标签_盈利_-20'] = int(float(ret_7m) > -20)
+            r['7个月后价格'] = pe.get('price_7m')
+            r['最终结论'] = pe.get('final_conclusion')
+
+        # 年度评分: 从 company_annual_scores 按报价日回溯
+        code_scores = cas_df[cas_df['stock_code'] == code].sort_values('report_year', ascending=False)
+
+        # 确定基准年份
+        base_year = None
+        if issue_date and str(issue_date) not in ('', 'nan', 'None'):
+            try:
+                base_year = int(str(issue_date)[:4])
+            except (ValueError, TypeError):
+                pass
+        if base_year is None and not code_scores.empty:
+            base_year = int(code_scores.iloc[0]['report_year'])
+
+        if base_year and not code_scores.empty:
+            labels = ['T-4', 'T-3', 'T-2', 'T-1', 'T']
+            for i, label in enumerate(labels):
+                year = base_year - 4 + i
+                year_row = code_scores[code_scores['report_year'] == year]
+                if not year_row.empty:
+                    yr = year_row.iloc[0]
+                    for metric, col in [('总分', 'total_score'), ('评级', 'rating'),
+                                        ('盈利能力', 'profitability'), ('成长能力', 'growth')]:
+                        r[f'{metric}_{label}'] = yr.get(col)
+
+        results.append(r)
+
+    result_df = pd.DataFrame(results)
+    n = len(result_df)
+    print(f'  DB评分数据: {n}条 (placement_evaluation + company_annual_scores)')
+    return result_df
+
+
 def load_financial_ratios(stock_codes):
     """从 investment_valuation.financial_indicators 加载财务比率(28指标)
 
@@ -587,9 +713,27 @@ def load_financial_statements(stock_codes):
         return pd.DataFrame()
 
 
+def load_sample_keys_from_db():
+    """从 placement_evaluation 取全部 (stock_code, issue_date) 作为样本键（整条流水线的脊柱）。
+
+    Returns:
+        list of (stock_code, issue_date_str) 元组，issue_date 形如 '20200109'
+    """
+    conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', password='',
+                           database='investment_valuation', charset='utf8mb4')
+    df = pd.read_sql(
+        "SELECT DISTINCT stock_code, issue_date FROM placement_evaluation "
+        "WHERE issue_date IS NOT NULL AND issue_date <> ''",
+        conn,
+    )
+    conn.close()
+    return [(r['stock_code'], str(r['issue_date'])) for _, r in df.iterrows()]
+
+
 def main():
     parser = argparse.ArgumentParser(description='定增特征导出(全量)')
-    parser.add_argument('excel_path', help='scored Excel路径')
+    parser.add_argument('excel_path', nargs='?', default=None,
+                        help='(已废弃，评分/标签现从 DB 读取) 保留仅作兼容，不再使用')
     parser.add_argument('--output', default=None, help='输出文件路径(默认ml_training/data/features.parquet)')
     parser.add_argument('--no-mysql', action='store_true', help='跳过fund_risk_control数据')
     args = parser.parse_args()
@@ -598,24 +742,23 @@ def main():
     output_path = args.output or os.path.join(script_dir, 'data', 'features.parquet')
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-    # ── 1. 从scored Excel获取股票列表+财务评分+标签 ──
-    print('1. 加载scored Excel...')
-    scored = load_scored_features(args.excel_path)
+    # ── 1. 从 placement_evaluation 取样本键 + 财务评分/标签 ──
+    print('1. 从 DB 加载样本键 (placement_evaluation)...')
+    sample_keys = load_sample_keys_from_db()
+    print(f'   {len(sample_keys)} 条 (stock_code, issue_date)')
+    if not sample_keys:
+        print('   ⚠️ placement_evaluation 无数据，请先运行 backfill_evaluations.py')
+        sys.exit(1)
+
+    print('   加载评分/标签 (placement_evaluation + company_annual_scores)...')
+    scored = load_scored_features_from_db(sample_keys)
     print(f'   {len(scored)} 只股票')
 
     stock_codes = scored['股票代码'].tolist()
 
     # ── 2. 从investment_valuation加载全部DB特征 ──
     print('2. 加载investment_valuation DB特征...')
-    # 构建 (股票代码, 报价日) 组合键
-    sample_keys = []
-    for _, row in scored.iterrows():
-        code = row['股票代码']
-        issue_date = str(row.get('报价日', '')).replace('.0', '').strip()
-        if not issue_date or issue_date == 'nan' or len(issue_date) < 8:
-            issue_date = None
-        sample_keys.append((code, issue_date))
-
+    # sample_keys 与 scored/load_db_features 三者行顺序一致，按行索引对齐
     db_feats = load_db_features(sample_keys)
     matched = db_feats['当前价'].notna().sum()
     print(f'   行情数据: {matched}/{len(stock_codes)}')
@@ -644,9 +787,11 @@ def main():
     # 用行索引对齐（避免重复股票代码的笛卡尔积）
     scored = scored.reset_index(drop=True)
     db_feats = db_feats.reset_index(drop=True)
-    # 去掉db_feats中与scored重复的列（股票代码、报价日）
-    # 报价日: Excel版(scored)更完整(1236条)，DB版(issue_date_locked)可能有缺失
-    _dup_cols = {'股票代码', '报价日'}
+    # 去掉 db_feats 中与 scored 同名的列（如 股票代码/报价日/报价日价格/定增决策…），
+    # 一律取 scored（来自 placement_evaluation，权威源）的版本，避免 concat 后出现重名列。
+    _dup_cols = set(scored.columns) & set(db_feats.columns)
+    if _dup_cols:
+        print(f'   去重列(取scored版): {sorted(_dup_cols)}')
     db_feat_cols = [c for c in db_feats.columns if c not in _dup_cols]
     merged = pd.concat([scored, db_feats[db_feat_cols]], axis=1)
 
@@ -675,8 +820,21 @@ def main():
     # 保留关键字符串列不动
     str_cols_keep = {'股票代码', '股票简称', '最终结论', '一级行业', '二级行业', '三级行业',
                      '定价方式', '定增决策', '行业代码', '行业名称'}
+
+    def _is_str_col(name):
+        """判定列是否应保留为字符串（文本判定/评级，不转数值）"""
+        if name in str_cols_keep:
+            return True
+        # 趋势判定: 总分_趋势/盈利能力_趋势/成长能力_趋势/综合趋势 → 通过/不通过
+        if name.endswith('_趋势') or name == '综合趋势':
+            return True
+        # 评级: 评级_T/评级_T-1/... → A/BBB/CCC
+        if name.startswith('评级_'):
+            return True
+        return False
+
     for c in merged.columns:
-        if c in str_cols_keep:
+        if _is_str_col(c):
             merged[c] = merged[c].astype(str)
         elif merged[c].dtype == object:
             # 尝试转为数值，失败的变NaN

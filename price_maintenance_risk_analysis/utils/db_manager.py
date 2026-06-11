@@ -713,6 +713,117 @@ class ValuationDB:
         conn.close()
         return [r for r in rows]
 
+    # ==================== 年度财务评分 ====================
+
+    def save_annual_scores(self, stock_code, scores_by_year, batch_id=None):
+        """保存年度财务评分
+
+        Args:
+            stock_code: 股票代码
+            scores_by_year: {year: {total_score, rating, profitability, growth, operating, solvency,
+                                    industry_l1, industry_l2, industry_l3, stock_name}}
+            batch_id: 批次ID
+        """
+        conn = self.get_connection()
+        for year, data in scores_by_year.items():
+            conn.execute("""
+                INSERT INTO company_annual_scores
+                    (stock_code, stock_name, report_year, industry_l1, industry_l2, industry_l3,
+                     total_score, rating, profitability, growth, operating, solvency, batch_id)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ON DUPLICATE KEY UPDATE
+                    stock_name=VALUES(stock_name),
+                    industry_l1=VALUES(industry_l1), industry_l2=VALUES(industry_l2),
+                    industry_l3=VALUES(industry_l3),
+                    total_score=VALUES(total_score), rating=VALUES(rating),
+                    profitability=VALUES(profitability), growth=VALUES(growth),
+                    operating=VALUES(operating), solvency=VALUES(solvency),
+                    batch_id=VALUES(batch_id)
+            """, (
+                stock_code, data.get('stock_name'), year,
+                data.get('industry_l1'), data.get('industry_l2'), data.get('industry_l3'),
+                data.get('total_score'), data.get('rating'),
+                data.get('profitability'), data.get('growth'),
+                data.get('operating'), data.get('solvency'),
+                batch_id,
+            ))
+        conn.commit()
+        conn.close()
+
+    def get_annual_scores(self, stock_code, max_years=5):
+        """获取最近N年的财务评分"""
+        conn = self.get_connection()
+        rows = conn.execute(
+            "SELECT * FROM company_annual_scores WHERE stock_code=%s ORDER BY report_year DESC LIMIT %s",
+            (stock_code, max_years),
+        ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    def batch_get_annual_scores(self, stock_codes, max_years=5):
+        """批量获取多只股票的财务评分"""
+        if not stock_codes:
+            return {}
+        conn = self.get_connection()
+        codes_str = ','.join([f"'{c}'" for c in stock_codes])
+        rows = conn.execute(
+            f"SELECT * FROM company_annual_scores WHERE stock_code IN ({codes_str}) ORDER BY report_year DESC"
+        ).fetchall()
+        conn.close()
+
+        result = {}
+        for r in rows:
+            d = dict(r)
+            code = d['stock_code']
+            if code not in result:
+                result[code] = []
+            if len(result[code]) < max_years:
+                result[code].append(d)
+        return result
+
+    # ==================== 定增项目评估 ====================
+
+    def save_placement_evaluation(self, data):
+        """保存定增项目评估记录
+
+        Args:
+            data: dict with keys matching placement_evaluation columns
+        """
+        fields = [
+            'stock_code', 'stock_name', 'batch_id', 'issue_date', 'issue_date_price',
+            'valid_thresholds', 'premium_min', 'premium_max', 'decision',
+            'sub_market_index', 'sub_industry_pe', 'sub_stock_pe',
+            'sub_dcf', 'sub_adj_pe', 'sub_param_build', 'sub_monte_carlo', 'sub_reverse_calc',
+            'industry_l1', 'industry_l2', 'industry_l3',
+            'total_slope', 'total_trend', 'profit_slope', 'profit_trend',
+            'growth_slope', 'growth_trend', 'combined_trend',
+            'return_7m', 'price_7m', 'final_conclusion',
+        ]
+        values = [data.get(f) for f in fields]
+        placeholders = ','.join(['%s'] * len(fields))
+        update_parts = [f'{f}=VALUES({f})' for f in fields if f not in ('stock_code', 'issue_date')]
+
+        conn = self.get_connection()
+        conn.execute(f"""
+            INSERT INTO placement_evaluation ({','.join(fields)})
+            VALUES ({placeholders})
+            ON DUPLICATE KEY UPDATE {','.join(update_parts)}
+        """, values)
+        conn.commit()
+        conn.close()
+
+    def get_placement_evaluations(self, stock_codes):
+        """批量获取定增评估记录"""
+        if not stock_codes:
+            return []
+        conn = self.get_connection()
+        codes_str = ','.join([f"'{c}'" for c in stock_codes])
+        rows = conn.execute(
+            f"SELECT * FROM placement_evaluation WHERE stock_code IN ({codes_str}) ORDER BY issue_date"
+        ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
     # ==================== 迁移工具 ====================
 
     def migrate_from_json(self, data_dir):

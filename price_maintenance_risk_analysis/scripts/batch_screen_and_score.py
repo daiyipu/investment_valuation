@@ -165,6 +165,132 @@ def main():
 
     wb.save(scored_output)
 
+    # ── 落库: 将 scored Excel 数据写入 placement_evaluation ──
+    t_db = time.time()
+    print()
+    print('  落库: 保存评估记录到 placement_evaluation...')
+    try:
+        db_dir = os.path.join(os.path.dirname(SCRIPTS_DIR), 'utils')
+        if db_dir not in sys.path:
+            sys.path.insert(0, db_dir)
+        from db_manager import ValuationDB
+        db = ValuationDB()
+
+        # 重新读header（可能已被scoring追加列）
+        header_row_full = [ws.cell(1, col).value for col in range(1, ws.max_column + 1)]
+        code_col_idx = header_row_full.index('股票代码') + 1
+        name_col_idx = header_row_full.index('股票简称') + 1
+
+        # 辅助: 安全取列index
+        def _col_idx(name, default=None):
+            return header_row_full.index(name) + 1 if name in header_row_full else default
+
+        quote_date_ci = _col_idx('报价日')
+        quote_price_ci = _col_idx('报价日价格')
+        thresholds_ci = _col_idx('有效阈值数')
+        prem_min_ci = _col_idx('溢价率下限')
+        prem_max_ci = _col_idx('溢价率上限')
+        decision_ci = _col_idx('定增决策')
+        l1_ci = _col_idx('一级行业')
+        l2_ci = _col_idx('二级行业')
+        l3_ci = _col_idx('三级行业')
+        total_slope_ci = _col_idx('总分_斜率')
+        total_trend_ci = _col_idx('总分_趋势')
+        profit_slope_ci = _col_idx('盈利能力_斜率')
+        profit_trend_ci = _col_idx('盈利能力_趋势')
+        growth_slope_ci = _col_idx('成长能力_斜率')
+        growth_trend_ci = _col_idx('成长能力_趋势')
+        combined_ci = _col_idx('综合趋势')
+        ret7m_ci = _col_idx('7个月后涨跌幅')
+        price7m_ci = _col_idx('7个月后价格')
+        final_ci = _col_idx('最终结论')
+        # 子场景列
+        sub_cols = {
+            'sub_market_index': _col_idx('市场指数'),
+            'sub_industry_pe': _col_idx('行业PE'),
+            'sub_stock_pe': _col_idx('个股PE'),
+            'sub_dcf': _col_idx('DCF估值'),
+            'sub_adj_pe': _col_idx('修正PE估值'),
+            'sub_param_build': _col_idx('参数构造'),
+            'sub_monte_carlo': _col_idx('蒙特卡洛'),
+            'sub_reverse_calc': _col_idx('反向推算'),
+        }
+
+        saved = 0
+        for row_idx in range(2, ws.max_row + 1):
+            stock_code = str(ws.cell(row_idx, code_col_idx).value or '').strip()
+            if not stock_code:
+                continue
+
+            def _val(ci):
+                if ci is None:
+                    return None
+                v = ws.cell(row_idx, ci).value
+                return v
+
+            def _num(ci):
+                if ci is None:
+                    return None
+                v = ws.cell(row_idx, ci).value
+                if v is None:
+                    return None
+                try:
+                    return float(str(v).replace('%', '').replace('+', ''))
+                except (ValueError, TypeError):
+                    return v
+
+            def _sub_val(ci):
+                """子场景: ✓→1, 其他→0"""
+                if ci is None:
+                    return None
+                v = str(ws.cell(row_idx, ci).value or '')
+                return 1 if '✓' in v else 0
+
+            def _pct_decimal(ci):
+                """溢价率百分比 → 小数: '-20.00%'→-0.2；无效('-'/空)→None。
+                与 backfill_evaluations.py 及 export_features 的 Excel 加载器(/100)保持一致。"""
+                if ci is None:
+                    return None
+                v = _num(ci)
+                if not isinstance(v, (int, float)):
+                    return None
+                return v / 100.0
+
+            data = {
+                'stock_code': stock_code,
+                'stock_name': str(_val(name_col_idx) or ''),
+                'batch_id': f'{date_tag}_{input_basename}',
+                'issue_date': str(_val(quote_date_ci) or '') if quote_date_ci else None,
+                'issue_date_price': _num(quote_price_ci),
+                'valid_thresholds': _num(thresholds_ci),
+                'premium_min': _pct_decimal(prem_min_ci),
+                'premium_max': _pct_decimal(prem_max_ci),
+                'decision': str(_val(decision_ci) or ''),
+                'industry_l1': str(_val(l1_ci) or '') if l1_ci else None,
+                'industry_l2': str(_val(l2_ci) or '') if l2_ci else None,
+                'industry_l3': str(_val(l3_ci) or '') if l3_ci else None,
+                'total_slope': _num(total_slope_ci),
+                'total_trend': str(_val(total_trend_ci) or '') if total_trend_ci else None,
+                'profit_slope': _num(profit_slope_ci),
+                'profit_trend': str(_val(profit_trend_ci) or '') if profit_trend_ci else None,
+                'growth_slope': _num(growth_slope_ci),
+                'growth_trend': str(_val(growth_trend_ci) or '') if growth_trend_ci else None,
+                'combined_trend': str(_val(combined_ci) or '') if combined_ci else None,
+                'return_7m': _num(ret7m_ci),
+                'price_7m': _num(price7m_ci),
+                'final_conclusion': str(_val(final_ci) or '') if final_ci else None,
+            }
+            # 子场景
+            for key, ci in sub_cols.items():
+                data[key] = _sub_val(ci)
+
+            db.save_placement_evaluation(data)
+            saved += 1
+
+        print(f'  ✅ 落库完成: {saved}条记录 → placement_evaluation [耗时 {time.time()-t_db:.1f}s]')
+    except Exception as e:
+        print(f'  ⚠️ 落库失败(不影响Excel输出): {e}')
+
     step3_elapsed = time.time() - t_step3
     total = ws.max_row - 1
     print()
