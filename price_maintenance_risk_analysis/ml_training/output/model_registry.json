@@ -1,7 +1,7 @@
 {
   "current": {
-    "full": "v_20260611_2338_219feat_auc074",
-    "scorecard": "v_20260611_1539_scorecard_12feat_auc069"
+    "full": "v_20260612_0001_219feat_auc074",
+    "scorecard": "v_20260612_0009_scorecard_12feat_auc069"
   },
   "versions": [
     {
@@ -147,6 +147,77 @@
         "lgb_full_meta.json"
       ],
       "note": "全量数值特征 LGB+LR"
+    },
+    {
+      "version": "v_20260611_2357_219feat_auc074",
+      "model_type": "full",
+      "created_at": "2026-06-11 23:57",
+      "n_features": 219,
+      "threshold": -10.0,
+      "n_samples": 1485,
+      "positive_rate": 0.49292929292929294,
+      "metrics": {
+        "lgb_auc": 0.7407258943009906,
+        "lr_auc": 0.6784965988451687
+      },
+      "dir": "v_20260611_2357_219feat_auc074",
+      "files": [
+        "lgb_classifier_full.txt",
+        "lgb_feature_importance_full.csv",
+        "lgb_feature_importance_full.png",
+        "lr_classifier_full.pkl",
+        "lr_coefficients_full.csv",
+        "evaluation_report.txt",
+        "lgb_full_meta.json"
+      ],
+      "note": "全量数值特征 LGB+LR"
+    },
+    {
+      "version": "v_20260612_0001_219feat_auc074",
+      "model_type": "full",
+      "created_at": "2026-06-12 00:01",
+      "n_features": 219,
+      "threshold": -10.0,
+      "n_samples": 1485,
+      "positive_rate": 0.49292929292929294,
+      "metrics": {
+        "lgb_auc": 0.7407258943009906,
+        "lr_auc": 0.6784965988451687
+      },
+      "dir": "v_20260612_0001_219feat_auc074",
+      "files": [
+        "lgb_classifier_full.txt",
+        "lgb_feature_importance_full.csv",
+        "lgb_feature_importance_full.png",
+        "lr_classifier_full.pkl",
+        "lr_coefficients_full.csv",
+        "evaluation_report.txt",
+        "lgb_full_meta.json"
+      ],
+      "note": "全量数值特征 LGB+LR"
+    },
+    {
+      "version": "v_20260612_0009_scorecard_12feat_auc069",
+      "model_type": "scorecard",
+      "created_at": "2026-06-12 00:09",
+      "n_features": 12,
+      "threshold": -10.0,
+      "n_samples": 1485,
+      "positive_rate": 0.49292929292929294,
+      "metrics": {
+        "auc_cv": 0.6716075050661954,
+        "auc": 0.686791994136387,
+        "ks": 0.28457209413711276
+      },
+      "dir": "v_20260612_0009_scorecard_12feat_auc069",
+      "files": [
+        "scorecard_model.pkl",
+        "scorecard_bins.json",
+        "scorecard_table.csv",
+        "iv_analysis.csv",
+        "scorecard_report.txt"
+      ],
+      "note": "评分卡 12特征"
     }
   ]
 }

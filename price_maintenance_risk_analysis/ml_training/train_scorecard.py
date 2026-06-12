@@ -585,12 +585,12 @@ def main():
     if X is None:
         sys.exit(1)
 
-    # 排除标识符列（日期等不应作为特征）
-    id_patterns = ['报价日', '邀请日', '最新交易日', '财报年份', '_excel', '_md']
-    id_cols = [c for c in X.columns if any(p in c for p in id_patterns)]
-    if id_cols:
-        X = X.drop(columns=id_cols)
-        print(f'   排除标识符列: {id_cols}')
+    # 统一排除清单 (与 compare_selection.py 共用 feature_exclusions)
+    from feature_exclusions import get_excluded_columns
+    excl = get_excluded_columns(X.columns)
+    if excl:
+        X = X.drop(columns=excl)
+        print(f'   排除泄漏/artifact/业务字段: {excl}')
 
     n_total_features = len(X.columns)
 

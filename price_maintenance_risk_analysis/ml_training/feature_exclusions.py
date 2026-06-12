@@ -1,0 +1,48 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+特征剔除统一清单 (compare_selection.py / train_scorecard.py 共用)
+
+集中管理"不纳入模型训练"的字段，避免各脚本各自维护、互不一致导致漂移。
+分两类：
+  1) LEAKAGE_PATTERNS : 泄漏/标识/时间戳/覆盖率 artifact —— 子串匹配
+  2) BUSINESS_DROP    : 业务上无意义、样本期虚高相关的字段 —— 精确列名
+
+新增剔除项只需在此文件追加，两个训练脚本自动同步生效。
+"""
+
+
+# 1) 泄漏 / 标识符 / 时间戳 / 数据覆盖率 artifact
+#    子串匹配：列名包含任一模式即剔除
+LEAKAGE_PATTERNS = [
+    '报价日',       # 定增报价日及其衍生(报价日价格/报价日MA20/报价日_md 等) —— 时间泄漏
+    '邀请日',       # 定增邀请日 —— 时间泄漏
+    '最新交易日',   # 行情截止日 —— 时间泄漏
+    '财报年份',     # 财报年份(日历年) —— 时间戳 artifact
+    '数据天数',     # 行情数据覆盖天数 —— 采集 artifact，近常数
+    'FCF年份',      # FCF年份_T/T1/T2/T3/T4 = 日历年(2015~2025)，不是现金流! —— 时间戳 artifact
+    '_excel',       # Excel 来源标记列
+    '_md',          # 元数据列
+]
+
+# 2) 业务意义排除
+#    精确列名匹配
+BUSINESS_DROP = [
+    '行业总天数',   # 行业指数历史天数，90% 样本挤在 666~675，数据采集 artifact，无经济学含义
+    '成长能力_T-2', # 绝对水平值；delta 优先原则剔除。已验证 AUC 持平(逐步回归 0.728→0.727)，Lasso 会用 成长能力_delta_1y/营收_CAGR2 替代
+    '净利润',       # 绝对金额(元)；绝对值跨公司/跨期不可比、损害泛化，不进评分卡。已验证剔除后 AUC 持平，相对指标(净利率/速动比率)替代
+]
+
+
+def get_excluded_columns(columns):
+    """给定列名集合，返回应剔除的列名列表（两类合并，去重保序）。"""
+    cols = list(columns)
+    dropped = [c for c in cols if any(p in c for p in LEAKAGE_PATTERNS)]
+    dropped += [c for c in cols if c in BUSINESS_DROP]
+    seen = set()
+    out = []
+    for c in dropped:
+        if c not in seen:
+            seen.add(c)
+            out.append(c)
+    return out

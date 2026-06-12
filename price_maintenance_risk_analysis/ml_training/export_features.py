@@ -754,6 +754,30 @@ def main():
     scored = load_scored_features_from_db(sample_keys)
     print(f'   {len(scored)} 只股票')
 
+    # ── 解禁日过滤：剔除解禁日(报价日+锁定期)晚于截止日的未解禁样本 ──
+    # 这些定增尚未解禁，盈亏未落定，不能进训练集。DB 无解禁日字段，按标准
+    # 6 个月锁定期推算；截止日按数据观测时点，需更新时改 UNLOCK_CUTOFF 即可。
+    LOCKUP_MONTHS = 6
+    # 截止日 = 取数当天(动态)：只保留解禁日 ≤ 今日 的样本(盈亏已落定)
+    UNLOCK_CUTOFF = pd.Timestamp.now().normalize()
+    _qd = pd.to_datetime(
+        pd.to_numeric(scored['报价日'], errors='coerce').dropna().astype(int).astype(str),
+        format='%Y%m%d', errors='coerce'
+    ).reindex(scored.index)
+    _unlock = _qd + pd.DateOffset(months=LOCKUP_MONTHS)
+    _not_unlocked = (_unlock > UNLOCK_CUTOFF).fillna(False)
+    if _not_unlocked.any():
+        n_drop = int(_not_unlocked.sum())
+        scored = scored[~_not_unlocked].reset_index(drop=True)
+        print(f'   ⚠️ 解禁日过滤: 剔除 {n_drop} 个未解禁样本 '
+              f'(报价日+{LOCKUP_MONTHS}月 > {UNLOCK_CUTOFF.date()})')
+        # 同步重建 sample_keys，保持与 scored 行对齐(load_db_features 按行索引取)
+        sample_keys = [
+            (r['股票代码'], str(int(r['报价日'])) if pd.notna(r['报价日']) else '')
+            for _, r in scored.iterrows()
+        ]
+    print(f'   过滤后 {len(scored)} 只股票')
+
     stock_codes = scored['股票代码'].tolist()
 
     # ── 2. 从investment_valuation加载全部DB特征 ──
