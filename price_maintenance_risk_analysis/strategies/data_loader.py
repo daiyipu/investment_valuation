@@ -127,15 +127,11 @@ def market_daily_returns(date, maxlen=300, index_code=_MARKET_INDEX):
 
 
 # ---------- 三序列对齐(resist 用) ----------
-def aligned_returns(stock_code, date, maxlen=300, index_code=_MARKET_INDEX):
-    """返回 (stock_r, sector_r, market_r) 三个等长 numpy 日收益数组。
+def _align_three(sdf, idf, mdf, maxlen=300):
+    """三个 DataFrame[trade_date,close] → (stock_r, sector_r, market_r) 等长 numpy。
 
-    按共同 trade_date inner-join 对齐, 末项对齐 date, 取末段 maxlen。
-    stock_r=个股日收益, sector_r=行业日收益, market_r=大盘日收益。
+    纯对齐(无取数), 供 aligned_returns 与 screen 复用(避免重复取大盘)。
     """
-    sdf = stock_qfq_df(stock_code, date, maxlen)
-    idf = industry_df(stock_code, date, maxlen)
-    mdf = market_df(date, maxlen, index_code)
     if sdf.empty or idf.empty or mdf.empty:
         return np.array([]), np.array([]), np.array([])
     m = (sdf.rename(columns={'close': 's'})
@@ -148,3 +144,15 @@ def aligned_returns(stock_code, date, maxlen=300, index_code=_MARKET_INDEX):
     mr = m['m'].pct_change().dropna().to_numpy(dtype=float)
     n = min(len(sr), len(kr), len(mr))
     return sr[-n:], kr[-n:], mr[-n:]
+
+
+def aligned_returns(stock_code, date, maxlen=300, index_code=_MARKET_INDEX):
+    """返回 (stock_r, sector_r, market_r) 三个等长 numpy 日收益数组。
+
+    按共同 trade_date inner-join 对齐, 末项对齐 date, 取末段 maxlen。
+    stock_r=个股日收益, sector_r=行业日收益, market_r=大盘日收益。
+    """
+    sdf = stock_qfq_df(stock_code, date, maxlen)
+    idf = industry_df(stock_code, date, maxlen)
+    mdf = market_df(date, maxlen, index_code)
+    return _align_three(sdf, idf, mdf, maxlen)

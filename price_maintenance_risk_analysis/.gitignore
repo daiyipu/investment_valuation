@@ -24,6 +24,9 @@ ENV/
 # 报告输出
 reports/outputs/*.docx
 
+# 策略屏幕输出(运行时生成)
+strategies/output/
+
 # 临时文件
 *.log
 *.tmp
