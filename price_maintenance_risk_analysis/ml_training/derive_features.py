@@ -458,6 +458,148 @@ def derive_market_index_features(df):
     return df
 
 
+# ====== H/I类: 波二/抵抗策略信号 (需 tushare 网络) ======
+
+def derive_strategy_signals(df):
+    """按每行报价日 PIT 回算 波二/抵抗 信号, 写 5 个特征列。
+
+    bulk-load 优化(避免逐样本打 tushare):
+      - 大盘: index_daily('000300.SH') 全量 1 次
+      - 个股: 每 unique 股票 pro_bar qfq 全量 1 次(缓存), 切片 ≤报价日
+      - 行业: industry_daily 全量 1 次 MySQL(同F类), 切片 ≤报价日
+    PIT 由 ≤报价日 内存切片保证。单股失败填 NaN, 不影响整体。
+    """
+    print('\n  H/I类: 波二/抵抗策略信号 (需tushare网络)...')
+    import time
+    pkg = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # price_maintenance_risk_analysis
+    if pkg not in sys.path:
+        sys.path.insert(0, pkg)
+    from strategies.data_loader import _align_three, _MARKET_INDEX
+    from strategies.wave2 import wave2_signal
+    from strategies.resist import resist_score
+
+    import pymysql
+    conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', password='',
+                           database='investment_valuation', charset='utf8mb4')
+
+    # 1) stock → industry index_code 映射(实测 industry_daily 键 = industry_data.index_code)
+    id_map_df = pd.read_sql('SELECT stock_code, index_code FROM industry_data', conn)
+    stock_to_idx = dict(zip(id_map_df['stock_code'], id_map_df['index_code']))
+
+    # 2) 行业日线全量(按 index_code 分组, 升序)
+    ind_df = pd.read_sql('SELECT index_code, trade_date, close FROM industry_daily ORDER BY index_code, trade_date', conn)
+    conn.close()
+    ind_groups = {}
+    if not ind_df.empty:
+        for code, g in ind_df.groupby('index_code'):
+            g = g.sort_values('trade_date').reset_index(drop=True)
+            ind_groups[code] = (g['trade_date'].values, g['close'].astype(float).values)
+    print(f'    行业日线: {len(ind_groups)} 个行业')
+
+    # 3) 大盘全量(1 次 tushare)
+    import tushare as ts
+    os.environ.setdefault('TUSHARE_TOKEN', 'f2380d8761bcbf165f87b85f04ed105b1bdcf8721574562294671265')
+    mrt = ts.pro_api().index_daily(ts_code=_MARKET_INDEX)
+    mrt = mrt.sort_values('trade_date').reset_index(drop=True)
+    mkt_dates = mrt['trade_date'].values
+    mkt_close = mrt['close'].astype(float).values
+    print(f'    大盘 {_MARKET_INDEX}: {len(mrt)} 条日线')
+
+    # 4) 个股 qfq 全量缓存(每 unique 股票 1 次)
+    unique_codes = df['股票代码'].astype(str).unique().tolist()
+    print(f'    取个股 qfq 全量: {len(unique_codes)} 只(缓存)...')
+    stock_cache = {}
+
+    def get_stock_close(code):
+        if code in stock_cache:
+            return stock_cache[code]
+        try:
+            d = ts.pro_bar(ts_code=code, adj='qfq')
+            if d is None or len(d) == 0:
+                stock_cache[code] = (None, None)
+                return (None, None)
+            d = d.sort_values('trade_date').drop_duplicates('trade_date').reset_index(drop=True)
+            res = (d['trade_date'].values, d['close'].astype(float).values)
+            stock_cache[code] = res
+            return res
+        except Exception as e:
+            stock_cache[code] = (None, None)
+            return (None, None)
+
+    def _slice(dates, close, end_str, maxlen=300):
+        """≤end_str 末段 maxlen。(dates, close) 升序。"""
+        if dates is None:
+            return None, None
+        mask = dates <= end_str
+        if not mask.any():
+            return None, None
+        n = mask.sum()
+        lo = max(0, n - maxlen)
+        return dates[mask][lo:], close[mask][lo:]
+
+    # 5) 逐样本回算
+    maxlen = 300
+    w2_score = np.full(len(df), np.nan)
+    w2_gain = np.full(len(df), np.nan)
+    w2_retr = np.full(len(df), np.nan)
+    rs_score = np.full(len(df), np.nan)
+    rs_div = np.full(len(df), np.nan)
+    fetched = 0
+
+    for i, row in enumerate(df.itertuples(index=True)):
+        code = str(getattr(row, '股票代码', ''))
+        d_raw = getattr(row, '报价日', None)
+        if d_raw is None or pd.isna(d_raw):
+            continue
+        d_str = str(int(float(d_raw))) if isinstance(d_raw, (int, float, np.floating)) else str(d_raw)
+        if len(d_str) < 8:
+            continue
+        try:
+            sd, sc = get_stock_close(code)
+            sd2, sc2 = _slice(sd, sc, d_str, maxlen)
+            if sd2 is None or len(sc2) < 250:
+                continue
+            # 波二
+            w = wave2_signal(sc2)
+            w2_gain[i] = w['gain'] if w['gain'] else np.nan
+            w2_retr[i] = w['retr'] if w['retr'] else np.nan
+            w2_score[i] = w['score'] if w['trigger'] else 0.0
+            # 抵抗(个股/行业/大盘 对齐收益)
+            idx = stock_to_idx.get(code)
+            ig = ind_groups.get(idx)
+            id2 = cd2 = None
+            if ig is not None:
+                id2, cd2 = _slice(ig[0], ig[1], d_str, maxlen)
+            md2, mc2 = _slice(mkt_dates, mkt_close, d_str, maxlen)
+            if id2 is not None and md2 is not None:
+                sdf = pd.DataFrame({'trade_date': sd2[-len(id2):], 'close': sc2[-len(id2):]})
+                idf = pd.DataFrame({'trade_date': id2, 'close': cd2})
+                mdf = pd.DataFrame({'trade_date': md2, 'close': mc2})
+                sr, kr, mr = _align_three(sdf, idf, mdf, maxlen)
+                if len(sr) >= 65:
+                    r = resist_score(sr, kr, mr)
+                    rs_score[i] = r['score']
+                    rs_div[i] = r['corr_div_stock'] if r['corr_div_stock'] is not None else np.nan
+            fetched += 1
+        except Exception as e:
+            continue
+        if (i + 1) % 100 == 0:
+            print(f'    进度 {i+1}/{len(df)} | 有信号 {fetched}')
+
+    new_cols = {
+        '波二_score': pd.Series(w2_score, index=df.index),
+        '波二_gain':  pd.Series(w2_gain, index=df.index),
+        '波二_retr':  pd.Series(w2_retr, index=df.index),
+        '抵抗_score': pd.Series(rs_score, index=df.index),
+        '抵抗_corr_div_stock': pd.Series(rs_div, index=df.index),
+    }
+    for k, v in new_cols.items():
+        df[k] = v
+    coverage = {k: f'{v.notna().mean()*100:.1f}%' for k, v in new_cols.items()}
+    print(f'    匹配 {fetched}/{len(df)} | +{len(new_cols)}特征: {", ".join(f"{k}({v})" for k,v in coverage.items())}')
+    return df
+
+
 # ====== 主流程 ======
 
 def main():
@@ -507,6 +649,14 @@ def main():
             df = derive_market_index_features(df)
         except Exception as e:
             print(f'  ⚠️ DB特征失败: {e}')
+
+        # H/I类: 波二/抵抗策略信号(需tushare网络, 单独try, 失败不影响F/G)
+        try:
+            df = derive_strategy_signals(df)
+        except Exception as e:
+            import traceback
+            print(f'  ⚠️ 策略信号(H/I类)失败: {e}')
+            traceback.print_exc()
 
     # ====== 清理 ======
     df = df.replace([np.inf, -np.inf], np.nan)
