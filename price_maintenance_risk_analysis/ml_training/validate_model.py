@@ -96,7 +96,7 @@ def main():
 
     # ====== 2. 完整 DB 特征提取 (复用 export_features) ======
     print('\n2. 完整DB特征提取...')
-    from export_features import load_db_features
+    from export_features import load_db_features, load_financial_ratios
     sample_keys = list(zip(scored['股票代码'].tolist(), scored['报价日_excel'].tolist()))
     db_feats = load_db_features(sample_keys)
     db_feat_cols = [c for c in db_feats.columns if c != '股票代码']
@@ -106,6 +106,17 @@ def main():
         db_feats = db_feats.drop(columns=dup_cols)
         db_feat_cols = [c for c in db_feats.columns if c != '股票代码']
     df = pd.concat([scored.reset_index(drop=True), db_feats[db_feat_cols].reset_index(drop=True)], axis=1)
+
+    # 财务比率(financial_indicators) —— 与训练 export_features.main() / predict_profitability 同源
+    try:
+        ratio_feats = load_financial_ratios(scored['股票代码'].astype(str).tolist())
+        if ratio_feats is not None and not ratio_feats.empty:
+            rcols = [c for c in ratio_feats.columns if c != '股票代码' and c not in df.columns]
+            if rcols:
+                df = df.merge(ratio_feats[['股票代码'] + rcols], on='股票代码', how='left')
+                print(f'  财务比率(financial_indicators): +{len(rcols)} 列')
+    except Exception as e:
+        print(f'  财务比率跳过: {e}')
 
     matched_price = df.get('当前价', pd.Series()).notna().sum()
     print(f'  行情匹配: {matched_price}/{len(df)}')

@@ -106,10 +106,39 @@ def apply_woe_score(X, bins_dict, lr_model, features, base_points, B):
     return scores
 
 
+def score_to_proba(points, lr_model, base_points, B):
+    """评分卡得分点 → 概率。logit = intercept + (score-base_points)/B。"""
+    intercept = float(lr_model.intercept_[0])
+    logit = intercept + (np.asarray(points, dtype=float) - base_points) / B
+    return 1.0 / (1.0 + np.exp(-logit))
+
+
+def decile_table(name, y_true, proba, ret):
+    """按预测概率分十位，展示每段实际盈利率与平均7月收益(%)。"""
+    y = pd.Series(y_true).reset_index(drop=True)
+    p = pd.Series(proba).reset_index(drop=True)
+    r = pd.Series(ret).reset_index(drop=True)
+    valid = y.notna() & np.isfinite(p.values)
+    d = pd.DataFrame({'y': y[valid].astype(int).values,
+                      'p': p[valid].values, 'r': r[valid].values})
+    if len(d) < 20:
+        print(f'  [{name}] 样本不足, 跳过十分位')
+        return
+    d['q'] = pd.qcut(d['p'].rank(method='first'), 10, labels=[f'Q{i}' for i in range(1, 11)])
+    print(f'\n  【{name}】十分位校准 (Q1=预测最低 → Q10=预测最高)')
+    print(f'  {"分段":>5} {"n":>4} {"预测概率均":>10} {"概率范围":>18} {"实际盈利率":>9} {"平均7月收益":>11}')
+    for q in [f'Q{i}' for i in range(1, 11)]:
+        g = d[d['q'] == q]
+        if len(g) == 0:
+            continue
+        print(f'  {q:>5} {len(g):>4} {g["p"].mean():>10.3f} [{g["p"].min():.3f}~{g["p"].max():.3f}]'
+              f' {g["y"].mean()*100:>8.1f}% {g["r"].mean():>+10.2f}%')
+
+
 # ====== 特征制备 + 选字段 ======
 
 def make_features(df, threshold=-10):
-    """数值特征(保留NaN不填充) + 标签 y。丢弃标签NaN行。"""
+    """数值特征(保留NaN不填充) + 标签 y + 连续收益 ret。丢弃标签NaN行。"""
     label_col = f'标签_盈利_{int(threshold)}'
     if label_col not in df.columns:
         if '7个月涨跌幅' in df.columns:
@@ -117,15 +146,17 @@ def make_features(df, threshold=-10):
             df[label_col] = (pd.to_numeric(df['7个月涨跌幅'], errors='coerce') > threshold / 100).astype(int)
         else:
             print(f'❌ 找不到标签列 {label_col}')
-            return None, None
+            return None, None, None
     y = df[label_col]
+    ret = pd.to_numeric(df['7个月涨跌幅'], errors='coerce') if '7个月涨跌幅' in df.columns else pd.Series(np.nan, index=df.index)
     valid = y.notna()
     df = df.loc[valid].reset_index(drop=True)
     y = y.loc[valid].reset_index(drop=True)
+    ret = ret.loc[valid].reset_index(drop=True)
     exclude = {c for c in df.columns if '标签' in c} | {'7个月涨跌幅', '7个月后价格'}
     num_cols = [c for c in df.select_dtypes(include=[np.number]).columns if c not in exclude]
     X = df[num_cols].apply(lambda s: pd.to_numeric(s, errors='coerce')).reset_index(drop=True)
-    return X, y
+    return X, y, ret
 
 
 def prep_features(X, medians=None):
@@ -248,8 +279,8 @@ def run_part_a(features_path, threshold, n, iv_min):
     df_test = df[df['_year'] >= 2025].drop(columns=['_year'])
     print(f'  时序切分: train {len(df_train)} 行, test {len(df_test)} 行')
 
-    X_train_raw, y_train = make_features(df_train, threshold)
-    X_test_raw, y_test = make_features(df_test, threshold)
+    X_train_raw, y_train, _ = make_features(df_train, threshold)
+    X_test_raw, y_test, _ = make_features(df_test, threshold)
     if X_train_raw is None or X_test_raw is None:
         return None
     X_test_raw = X_test_raw.reindex(columns=X_train_raw.columns)  # 对齐列
@@ -284,7 +315,7 @@ def run_part_a(features_path, threshold, n, iv_min):
 
 def build_external_features(excel_path):
     """从 _scored Excel 重建完整特征矩阵(复用 validate_model.py 范本)。"""
-    from export_features import load_scored_features, load_db_features
+    from export_features import load_scored_features, load_db_features, load_financial_ratios
     from derive_features import (
         derive_fcf_growth_rates, derive_fcf_cross_metrics,
         derive_financial_score_deltas, derive_valuation_relative,
@@ -311,6 +342,18 @@ def build_external_features(excel_path):
     df = pd.concat([scored.reset_index(drop=True),
                     db_feats[db_cols].reset_index(drop=True)], axis=1)
 
+    # 财务比率(financial_indicators) —— 与训练 main() 同源，补全询转缺失的
+    # 速动比率/净利率/资产负债率/ROE/现金利息负债比/研发费用率/净资产增长 等 28 个比率
+    try:
+        ratio_feats = load_financial_ratios(scored['股票代码'].astype(str).tolist())
+        if ratio_feats is not None and not ratio_feats.empty:
+            rcols = [c for c in ratio_feats.columns if c != '股票代码' and c not in df.columns]
+            if rcols:
+                df = df.merge(ratio_feats[['股票代码'] + rcols], on='股票代码', how='left')
+                print(f'  财务比率(financial_indicators): +{len(rcols)} 列')
+    except Exception as e:
+        print(f'  财务比率跳过: {e}')
+
     # 类型清理
     str_keep = {'股票代码', '股票简称', '一级行业', '二级行业', '三级行业',
                 '最终结论', '定增决策', '行业代码', '行业名称'}
@@ -333,7 +376,7 @@ def build_external_features(excel_path):
     return df
 
 
-def run_part_b(features_path, external_excel, threshold, n, iv_min):
+def run_part_b(features_path, external_excel, threshold, n, iv_min, detail=False):
     print('\n' + '#' * 78)
     print('# Part B — 外部询转验证 (训练集剔除外部样本后训练 + 外部 401 测试)')
     print('#' * 78)
@@ -356,7 +399,7 @@ def run_part_b(features_path, external_excel, threshold, n, iv_min):
     df_full = df_full[keep].reset_index(drop=True)
     print(f'  训练集剔除外部 {len(ext_keys)} 键: {n_before} → {len(df_full)} (保证无重叠)')
 
-    X_full_raw, y_full = make_features(df_full, threshold)
+    X_full_raw, y_full, _ = make_features(df_full, threshold)
     if X_full_raw is None:
         return None
     X_full, medians = prep_features(X_full_raw)
@@ -372,7 +415,7 @@ def run_part_b(features_path, external_excel, threshold, n, iv_min):
     # 外部测试特征
     print('\n  构建外部测试特征:')
     df_ext = build_external_features(external_excel)
-    X_ext_raw, y_ext = make_features(df_ext, threshold)
+    X_ext_raw, y_ext, ret_ext = make_features(df_ext, threshold)
     if X_ext_raw is None:
         print('  ⚠ 外部集无标签列, Part B 中止')
         return None
@@ -388,6 +431,16 @@ def run_part_b(features_path, external_excel, threshold, n, iv_min):
     rows = score_all(models, lgbm_model, list(X_full.columns), X_ext, y_ext,
                      train_cv_auc=(lgb_auc, lgb_std))
     print_results(rows, 'Part B: 外部询转验证 (401 条)', coverage=coverage)
+
+    if detail:
+        print('\n  ===== 十分位区分度校准 (外部 401) =====')
+        for name, m in models.items():
+            pts = apply_woe_score(X_ext, m['bins_dict'], m['lr_model'],
+                                  m['features'], m['base_points'], m['B'])
+            proba = score_to_proba(pts, m['lr_model'], m['base_points'], m['B'])
+            decile_table(name, y_ext, proba, ret_ext)
+        proba_lgb = score_lgbm(lgbm_model, X_ext, list(X_full.columns))
+        decile_table('LightGBM', y_ext, proba_lgb, ret_ext)
     return rows
 
 
@@ -408,7 +461,7 @@ def main():
     if args.only != 'b':
         rows_a = run_part_a(args.features_path, args.threshold, args.n, args.iv_min)
     if args.only != 'a' and args.external:
-        rows_b = run_part_b(args.features_path, args.external, args.threshold, args.n, args.iv_min)
+        rows_b = run_part_b(args.features_path, args.external, args.threshold, args.n, args.iv_min, detail=args.detail)
     elif args.only != 'a' and not args.external:
         print('\n(未提供 --external, 跳过 Part B)')
 
