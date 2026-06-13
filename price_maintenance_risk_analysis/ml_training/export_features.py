@@ -772,6 +772,7 @@ def main():
         print(f'   ⚠️ 解禁日过滤: 剔除 {n_drop} 个未解禁样本 '
               f'(报价日+{LOCKUP_MONTHS}月 > {UNLOCK_CUTOFF.date()})')
         # 同步重建 sample_keys，保持与 scored 行对齐(load_db_features 按行索引取)
+        scored['报价日'] = pd.to_numeric(scored['报价日'], errors='coerce')  # 'nan'字符串→NaN, 防 int() 崩
         sample_keys = [
             (r['股票代码'], str(int(r['报价日'])) if pd.notna(r['报价日']) else '')
             for _, r in scored.iterrows()
