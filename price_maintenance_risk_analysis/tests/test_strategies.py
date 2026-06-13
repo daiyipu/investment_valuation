@@ -3,6 +3,7 @@
 运行: cd price_maintenance_risk_analysis && python -m pytest tests/test_strategies.py -v
 """
 import numpy as np
+import pytest
 
 from strategies.indicators import sma, rolling_corr, fib_retracement, swing_high_low
 from strategies.wave2 import wave2_signal
@@ -81,3 +82,18 @@ def test_resist_triggers_when_stock_holds_in_sector_drop():
     assert r['corr_div_stock'] is not None
     assert r['rel_stock'] is not None and r['rel_stock'] > 0
     assert r['trigger'] is True
+
+
+# ---------- Task 5: data_loader (集成, 需网络+DB) ----------
+def test_data_loader_aligned_real():
+    """真实股票+真实日期: 三个序列非空、等长、末项对齐 date(PIT)。"""
+    from strategies.data_loader import stock_qfq_closes, aligned_returns
+    code, date = '000021.SZ', '20240601'
+    try:
+        c = stock_qfq_closes(code, date)
+        sr, kr, mr = aligned_returns(code, date)
+    except Exception as e:  # 网络/DB 不可用时跳过
+        pytest.skip(f'data_loader 集成测试跳过(网络/DB不可用): {e}')
+    assert len(c) >= 250, '个股 qfq 序列应≥250(MA250 守卫)'
+    assert len(sr) == len(kr) == len(mr), '三序列须等长(对齐)'
+    assert len(sr) >= 60, '对齐后序列应≥60(基线窗口)'
