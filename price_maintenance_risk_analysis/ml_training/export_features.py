@@ -508,11 +508,15 @@ def load_scored_features_from_db(sample_keys):
     return result_df
 
 
-def load_financial_ratios(stock_codes):
-    """从 investment_valuation.financial_indicators 加载财务比率(28指标)
+def load_financial_ratios(sample_keys):
+    """从 investment_valuation.financial_indicators 按【报价日 point-in-time】加载 27 个财务比率。
 
-    优先从 investment_valuation 库读取（batch_financial_score 落库），
-    覆盖率不足时 fallback 到 fund_risk_control.financial_ratios。
+    对每个 (code, issue_date) 取 ann_date <= 报价日 的最近一期年报(无未来财报泄漏)；
+    ann_date 缺失时退化为 report_year <= 报价日年。返回行对齐 sample_keys 的 DataFrame
+    (27 个中文比率列，不含 stock_code/财报年份，供与 scored/db_feats 行对齐 concat)。
+
+    Args:
+        sample_keys: list[(stock_code, issue_date)] —— 与 scored 行序一致
     """
     ratio_cols = {
         'current_ratio': '流动比率', 'quick_ratio': '速动比率',
@@ -530,54 +534,53 @@ def load_financial_ratios(stock_codes):
         'roe_yoy': 'ROE增长', 'tr_yoy': '总营收增长',
         'or_yoy': '营收增长2', 'equity_yoy': '净资产增长',
     }
+    fields = list(ratio_cols.keys())
+    cn_cols = list(ratio_cols.values())
+    if not sample_keys:
+        return pd.DataFrame(columns=cn_cols)
 
-    # ── 主数据源: investment_valuation.financial_indicators ──
+    codes = list({str(c) for c, _ in sample_keys})
     try:
         conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', password='',
                                database='investment_valuation', charset='utf8mb4')
-        codes_str = ','.join([f"'{c}'" for c in stock_codes])
-        select_cols = ', '.join(['stock_code', 'report_year'] + list(ratio_cols.keys()))
-        df = pd.read_sql(
+        codes_str = ','.join([f"'{c}'" for c in codes])
+        select_cols = ', '.join(['stock_code', 'report_year', 'ann_date'] + fields)
+        df_all = pd.read_sql(
             f'SELECT {select_cols} FROM financial_indicators WHERE stock_code IN ({codes_str})',
-            conn
-        )
+            conn)
         conn.close()
-
-        if not df.empty:
-            # 取每只股票最近一年的数据
-            df = df.sort_values('report_year', ascending=False).groupby('stock_code').first().reset_index()
-            rename_map = {k: v for k, v in ratio_cols.items() if k in df.columns}
-            df = df[['stock_code', 'report_year'] + list(rename_map.keys())].rename(columns=rename_map)
-            df = df.rename(columns={'stock_code': '股票代码', 'report_year': '财报年份'})
-            print(f'  财务比率(investment_valuation): 匹配到 {len(df)} 家公司')
-            return df
     except Exception as e:
-        print(f'  财务比率(investment_valuation): 不可用({e})')
+        print(f'  财务比率 PIT: 不可用({e})')
+        return pd.DataFrame(columns=cn_cols)
 
-    # ── Fallback: fund_risk_control.financial_ratios ──
-    try:
-        conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', password='',
-                               database='fund_risk_control', charset='utf8mb4')
-        codes_str = ','.join([f"'{c}'" for c in stock_codes])
-        df = pd.read_sql(
-            f'SELECT * FROM financial_ratios WHERE ts_code IN ({codes_str})',
-            conn
-        )
-        conn.close()
+    rows, n_hit = [], 0
+    for code, issue_date in sample_keys:
+        code = str(code)
+        ids = str(issue_date) if issue_date is not None else ''
+        if len(ids) >= 8 and ids[:8].isdigit():
+            id8, yr = ids[:8], int(ids[:4])
+        else:
+            id8, yr = '99999999', 9999  # 报价日缺失 → 取最新(无 PIT 约束)
+        sub = df_all[df_all['stock_code'] == code]
+        if sub.empty:
+            rows.append({}); continue
+        ad = sub['ann_date']
+        ad_str = ad.astype(str)
+        pit = sub[ad.notna() & (ad_str <= id8)]
+        if pit.empty:  # 退化: ann_date 为空旧行, report_year<=报价日年
+            pit = sub[(ad.isna()) & (sub['report_year'] <= yr)]
+        if pit.empty:
+            rows.append({}); continue
+        row = pit.sort_values('ann_date', ascending=False, na_position='last').iloc[0]
+        n_hit += 1
+        rows.append({ratio_cols[f]: row[f] for f in fields if f in row.index and pd.notna(row[f])})
 
-        if df.empty:
-            print(f'  财务比率: 无匹配数据')
-            return pd.DataFrame()
-
-        df = df.sort_values('report_year', ascending=False).groupby('ts_code').first().reset_index()
-        rename_map = {k: v for k, v in ratio_cols.items() if k in df.columns}
-        df = df[['ts_code', 'report_year'] + list(rename_map.keys())].rename(columns=rename_map)
-        df = df.rename(columns={'ts_code': '股票代码', 'report_year': '财报年份'})
-        print(f'  财务比率(fund_risk_control fallback): 匹配到 {len(df)} 家公司')
-        return df
-    except Exception as e:
-        print(f'  财务比率: 不可用({e})')
-        return pd.DataFrame()
+    out = pd.DataFrame(rows)
+    for cn in cn_cols:
+        if cn not in out.columns:
+            out[cn] = np.nan
+    print(f'  财务比率 PIT(ann_date≤报价日): 命中 {n_hit}/{len(sample_keys)} 样本')
+    return out[cn_cols]
 
 
 def load_financial_statements(stock_codes):
@@ -802,7 +805,7 @@ def main():
     #        覆盖率0.43%，且与 financial_indicators API 比率表重复，全部 importance=0）──
     if not args.no_mysql:
         print('3. 加载财务比率(financial_indicators)...')
-        ratio_feats = load_financial_ratios(stock_codes)
+        ratio_feats = load_financial_ratios(sample_keys)
     else:
         ratio_feats = pd.DataFrame()
 
@@ -819,9 +822,9 @@ def main():
     db_feat_cols = [c for c in db_feats.columns if c not in _dup_cols]
     merged = pd.concat([scored, db_feats[db_feat_cols]], axis=1)
 
-    # 财务比率用股票代码merge（非重复股票，left join安全）
+    # 财务比率已按 sample_keys 行对齐(PIT)，直接 concat
     if not ratio_feats.empty:
-        merged = merged.merge(ratio_feats, on='股票代码', how='left')
+        merged = pd.concat([merged.reset_index(drop=True), ratio_feats.reset_index(drop=True)], axis=1)
 
     # ── 剔除死字段（importance=0 且 IV<0.02，模型从未使用）──
     # 来源：三表已不加载；以下是其余无预测力的标识/稀疏/重复字段

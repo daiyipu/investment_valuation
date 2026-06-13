@@ -107,14 +107,14 @@ def main():
         db_feat_cols = [c for c in db_feats.columns if c != '股票代码']
     df = pd.concat([scored.reset_index(drop=True), db_feats[db_feat_cols].reset_index(drop=True)], axis=1)
 
-    # 财务比率(financial_indicators) —— 与训练 export_features.main() / predict_profitability 同源
+    # 财务比率(financial_indicators) PIT —— 与 export_features.main() 同源(按报价日回溯)
     try:
-        ratio_feats = load_financial_ratios(scored['股票代码'].astype(str).tolist())
+        ratio_feats = load_financial_ratios(sample_keys)
         if ratio_feats is not None and not ratio_feats.empty:
-            rcols = [c for c in ratio_feats.columns if c != '股票代码' and c not in df.columns]
+            rcols = [c for c in ratio_feats.columns if c not in df.columns]
             if rcols:
-                df = df.merge(ratio_feats[['股票代码'] + rcols], on='股票代码', how='left')
-                print(f'  财务比率(financial_indicators): +{len(rcols)} 列')
+                df = pd.concat([df.reset_index(drop=True), ratio_feats[rcols].reset_index(drop=True)], axis=1)
+                print(f'  财务比率 PIT(financial_indicators): +{len(rcols)} 列')
     except Exception as e:
         print(f'  财务比率跳过: {e}')
 

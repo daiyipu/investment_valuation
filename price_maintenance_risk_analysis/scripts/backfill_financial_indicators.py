@@ -89,7 +89,7 @@ def main():
     cur = conn.cursor()
     sd, ed = f'{args.start_year}0101', f'{args.end_year}1231'
     target_years = list(range(args.end_year - args.years + 1, args.end_year + 1))
-    cols = ['stock_code', 'report_year'] + TABLE_FIELDS + ['used_average_values', 'valid_indicator_count']
+    cols = ['stock_code', 'report_year'] + TABLE_FIELDS + ['used_average_values', 'valid_indicator_count', 'ann_date', 'end_date']
     ins_sql = f"INSERT INTO financial_indicators ({', '.join(cols)}) VALUES ({', '.join(['%s']*len(cols))})"
 
     ok = rows = fail = 0
@@ -121,13 +121,20 @@ def main():
                         vc += 1
                     vals.append(v)
                 if vc > 0:
-                    computed.append((yr, vals, vc))
+                    is_row = isc[isc['report_year'] == yr]
+                    ad = ed_ = None
+                    if len(is_row) > 0:
+                        ad = str(is_row.iloc[0].get('ann_date', ''))[:8]
+                        ed_ = str(is_row.iloc[0].get('end_date', ''))[:8]
+                        ad = ad if ad.isdigit() else None
+                        ed_ = ed_ if ed_.isdigit() else None
+                    computed.append((yr, vals, vc, ad, ed_))
             if not computed:
                 fail += 1
                 continue
             cur.execute('DELETE FROM financial_indicators WHERE stock_code=%s', (code,))
-            for yr, vals, vc in computed:
-                cur.execute(ins_sql, [code, yr] + vals + [0, vc])
+            for yr, vals, vc, ad, ed_ in computed:
+                cur.execute(ins_sql, [code, yr] + vals + [0, vc, ad, ed_])
                 rows += 1
             ok += 1
             if (i + 1) % 25 == 0:

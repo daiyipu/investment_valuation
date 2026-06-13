@@ -342,15 +342,15 @@ def build_external_features(excel_path):
     df = pd.concat([scored.reset_index(drop=True),
                     db_feats[db_cols].reset_index(drop=True)], axis=1)
 
-    # 财务比率(financial_indicators) —— 与训练 main() 同源，补全询转缺失的
-    # 速动比率/净利率/资产负债率/ROE/现金利息负债比/研发费用率/净资产增长 等 28 个比率
+    # 财务比率(financial_indicators) PIT —— 与训练 main() 同源(按报价日回溯)
     try:
-        ratio_feats = load_financial_ratios(scored['股票代码'].astype(str).tolist())
+        sk = list(zip(scored['股票代码'].astype(str), scored['报价日_excel'].astype(str)))
+        ratio_feats = load_financial_ratios(sk)
         if ratio_feats is not None and not ratio_feats.empty:
-            rcols = [c for c in ratio_feats.columns if c != '股票代码' and c not in df.columns]
+            rcols = [c for c in ratio_feats.columns if c not in df.columns]
             if rcols:
-                df = df.merge(ratio_feats[['股票代码'] + rcols], on='股票代码', how='left')
-                print(f'  财务比率(financial_indicators): +{len(rcols)} 列')
+                df = pd.concat([df.reset_index(drop=True), ratio_feats[rcols].reset_index(drop=True)], axis=1)
+                print(f'  财务比率 PIT(financial_indicators): +{len(rcols)} 列')
     except Exception as e:
         print(f'  财务比率跳过: {e}')
 

@@ -169,7 +169,7 @@ def predict(scored_excel_path):
 
     # 财务比率（financial_indicators API；三表已弃用，覆盖率0.43%且与比率表重复）
     try:
-        ratio_feats = load_financial_ratios(stock_codes)
+        ratio_feats = load_financial_ratios(sample_keys)
     except Exception as e:
         print(f'    财务比率跳过: {e}')
         ratio_feats = pd.DataFrame()
@@ -187,7 +187,7 @@ def predict(scored_excel_path):
     df = pd.concat([scored, db_feats[db_feat_cols].reset_index(drop=True)], axis=1)
 
     if not ratio_feats.empty:
-        df = df.merge(ratio_feats, on='股票代码', how='left')
+        df = pd.concat([df.reset_index(drop=True), ratio_feats.reset_index(drop=True)], axis=1)
 
     # 清理类型
     str_keep = {'股票代码', '股票简称', '最终结论', '一级行业', '二级行业', '三级行业',
