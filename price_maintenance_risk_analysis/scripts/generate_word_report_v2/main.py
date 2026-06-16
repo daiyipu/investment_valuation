@@ -654,11 +654,44 @@ def generate_report_headless(stock_code, stock_name=None, issue_date=None, force
         # 确保 market_data 文件存在且有效（必须在 load_placement_config 之前）
         import io as _io
         import contextlib as _ctx
+        import sys as _sys
+        import threading as _th
+
+        # ── 线程安全的 stdout 代理(修多线程下 redirect_stdout 互相覆盖致输出冻结) ──
+        # 安装一次: sys.stdout → _Proxy, 按线程局部 sink 决定写哪(默认真实终端)。
+        # 各线程用 _suppress() 把"自己"的输出暂存 StringIO(静默章节细节), 不影响其它线程。
+        if not getattr(generate_report_headless, '_proxy_on', False):
+            _real_out = _sys.stdout
+            _sink_tls = _th.local()
+
+            class _Proxy:
+                def write(self, data):
+                    s = getattr(_sink_tls, 'sink', None)
+                    (s if s is not None else _real_out).write(data)
+                def flush(self):
+                    s = getattr(_sink_tls, 'sink', None)
+                    (s if s is not None else _real_out).flush()
+
+            _sys.stdout = _Proxy()
+            generate_report_headless._proxy_on = True
+            generate_report_headless._sink_tls = _sink_tls
+            generate_report_headless._real_out = _real_out
+
+        @_ctx.contextmanager
+        def _suppress():
+            """线程局部静默: 把当前线程的 print 暂存 StringIO, 不影响其它线程/主线程。"""
+            _tls = generate_report_headless._sink_tls
+            prev = getattr(_tls, 'sink', None)
+            _tls.sink = _io.StringIO()
+            try:
+                yield
+            finally:
+                _tls.sink = prev
 
         market_data_file = os.path.join(DATA_DIR, f"{stock_code.replace('.', '_')}_market_data.json")
         # 市场数据生成：抑制详细输出
         print(f"  📊 生成市场数据...", flush=True)
-        with _ctx.redirect_stdout(_io.StringIO()):
+        with _suppress():
             _ensure_market_data(stock_code, stock_name, market_data_file, issue_date)
 
         # 加载配置
@@ -671,7 +704,7 @@ def generate_report_headless(stock_code, stock_name=None, issue_date=None, force
             result['stock_name'] = stock_name
 
         # 加载行业数据（失败时用空dict，不阻塞后续分析）— 抑制输出
-        with _ctx.redirect_stdout(_io.StringIO()):
+        with _suppress():
             industry_data = _load_industry_data(stock_code, issue_date=issue_date)
         if industry_data is None:
             print(f"  ⚠️ 行业数据加载失败，将跳过行业相关分析")
@@ -737,7 +770,7 @@ def generate_report_headless(stock_code, stock_name=None, issue_date=None, force
         for ch_name, ch_fn in chapters:
             try:
                 t_ch = time.time()
-                with _ctx.redirect_stdout(_io.StringIO()):
+                with _suppress():
                     context = ch_fn(context)
                 ch_elapsed = time.time() - t_ch
                 print(f"  ⏱ {ch_name} {ch_elapsed:.1f}s", flush=True)
