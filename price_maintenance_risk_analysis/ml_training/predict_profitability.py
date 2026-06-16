@@ -288,9 +288,9 @@ def predict(scored_excel_path):
     # 档位 1-10(10最高): 优先用 bundle 训练标定的概率分位边界(固定映射, 跨批次可比);
     # 老模型无边界 → 退化为当前批次相对排名
     proba_deciles = None
-    if bdl.get('lr_bundle'):
+    if bundle.get('lr_bundle'):
         try:
-            proba_deciles = pickle.loads(bdl['lr_bundle']).get('proba_deciles')
+            proba_deciles = pickle.loads(bundle['lr_bundle']).get('proba_deciles')
         except Exception:
             proba_deciles = None
     prob_cols = [c for c in result.columns if c.startswith('盈利概率')]
