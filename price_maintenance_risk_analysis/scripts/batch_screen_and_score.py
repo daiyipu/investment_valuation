@@ -71,6 +71,7 @@ def main():
     )
     parser.add_argument('--input', required=True, help='输入Excel文件路径（含"股票代码"和"股票简称"列）')
     parser.add_argument('--sheet', default='0', help='读取Excel的第几个sheet（序号从0开始，默认0）')
+    parser.add_argument('--force', action='store_true', help='强制全量重跑(忽略已有结果, 默认断点续传)')
     args = parser.parse_args()
 
     if not os.path.exists(args.input):
@@ -90,41 +91,36 @@ def main():
     input_basename = os.path.splitext(os.path.basename(args.input))[0]
     input_dir = os.path.dirname(os.path.abspath(args.input))
     screening_output = os.path.join(input_dir, f'batch_screening_result_{date_tag}_{input_basename}.xlsx')
+    scored_output = screening_output.replace('.xlsx', '_scored.xlsx')
 
     print(f'📁 输入文件: {args.input}')
     print(f'📁 筛选结果: {screening_output}')
-    print(f'📁 最终结果: {screening_output.replace(".xlsx", "_scored.xlsx")}')
+    print(f'📁 最终结果: {scored_output}')
 
     t_total = time.time()  # 总计时起点
+    skip_mode = not args.force   # --force 强制全量重跑; 默认断点续传(已有结果跳过)
 
-    # ── Step 1: 定增决策筛选 ──
-    step1_cmd = [
-        PYTHON, SCREENER_SCRIPT,
-        '--input', args.input,
-        '--output', screening_output,
-        '--sheet', args.sheet,
-    ]
-    if not run_step('Step 1/2: 定增决策筛选 (batch_screener)', step1_cmd):
-        sys.exit(1)
+    # ── Step 1: 定增决策筛选 (已有结果则跳过, 断点续传) ──
+    if skip_mode and os.path.exists(screening_output):
+        print(f'  ✅ Step 1 已完成(文件存在)，跳过')
+    else:
+        step1_cmd = [PYTHON, SCREENER_SCRIPT, '--input', args.input,
+                     '--output', screening_output, '--sheet', args.sheet]
+        if not run_step('Step 1/4: 定增决策筛选 (batch_screener)', step1_cmd):
+            sys.exit(1)
+        if not os.path.exists(screening_output):
+            print(f'❌ 筛选结果文件未生成: {screening_output}'); sys.exit(1)
 
-    # 检查筛选结果文件
-    if not os.path.exists(screening_output):
-        print(f'❌ 筛选结果文件未生成: {screening_output}')
-        sys.exit(1)
+    # ── Step 2: 财务评分 (已有结果则跳过) ──
+    if skip_mode and os.path.exists(scored_output):
+        print(f'  ✅ Step 2 已完成(文件存在)，跳过')
+    else:
+        if not run_step('Step 2/4: 财务评分 (batch_financial_score)', [PYTHON, EFAES_SCRIPT, screening_output]):
+            sys.exit(1)
+        if not os.path.exists(scored_output):
+            print(f'⚠️ 评分结果文件未生成: {scored_output}'); sys.exit(1)
 
-    if not run_step('Step 2/3: 财务评分 (batch_financial_score)', [
-        PYTHON, EFAES_SCRIPT,
-        screening_output,
-    ]):
-        sys.exit(1)
-
-    # 最终输出
-    scored_output = screening_output.replace('.xlsx', '_scored.xlsx')
-    if not os.path.exists(scored_output):
-        print(f'⚠️ 评分结果文件未生成: {scored_output}')
-        sys.exit(1)
-
-    # ── Step 3: 追加最终结论列 ──
+    # ── Step 3: 追加最终结论列 (幂等: 已有则复用列, 不重复添加) ──
     # 规则: 定增决策="建议参与" 且 成长能力_趋势="通过" → 最终"通过"
     t_step3 = time.time()
     print()
@@ -140,9 +136,12 @@ def main():
     decision_col = header_row.index('定增决策') + 1
     growth_col = header_row.index('成长能力_趋势') + 1
 
-    # 写入新列
-    final_col = ws.max_column + 1
-    ws.cell(1, final_col, '最终结论')
+    # 最终结论列: 已有则复用(幂等), 无则新增
+    if '最终结论' in header_row:
+        final_col = header_row.index('最终结论') + 1
+    else:
+        final_col = ws.max_column + 1
+        ws.cell(1, final_col, '最终结论')
 
     pass_count = 0
     for row_idx in range(2, ws.max_row + 1):
