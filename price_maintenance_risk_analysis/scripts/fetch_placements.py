@@ -45,8 +45,8 @@ def fetch_all():
     return rows
 
 
-def main():
-    print("抓取东方财富增发数据 (RPT_SEO_DETAIL)...")
+def main(years=20):
+    print(f"抓取东方财富增发数据 (RPT_SEO_DETAIL) | 定向增发 {'全部' if not years else f'近{years}年'}...")
     raw = fetch_all()
     df = pd.DataFrame(raw)
     out = df[list(COLS.keys())].rename(columns=COLS).copy()
@@ -55,26 +55,36 @@ def main():
     # 日期解析
     for c in ['增发上市日', '股权登记日', '询价开始日', '询价结束日', '摇号日']:
         out[c] = pd.to_datetime(out[c], errors='coerce')
-    # 过滤: 近10年(增发上市日 >= 2015) + 定向增发
-    cutoff = pd.Timestamp('2015-01-01')
-    recent = out[(out['增发上市日'] >= cutoff) & (out['增发类型'] == '定向增发')].copy()
-    recent = recent.sort_values('增发上市日', ascending=False).reset_index(drop=True)
-    recent.insert(0, '序号', range(1, len(recent) + 1))
+    # 过滤: 定向增发 + 时间范围
+    dx = out[out['增发类型'] == '定向增发'].copy()
+    if years:
+        cutoff = pd.Timestamp.now() - pd.DateOffset(years=years)
+        dx = dx[dx['增发上市日'] >= cutoff]
+        span = f'近{years}年'
+    else:
+        span = '全部'
+    dx = dx.sort_values('增发上市日', ascending=False).reset_index(drop=True)
+    dx.insert(0, '序号', range(1, len(dx) + 1))
 
     out_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'ml_training', 'data')
     os.makedirs(out_dir, exist_ok=True)
     tag = pd.Timestamp.now().strftime('%Y%m%d')
-    path = os.path.join(out_dir, f'placements_近10年_{tag}.xlsx')
-    recent.to_excel(path, index=False)
+    path = os.path.join(out_dir, f'placements_{span}_{tag}.xlsx')
+    dx.to_excel(path, index=False)
 
-    print(f"\n✅ 全部增发: {len(out)} 条 | 定向增发近10年(≥2015): {len(recent)} 条")
-    print(f"   年份分布:\n{recent['增发上市日'].dt.year.value_counts().sort_index().to_string()}")
+    print(f"\n✅ 全部增发: {len(out)} 条 | 定向增发({span}): {len(dx)} 条")
+    if len(dx):
+        print(f"   年份分布:\n{dx['增发上市日'].dt.year.value_counts().sort_index().to_string()}")
     print(f"   写出: {path}")
     # 抽样
     print(f"\n抽样(最新5条):")
-    show = recent[['股票代码', '股票简称', '增发上市日', '发行价', '募资总额', '发行方式']].head()
+    show = dx[['股票代码', '股票简称', '增发上市日', '发行价', '募资总额', '发行方式']].head()
     print(show.to_string(index=False))
 
 
 if __name__ == '__main__':
-    main()
+    import argparse
+    ap = argparse.ArgumentParser(description='抓取A股定向增发名单(东方财富 RPT_SEO_DETAIL)')
+    ap.add_argument('--years', type=int, default=20, help='时间跨度(年, 默认20; 0=全部)')
+    args = ap.parse_args()
+    main(years=args.years if args.years > 0 else None)
