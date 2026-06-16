@@ -458,6 +458,72 @@ def derive_market_index_features(df):
     return df
 
 
+# ====== 模块级 OHLCV 缓存(策略信号 + 因子引擎共用, 避免重复 pro_bar) ======
+_OHLCV_CACHE = {}   # code -> (dates, {open/high/low/close/vol/amount} np arrays) 或 (None, None)
+
+
+def _fetch_ohlcv_raw(code):
+    """实际调 pro_bar(无缓存), 返回 (dates, ohlcv_dict); 失败抛异常。供并发预取重试用。"""
+    import tushare as ts
+    from tushare_token import resolve_tushare_token
+    os.environ.setdefault('TUSHARE_TOKEN', resolve_tushare_token())
+    d = ts.pro_bar(ts_code=code, adj='qfq')
+    if d is None or len(d) == 0:
+        raise ValueError(f'pro_bar 空返回: {code}')
+    d = d.sort_values('trade_date').drop_duplicates('trade_date').reset_index(drop=True)
+    amt = d['amount'].astype(float).values if 'amount' in d.columns else d['vol'].astype(float).values
+    return (d['trade_date'].values, {
+        'open': d['open'].astype(float).values, 'high': d['high'].astype(float).values,
+        'low': d['low'].astype(float).values, 'close': d['close'].astype(float).values,
+        'vol': d['vol'].astype(float).values, 'amount': amt,
+    })
+
+
+def _get_stock_ohlcv(code):
+    """pro_bar qfq 全量(缓存), 返回 (dates, ohlcv_dict) 或 (None, None)。
+    供 derive_strategy_signals(取 close) 与 derive_alpha_beta_factors(OHLCV) 共用。"""
+    if code in _OHLCV_CACHE:
+        return _OHLCV_CACHE[code]
+    try:
+        res = _fetch_ohlcv_raw(code)
+    except Exception:
+        res = (None, None)
+    _OHLCV_CACHE[code] = res
+    return res
+
+
+def prefetch_ohlcv(codes, max_workers=12):
+    """并发预取所有 unique 股票 OHLCV 入缓存(I/O bound, 线程即可)。
+    tushare 限流时单股退避重试(3 次)。已缓存的跳过。"""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import time
+    todo = [c for c in dict.fromkeys(str(c) for c in codes) if c not in _OHLCV_CACHE]
+    if not todo:
+        print(f'    OHLCV 缓存已热({len(_OHLCV_CACHE)}), 跳过预取')
+        return
+    print(f'    并发预取 {len(todo)} 只 OHLCV (max_workers={max_workers}, 限流重试)...')
+
+    def _work(code):
+        for attempt in range(3):
+            try:
+                _OHLCV_CACHE[code] = _fetch_ohlcv_raw(code)
+                return True
+            except Exception:
+                time.sleep(1.5 * (attempt + 1))   # 限流/网络 → 退避重试
+        _OHLCV_CACHE[code] = (None, None)
+        return False
+
+    ok = 0
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futs = [ex.submit(_work, c) for c in todo]
+        for n, fut in enumerate(as_completed(futs), 1):
+            if fut.result():
+                ok += 1
+            if n % 50 == 0:
+                print(f'    预取 {n}/{len(todo)} (成功 {ok})')
+    print(f'    预取完成: {ok}/{len(todo)} 成功')
+
+
 # ====== H/I类: 三浪/抵抗策略信号 (需 tushare 网络) ======
 
 def derive_strategy_signals(df):
@@ -509,23 +575,14 @@ def derive_strategy_signals(df):
     # 4) 个股 qfq 全量缓存(每 unique 股票 1 次)
     unique_codes = df['股票代码'].astype(str).unique().tolist()
     print(f'    取个股 qfq 全量: {len(unique_codes)} 只(缓存)...')
-    stock_cache = {}
+    prefetch_ohlcv(unique_codes)   # 并发预取(下次跑也复用); 之后 get_stock_close 直接读缓存
 
     def get_stock_close(code):
-        if code in stock_cache:
-            return stock_cache[code]
-        try:
-            d = ts.pro_bar(ts_code=code, adj='qfq')
-            if d is None or len(d) == 0:
-                stock_cache[code] = (None, None)
-                return (None, None)
-            d = d.sort_values('trade_date').drop_duplicates('trade_date').reset_index(drop=True)
-            res = (d['trade_date'].values, d['close'].astype(float).values)
-            stock_cache[code] = res
-            return res
-        except Exception as e:
-            stock_cache[code] = (None, None)
+        """委托模块级 _get_stock_ohlcv(与因子引擎共用缓存), 取 close。"""
+        dates, ohlcv = _get_stock_ohlcv(code)
+        if dates is None:
             return (None, None)
+        return (dates, ohlcv['close'])
 
     def _slice(dates, close, end_str, maxlen=300):
         """≤end_str 末段 maxlen。(dates, close) 升序。"""
@@ -598,6 +655,101 @@ def derive_strategy_signals(df):
         df[k] = v
     coverage = {k: f'{v.notna().mean()*100:.1f}%' for k, v in new_cols.items()}
     print(f'    匹配 {fetched}/{len(df)} | +{len(new_cols)}特征: {", ".join(f"{k}({v})" for k,v in coverage.items())}')
+    return df
+
+
+# ====== L类: Beta + Alpha158 缺失族因子 (factor_engine, 需 tushare 网络) ======
+
+def derive_alpha_beta_factors(df):
+    """按每行报价日 PIT 回算 Beta + Alpha158 缺失族因子(34 列, factor_engine)。
+
+    复用模块级 _OHLCV_CACHE(策略信号先跑则缓存已热, 不重复 pro_bar); 大盘/行业 1 次取数。
+    PIT 由 ≤报价日 内存切片保证。单股/单因子失败填 NaN, 不影响整体。
+    """
+    print('\n  L类: Beta+Alpha158 因子(factor_engine)...')
+    pkg = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if pkg not in sys.path:
+        sys.path.insert(0, pkg)
+    from strategies.data_loader import _align_three, _MARKET_INDEX
+    from factor_engine import compute_factors, _ret
+
+    import pymysql
+    conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', password='',
+                           database='investment_valuation', charset='utf8mb4')
+    id_map_df = pd.read_sql('SELECT stock_code, index_code FROM industry_data', conn)
+    stock_to_idx = dict(zip(id_map_df['stock_code'], id_map_df['index_code']))
+    ind_df = pd.read_sql('SELECT index_code, trade_date, close FROM industry_daily ORDER BY index_code, trade_date', conn)
+    conn.close()
+    ind_groups = {}
+    if not ind_df.empty:
+        for code, g in ind_df.groupby('index_code'):
+            g = g.sort_values('trade_date').reset_index(drop=True)
+            ind_groups[code] = (g['trade_date'].values, g['close'].astype(float).values)
+    print(f'    行业日线: {len(ind_groups)} 个行业')
+
+    import tushare as ts
+    from tushare_token import resolve_tushare_token
+    os.environ.setdefault('TUSHARE_TOKEN', resolve_tushare_token())
+    mrt = ts.pro_api().index_daily(ts_code=_MARKET_INDEX)
+    mrt = mrt.sort_values('trade_date').reset_index(drop=True)
+    mkt_dates, mkt_close = mrt['trade_date'].values, mrt['close'].astype(float).values
+
+    prefetch_ohlcv(df['股票代码'].astype(str).unique())   # 并发预取(若策略信号先跑则缓存已热, 秒过)
+    maxlen = 800   # 月线 MACD 需 ~35 个月 ≈ 800 日线(日线技术因子用尾部, 不受影响)
+    all_factors = {}
+    fetched = 0
+    for i, row in enumerate(df.itertuples(index=True)):
+        code = str(getattr(row, '股票代码', ''))
+        d_raw = getattr(row, '报价日', None)
+        if d_raw is None or pd.isna(d_raw):
+            continue
+        d_str = str(int(float(d_raw))) if isinstance(d_raw, (int, float, np.floating)) else str(d_raw)
+        if len(d_str) < 8:
+            continue
+        try:
+            sd, ohlcv = _get_stock_ohlcv(code)
+            if sd is None:
+                continue
+            sm = sd <= d_str
+            if not sm.any():
+                continue
+            n = int(sm.sum()); lo = max(0, n - maxlen)
+            o = ohlcv['open'][sm][lo:]; h = ohlcv['high'][sm][lo:]; l = ohlcv['low'][sm][lo:]
+            c = ohlcv['close'][sm][lo:]; v = ohlcv['vol'][sm][lo:]; amt = ohlcv['amount'][sm][lo:]
+            sd2 = sd[sm][lo:]
+            if len(c) < 60:
+                continue
+            # 对齐三序列收益(个股/行业/大盘); 对齐失败则 beta 留空, 技术因子仍算
+            sret = _ret(c)
+            mret = iret = np.array([])
+            idx = stock_to_idx.get(code); ig = ind_groups.get(idx)
+            if ig is not None:
+                im = ig[0] <= d_str; in_ = int(im.sum()); ilo = max(0, in_ - maxlen)
+                idf = pd.DataFrame({'trade_date': ig[0][im][ilo:], 'close': ig[1][im][ilo:]})
+                mm = mkt_dates <= d_str; mn = int(mm.sum()); mlo = max(0, mn - maxlen)
+                mdf = pd.DataFrame({'trade_date': mkt_dates[mm][mlo:], 'close': mkt_close[mm][mlo:]})
+                if len(idf) >= 65 and len(mdf) >= 65:
+                    sdf = pd.DataFrame({'trade_date': sd2, 'close': c})
+                    try:
+                        sr, kr, mr = _align_three(sdf, idf, mdf, maxlen)
+                        if len(sr) >= 60:
+                            sret, iret, mret = sr, kr, mr
+                    except Exception:
+                        pass
+            f = compute_factors(o, h, l, c, v, amt, sret, mret, iret, dates=sd2)
+            for k, val in f.items():
+                all_factors.setdefault(k, np.full(len(df), np.nan))[i] = val
+            fetched += 1
+        except Exception:
+            continue
+        if (i + 1) % 100 == 0:
+            print(f'    进度 {i+1}/{len(df)} | 有因子 {fetched}')
+
+    for k, arr in all_factors.items():
+        df[k] = arr
+    cov = {k: f'{pd.Series(v).notna().mean()*100:.1f}%' for k, v in all_factors.items()}
+    shown = ', '.join(f'{k}({cov[k]})' for k in sorted(all_factors)[:10])
+    print(f'    匹配 {fetched}/{len(df)} | +{len(all_factors)}因子: {shown} ...')
     return df
 
 
@@ -789,6 +941,14 @@ def main():
         except Exception as e:
             import traceback
             print(f'  ⚠️ 策略信号(H/I类)失败: {e}')
+            traceback.print_exc()
+
+        # L类: Beta+Alpha158 因子(需tushare网络, 复用 H/I 已热的 OHLCV 缓存, 失败不影响前面)
+        try:
+            df = derive_alpha_beta_factors(df)
+        except Exception as e:
+            import traceback
+            print(f'  ⚠️ 因子引擎(L类)失败: {e}')
             traceback.print_exc()
 
         # J类: 月线10月均线趋势(需tushare网络, 单独try, 失败不影响前面)
