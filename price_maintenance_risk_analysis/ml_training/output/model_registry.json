@@ -1,6 +1,6 @@
 {
   "current": {
-    "full": "v_20260616_1227_225feat_auc074",
+    "full": "v_sc_20260617_0010_7m_gray_sc_4feat",
     "scorecard": "v_20260612_0009_scorecard_12feat_auc069"
   },
   "versions": [
@@ -570,6 +570,46 @@
       "note": "标准五步特征选择(IV top40 → PSI 14 → 去相关 9 → VIF 7 → LGBM剪 7)",
       "label_config": "12m_gray",
       "dataset_version": "derived_20260616_1627_a77c2bb4_7m"
+    },
+    {
+      "version": "v_sc_20260616_2350_7m_gray_sc_10feat",
+      "model_type": "full",
+      "created_at": "2026-06-16 23:50",
+      "n_features": 10,
+      "threshold": -10,
+      "n_samples": 836,
+      "positive_rate": 0.47248803827751196,
+      "metrics": {
+        "sc_oot_auc": 0.7520491803278689,
+        "sc_oot_ks": 0.44426229508196724
+      },
+      "dir": "v_sc_20260616_2350_7m_gray_sc_10feat",
+      "files": [
+        "(in ml_model_meta DB)"
+      ],
+      "note": "WOE评分卡 7m_gray_sc",
+      "label_config": "7m_gray_sc",
+      "dataset_version": "derived_20260616_2334_f35ba6f3_7m"
+    },
+    {
+      "version": "v_sc_20260617_0010_7m_gray_sc_4feat",
+      "model_type": "full",
+      "created_at": "2026-06-17 00:10",
+      "n_features": 4,
+      "threshold": -10,
+      "n_samples": 836,
+      "positive_rate": 0.47248803827751196,
+      "metrics": {
+        "sc_oot_auc": 0.665983606557377,
+        "sc_oot_ks": 0.26939890710382514
+      },
+      "dir": "v_sc_20260617_0010_7m_gray_sc_4feat",
+      "files": [
+        "(in ml_model_meta DB)"
+      ],
+      "note": "WOE评分卡 7m_gray_sc",
+      "label_config": "7m_gray_sc",
+      "dataset_version": "derived_20260616_2334_f35ba6f3_7m"
     }
   ]
 }

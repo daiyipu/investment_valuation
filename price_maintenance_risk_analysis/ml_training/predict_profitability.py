@@ -251,38 +251,38 @@ def predict(scored_excel_path):
     print(f'    特征覆盖率(填充前): {non_null/total_cells*100:.1f}%')
 
     # ═══════════════════════════════════════════════
-    # 7. LightGBM 预测
+    # 7/8. 预测(LGB+LR 或 评分卡 SC 二选一)
     # ═══════════════════════════════════════════════
-    print('  [ML-6] LightGBM 预测...')
-    booster = lgb.Booster(model_str=bundle['lgb_model'])
-    lgb_feature_names = booster.feature_name()
+    is_sc = not bundle.get('lgb_model')   # 评分卡模型: lgb_model 为空
+    if is_sc:
+        # 评分卡路径: WOE 分箱 + LR 打分(替代 LGB+LR)
+        print('  [ML-6/7] 评分卡(SC) 预测(WOE+LR)...')
+        from eval_loyo import apply_woe
+        sc = pickle.loads(bundle['lr_bundle'])   # {kind, woe_bins, lr_model, features, medians}
+        X_woe = apply_woe(X_pred, sc['features'], sc['woe_bins']).replace([np.inf, -np.inf], 0).fillna(0)
+        lgb_proba = sc['lr_model'].predict_proba(X_woe)[:, 1]
+        lr_proba = lgb_proba                      # SC 即主分数, 无独立 LR
+        print(f'    SC 概率范围: [{lgb_proba.min():.3f}, {lgb_proba.max():.3f}]')
+    else:
+        print('  [ML-6] LightGBM 预测...')
+        booster = lgb.Booster(model_str=bundle['lgb_model'])
+        lgb_feature_names = booster.feature_name()
+        X_lgb = pd.DataFrame(index=X_pred.index)
+        for feat in lgb_feature_names:
+            X_lgb[feat] = X_pred[feat] if feat in X_pred.columns else 0
+        X_lgb = X_lgb.astype(float).values
+        lgb_proba = booster.predict(X_lgb)
+        print(f'    概率范围: [{lgb_proba.min():.3f}, {lgb_proba.max():.3f}]')
 
-    # 对齐特征
-    X_lgb = pd.DataFrame(index=X_pred.index)
-    for feat in lgb_feature_names:
-        X_lgb[feat] = X_pred[feat] if feat in X_pred.columns else 0
-    X_lgb = X_lgb.astype(float).values
-
-    lgb_proba = booster.predict(X_lgb)
-    print(f'    概率范围: [{lgb_proba.min():.3f}, {lgb_proba.max():.3f}]')
-
-    # ═══════════════════════════════════════════════
-    # 8. 逻辑回归 预测
-    # ═══════════════════════════════════════════════
-    print('  [ML-7] 逻辑回归 预测...')
-    lr_data = pickle.loads(bundle['lr_bundle'])   # LR 权重从 DB 加载
-    lr_model = lr_data['model']
-    lr_scaler = lr_data['scaler']
-    lr_feature_names = lr_data['features']
-
-    # 对齐特征
-    X_lr = pd.DataFrame(index=X_pred.index)
-    for feat in lr_feature_names:
-        X_lr[feat] = X_pred[feat] if feat in X_pred.columns else 0
-    X_lr = X_lr.replace([np.inf, -np.inf], 0).fillna(0)
-    X_lr_scaled = lr_scaler.transform(X_lr.values)
-    lr_proba = lr_model.predict_proba(X_lr_scaled)[:, 1]
-    print(f'    概率范围: [{lr_proba.min():.3f}, {lr_proba.max():.3f}]')
+        print('  [ML-7] 逻辑回归 预测...')
+        lr_data = pickle.loads(bundle['lr_bundle'])
+        lr_model, lr_scaler, lr_feature_names = lr_data['model'], lr_data['scaler'], lr_data['features']
+        X_lr = pd.DataFrame(index=X_pred.index)
+        for feat in lr_feature_names:
+            X_lr[feat] = X_pred[feat] if feat in X_pred.columns else 0
+        X_lr = X_lr.replace([np.inf, -np.inf], 0).fillna(0)
+        lr_proba = lr_model.predict_proba(lr_scaler.transform(X_lr.values))[:, 1]
+        print(f'    概率范围: [{lr_proba.min():.3f}, {lr_proba.max():.3f}]')
 
     # ═══════════════════════════════════════════════
     # 9. 评分卡得分（可选）

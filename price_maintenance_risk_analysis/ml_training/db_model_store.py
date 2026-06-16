@@ -131,15 +131,14 @@ def _row_to_meta(description, r):
 
 
 def load_predict_bundle(version):
-    """取 predict 所需的完整包: features(list) + medians(dict) + lgb_model(文本) + lr_bundle(bytes)。
-    LGB 用 lgb.Booster(model_str=bundle['lgb_model']) 加载; LR 用 pickle.loads(bundle['lr_bundle'])。"""
+    """取 predict 所需的完整包: features(list) + medians(dict) + lgb_model(文本, 可空) + lr_bundle(bytes)。
+    LGB 模型: lgb_model 有值 → lgb.Booster(model_str=...) + lr_bundle={model,scaler,features}。
+    评分卡(SC)模型: lgb_model 为空 → lr_bundle={kind:'scorecard', woe_bins, lr_model, ...}, predict 走 WOE 路径。"""
     m = get_model_meta(version)
     if not m:
         raise KeyError(f'ml_model_meta 无版本 {version}')
-    if not m.get('lgb_model'):
-        raise ValueError(f'{version} 未存 LGB 权重(lgb_model 为空)')
     return {'features': m.get('features', []), 'medians': m.get('medians', {}),
-            'lgb_model': m['lgb_model'], 'lr_bundle': m.get('lr_bundle')}
+            'lgb_model': m.get('lgb_model'), 'lr_bundle': m.get('lr_bundle')}
 
 
 def get_model_meta(version):

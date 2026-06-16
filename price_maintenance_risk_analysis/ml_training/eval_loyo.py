@@ -178,11 +178,75 @@ def run(features_path):
     print(f'\n写出: {out_dir}/loyo_{{lgb,lr,sc}}.csv (+_ks.csv)')
 
 
+def _eval_fold_fixed(dtr, dte, horizon, kind, features):
+    """锁定特征的单折评估(跳过 select_features), 返回 lgb/lr/sc auc/ks。
+    用于部署模型的"对齐验证"——部署用固定特征集, 验证也用同一套, 避免 选/部 偏离。"""
+    lbl, _ = build_label(dtr, horizon, kind)
+    if kind == 'gray':
+        build_label(dte, horizon, kind)
+    ret = f'{horizon}个月涨跌幅'
+    Xtr_raw, ytr, _ = make_features(dtr, label_col=lbl, ret_col=ret)
+    Xte_raw, yte, _ = make_features(dte, label_col=lbl, ret_col=ret)
+    if Xtr_raw is None or Xte_raw is None or yte.nunique() < 2:
+        return None
+    Xtr, med = _prep(Xtr_raw)
+    Xte = _prep(Xte_raw, medians=med)[0].reindex(columns=Xtr.columns)
+    feats = [f for f in features if f in Xtr.columns]
+    Xtr_s, Xte_s = Xtr[feats], Xte[feats]
+    gbm, lr, sc_lr = _train(Xtr_s, ytr)
+    al = eval_metrics(yte.values, gbm.predict_proba(Xte_s)[:, 1])
+    ar = eval_metrics(yte.values, lr.predict_proba(sc_lr.transform(Xte_s))[:, 1])
+    Xtr_w, wb = fit_woe(Xtr_s, ytr, feats)
+    Xte_w = apply_woe(Xte_s, feats, wb)
+    from sklearn.linear_model import LogisticRegression
+    m = LogisticRegression(C=1.0, penalty='l2', max_iter=1000, random_state=42)
+    m.fit(Xtr_w.replace([np.inf, -np.inf], np.nan).fillna(0), ytr)
+    asc = eval_metrics(yte.values, m.predict_proba(
+        Xte_w.replace([np.inf, -np.inf], np.nan).fillna(0))[:, 1])
+    return {'lgb_auc': al['auc'], 'lgb_ks': al['ks'], 'lr_auc': ar['auc'],
+            'lr_ks': ar['ks'], 'sc_auc': asc['auc'], 'sc_ks': asc['ks'], 'n_feat': len(feats)}
+
+
+def loyo_fixed(features_path, horizon, kind, features):
+    """锁定特征 LOYO(部署对齐验证): 6 折每折用同一套固定特征训 LGB/LR/SC, 报 mean±std。
+    用法: python eval_loyo.py <parquet> --fixed-features "f1,f2,..." --horizon 7 --kind gray"""
+    df = pd.read_parquet(features_path).dropna(subset=['报价日']).reset_index(drop=True)
+    df['_year'] = (pd.to_numeric(df['报价日'], errors='coerce') // 10000).astype('Int64')
+    years = sorted(int(y) for y in df['_year'].dropna().unique())
+    feats = [f.strip() for f in features.split(',')]
+    print(f'🔒 锁定特征 LOYO [{len(feats)}特征]: {feats}\n  期限 {horizon}m/{kind} | {years}\n')
+    models = ('lgb', 'lr', 'sc')
+    per = {m: [] for m in models}
+    per_ks = {m: [] for m in models}
+    for Y in years:
+        dtr = df[df['_year'] != Y].drop(columns=['_year'])
+        dte = df[df['_year'] == Y].drop(columns=['_year'])
+        r = _eval_fold_fixed(dtr, dte, horizon, kind, feats)
+        if r is None:
+            continue
+        for m in models:
+            per[m].append(r[f'{m}_auc']); per_ks[m].append(r[f'{m}_ks'])
+        print(f"  折{Y}: LGB {r['lgb_auc']:.3f}/{r['lgb_ks']:.3f} | "
+              f"LR {r['lr_auc']:.3f}/{r['lr_ks']:.3f} | SC {r['sc_auc']:.3f}/{r['sc_ks']:.3f}")
+    print('\n' + '=' * 70)
+    print(f'🔒 锁定特征 LOYO 结果(部署对齐):')
+    for m, label in (('lgb', 'LGB'), ('lr', 'LR'), ('sc', 'SC 评分卡')):
+        print(f'  {label:<10} AUC {np.mean(per[m]):.3f}±{np.std(per[m]):.3f} | '
+              f'KS {np.mean(per_ks[m]):.3f}±{np.std(per_ks[m]):.3f} | per-year {[round(a,3) for a in per[m]]}')
+
+
 def main():
-    ap = argparse.ArgumentParser(description='LOYO 三模型评估')
+    ap = argparse.ArgumentParser(description='LOYO 评估(标准 / 锁定特征对齐验证)')
     ap.add_argument('features_path', help='features_derived.parquet')
+    ap.add_argument('--fixed-features', default=None,
+                    help='锁定特征(逗号分隔) → 跑部署对齐 LOYO(跳过每折选特征); 如 "个股PB,盈利能力_delta_1y"')
+    ap.add_argument('--horizon', type=int, default=7)
+    ap.add_argument('--kind', choices=['thr', 'gray'], default='gray')
     args = ap.parse_args()
-    run(args.features_path)
+    if args.fixed_features:
+        loyo_fixed(args.features_path, args.horizon, args.kind, args.fixed_features)
+    else:
+        run(args.features_path)
 
 
 if __name__ == '__main__':
