@@ -127,12 +127,13 @@ def predict(scored_excel_path):
         derive_market_index_features,
     )
     from model_registry import require_current_dir, get_current
+    from db_model_store import load_predict_bundle   # full 模型权重+meta 从 DB 加载(不再读磁盘 version 目录)
 
     output_dir = os.path.join(SCRIPT_DIR, 'output')
     # 模型从 registry 的当前生产版本读取（见 manage_models.py current）
     version = get_current('full')
-    model_dir = require_current_dir('full')
-    print(f'  [ML-0] 使用 full 模型版本: {version}')
+    bundle = load_predict_bundle(version)   # 权重+features+medians 从 DB ml_model_meta 加载
+    print(f'  [ML-0] 使用 full 模型版本: {version} (权重从 DB 加载)')
     # 评分卡（可选：未注册则跳过评分卡得分列）
     sc_version = get_current('scorecard')
     sc_dir = None
@@ -218,11 +219,9 @@ def predict(scored_excel_path):
     # ═══════════════════════════════════════════════
     # 5. 加载全量特征模型的 meta
     # ═══════════════════════════════════════════════
-    print('  [ML-4] 加载模型 meta...')
-    with open(os.path.join(model_dir, 'lgb_full_meta.json'), 'r') as f:
-        meta = json.load(f)
-    model_features = meta['features']
-    train_medians = meta['medians']
+    print('  [ML-4] 加载模型 meta(从 DB)...')
+    model_features = bundle['features']
+    train_medians = bundle['medians']
     print(f'    模型特征: {len(model_features)} 个')
 
     # ═══════════════════════════════════════════════
@@ -255,7 +254,7 @@ def predict(scored_excel_path):
     # 7. LightGBM 预测
     # ═══════════════════════════════════════════════
     print('  [ML-6] LightGBM 预测...')
-    booster = lgb.Booster(model_file=os.path.join(model_dir, 'lgb_classifier_full.txt'))
+    booster = lgb.Booster(model_str=bundle['lgb_model'])
     lgb_feature_names = booster.feature_name()
 
     # 对齐特征
@@ -271,8 +270,7 @@ def predict(scored_excel_path):
     # 8. 逻辑回归 预测
     # ═══════════════════════════════════════════════
     print('  [ML-7] 逻辑回归 预测...')
-    with open(os.path.join(model_dir, 'lr_classifier_full.pkl'), 'rb') as f:
-        lr_data = pickle.load(f)
+    lr_data = pickle.loads(bundle['lr_bundle'])   # LR 权重从 DB 加载
     lr_model = lr_data['model']
     lr_scaler = lr_data['scaler']
     lr_feature_names = lr_data['features']

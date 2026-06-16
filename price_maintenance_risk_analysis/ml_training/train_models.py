@@ -33,6 +33,10 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
+# 与 scorecard/validate 共用唯一剔除清单(防多期限原始收益列泄漏)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from feature_exclusions import get_excluded_columns
+
 warnings.filterwarnings('ignore')
 
 
@@ -99,25 +103,29 @@ def load_features(filepath):
     return df
 
 
-def prepare_features_full(df, threshold=-10):
-    """全量数值特征（默认模式，与 validate_model.py 一致）"""
-    # 确保标签列名匹配（-10.0 → -10）
-    threshold_int = int(threshold) if threshold == int(threshold) else threshold
-    label_col = f'标签_盈利_{threshold_int}'
-    if label_col not in df.columns:
-        if '7个月涨跌幅' in df.columns:
+def prepare_features_full(df, threshold=-10, label_col=None):
+    """全量数值特征（默认模式，与 validate_model.py 一致）。
+
+    label_col: 显式标签列(如 标签_盈利_-10_3m / 标签_极性_灰度剔除_7m)；给定则直接用，
+               None 时按 threshold 合成 标签_盈利_{threshold}。
+    """
+    if label_col is None:
+        # 确保标签列名匹配（-10.0 → -10）
+        threshold_int = int(threshold) if threshold == int(threshold) else threshold
+        label_col = f'标签_盈利_{threshold_int}'
+        if label_col not in df.columns and '7个月涨跌幅' in df.columns:
             df[label_col] = (df['7个月涨跌幅'] > threshold / 100).astype(int)
-        else:
-            print(f'❌ 找不到标签列 {label_col}')
-            return None, None
+    if label_col not in df.columns:
+        print(f'❌ 找不到标签列 {label_col}')
+        return None, None
 
     y = df[label_col]
     valid = y.notna()
     df = df[valid].reset_index(drop=True)
     y = y[valid].reset_index(drop=True)
 
-    # 全部数值列（排除标签和目标）
-    exclude = EXCLUDE_COLS | {c for c in df.columns if '标签' in c}
+    # 全部数值列（排除标签/目标 + 统一剔除清单 feature_exclusions，防多期限原始收益列泄漏）
+    exclude = set(get_excluded_columns(df.columns)) | EXCLUDE_COLS | {c for c in df.columns if '标签' in c}
     num_cols = [c for c in df.select_dtypes(include=[np.number]).columns if c not in exclude]
 
     X = df[num_cols].copy()
@@ -136,16 +144,16 @@ def prepare_features_full(df, threshold=-10):
     return X, y
 
 
-def prepare_features_classic(df, threshold=-10):
+def prepare_features_classic(df, threshold=-10, label_col=None):
     """手工选择特征（--classic 模式，旧版兼容）"""
-    threshold_int = int(threshold) if threshold == int(threshold) else threshold
-    label_col = f'标签_盈利_{threshold_int}'
-    if label_col not in df.columns:
-        if '7个月涨跌幅' in df.columns:
+    if label_col is None:
+        threshold_int = int(threshold) if threshold == int(threshold) else threshold
+        label_col = f'标签_盈利_{threshold_int}'
+        if label_col not in df.columns and '7个月涨跌幅' in df.columns:
             df[label_col] = (df['7个月涨跌幅'] > threshold / 100).astype(int)
-        else:
-            print(f'❌ 找不到标签列 {label_col}')
-            return None, None
+    if label_col not in df.columns:
+        print(f'❌ 找不到标签列 {label_col}')
+        return None, None
 
     y = df[label_col]
     valid = y.notna()
@@ -347,6 +355,12 @@ def main():
     parser = argparse.ArgumentParser(description='定增盈利预测 - 双模型训练')
     parser.add_argument('features_path', help='features.parquet 或 features_derived.parquet 路径')
     parser.add_argument('--threshold', type=float, default=-10, help='盈利阈值(%%)，默认-10')
+    parser.add_argument('--label', default=None,
+                        help='显式标签列(如 标签_盈利_-10_3m / 标签_极性_灰度剔除_7m); '
+                             '默认按 --threshold 合成 标签_盈利_{threshold}(=7m)')
+    parser.add_argument('--split-year', type=int, default=2024, help='OOT 时序切分年(train<=Y / test>Y)')
+    parser.add_argument('--dataset-version', default=None, help='DB 快照版本(记入 registry, 可追溯训练数据)')
+    parser.add_argument('--no-set-current', action='store_true', help='注册但不设为 current(扫描用)')
     parser.add_argument('--classic', action='store_true',
                         help='使用手工选择特征（64个），默认使用全部数值特征')
     args = parser.parse_args()
@@ -357,11 +371,12 @@ def main():
     # 加载
     df = load_features(args.features_path)
 
+    label_col = args.label  # None → 按 threshold 合成 标签_盈利_{threshold}
     if args.classic:
-        X, y = prepare_features_classic(df, args.threshold)
+        X, y = prepare_features_classic(df, args.threshold, label_col=label_col)
         suffix = ''
     else:
-        X, y = prepare_features_full(df, args.threshold)
+        X, y = prepare_features_full(df, args.threshold, label_col=label_col)
         suffix = '_full'
 
     if X is None:
@@ -374,11 +389,11 @@ def main():
     lr_model, lr_scaler, lr_auc = train_logistic_regression(X, y, output_dir, suffix=suffix)
 
     # 时序 OOT(真实泛化, 主指标)
-    _label = f'标签_盈利_{int(args.threshold)}'
+    _label = label_col or f'标签_盈利_{int(args.threshold)}'
     _valid = df[_label].notna() if _label in df.columns else pd.Series([True] * len(df))
     year = pd.to_numeric(pd.to_numeric(df.loc[_valid, '报价日'], errors='coerce')
                          .astype('Int64').astype(str).str[:4], errors='coerce').reset_index(drop=True)
-    oot = evaluate_oot(X, y, year)
+    oot = evaluate_oot(X, y, year, split_year=args.split_year)
 
     # 保存全量模型的 meta（特征列表 + median，供 predict_profitability 使用）
     if not args.classic:
@@ -488,9 +503,12 @@ def main():
                 positive_rate=float(y.mean()),
                 files=archived,
                 note='全量数值特征 LGB+LR',
-                set_current=True,
+                set_current=not args.no_set_current,
+                label_config=label_col or f'7m_{int(args.threshold)}',
+                dataset_version=args.dataset_version,
             )
-            print(f'   registry: 已注册为 full 当前版本 → {version_name}')
+            cur_tag = '' if args.no_set_current else ' 已注册为 full 当前版本'
+            print(f'   registry: 已注册 → {version_name}{cur_tag}')
         except Exception as e:
             print(f'   ⚠ registry 注册失败(不影响模型文件): {e}')
 

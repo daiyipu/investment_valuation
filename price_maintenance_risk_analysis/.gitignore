@@ -2,6 +2,14 @@
 data/*.json
 data/images_temp/
 
+# ML 训练用特征矩阵(大文件, 可由 DB + export_features/derive_features 重建)
+# 冻结快照存 DB(ml_dataset_snapshot 表)作为版本库, 不入 git 避免每次重训 10MB churn
+# schema 文档(features_schema.md)仍跟踪
+ml_training/data/features.csv
+ml_training/data/features.parquet
+ml_training/data/features_derived.csv
+ml_training/data/features_derived.parquet
+
 # Python缓存
 __pycache__/
 *.py[cod]
@@ -34,3 +42,15 @@ strategies/output/
 *.log
 *.tmp
 .DS_Store
+
+# ML 训练/评估产物(可由 DB + 脚本重建, 不入 git)
+# 模型权重+元信息存 DB(ml_model_meta); 仅 model_registry.json(版本索引) 仍跟踪
+ml_training/output/v_*/
+ml_training/output/per_horizon_features/
+ml_training/output/loyo_*.csv
+ml_training/output/horizon_*.csv
+ml_training/output/horizon_summary_all.csv
+ml_training/output/gray_zone*.csv
+ml_training/output/*_compare.csv
+ml_training/output/old_scorecard*.csv
+ml_training/output/frozen_scorecard*.csv

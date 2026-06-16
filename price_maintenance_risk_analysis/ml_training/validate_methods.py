@@ -137,23 +137,28 @@ def decile_table(name, y_true, proba, ret):
 
 # ====== 特征制备 + 选字段 ======
 
-def make_features(df, threshold=-10):
-    """数值特征(保留NaN不填充) + 标签 y + 连续收益 ret。丢弃标签NaN行。"""
-    label_col = f'标签_盈利_{int(threshold)}'
-    if label_col not in df.columns:
-        if '7个月涨跌幅' in df.columns:
+def make_features(df, threshold=-10, label_col=None, ret_col='7个月涨跌幅'):
+    """数值特征(保留NaN不填充) + 标签 y + 连续收益 ret。丢弃标签NaN行(灰度剔除靠此)。
+
+    label_col: 显式标签列(如 标签_盈利_-10_3m / 标签_极性_灰度剔除_7m); None→按 threshold 合成。
+    ret_col:   连续收益列(默认 7个月涨跌幅), 用于灰度分桶; 不进 X。
+    """
+    if label_col is None:
+        label_col = f'标签_盈利_{int(threshold)}'
+        if label_col not in df.columns and ret_col in df.columns:
             df = df.copy()
-            df[label_col] = (pd.to_numeric(df['7个月涨跌幅'], errors='coerce') > threshold / 100).astype(int)
-        else:
-            print(f'❌ 找不到标签列 {label_col}')
-            return None, None, None
+            df[label_col] = (pd.to_numeric(df[ret_col], errors='coerce') > threshold / 100).astype(int)
+    if label_col not in df.columns:
+        print(f'❌ 找不到标签列 {label_col}')
+        return None, None, None
     y = df[label_col]
-    ret = pd.to_numeric(df['7个月涨跌幅'], errors='coerce') if '7个月涨跌幅' in df.columns else pd.Series(np.nan, index=df.index)
+    ret = pd.to_numeric(df[ret_col], errors='coerce') if ret_col in df.columns else pd.Series(np.nan, index=df.index)
     valid = y.notna()
     df = df.loc[valid].reset_index(drop=True)
     y = y.loc[valid].reset_index(drop=True)
     ret = ret.loc[valid].reset_index(drop=True)
-    exclude = {c for c in df.columns if '标签' in c} | {'7个月涨跌幅', '7个月后价格'}
+    # 排除标签 + 统一剔除清单(含多期限原始收益列); ret 已单独取出不进 X
+    exclude = set(get_excluded_columns(df.columns)) | {c for c in df.columns if '标签' in c}
     num_cols = [c for c in df.select_dtypes(include=[np.number]).columns if c not in exclude]
     X = df[num_cols].apply(lambda s: pd.to_numeric(s, errors='coerce')).reset_index(drop=True)
     return X, y, ret
@@ -267,20 +272,22 @@ def print_results(rows, title, coverage=None):
 
 # ====== Part A: 内部 OOT ======
 
-def run_part_a(features_path, threshold, n, iv_min):
+def run_part_a(features_path, threshold, n, iv_min, split_year=2024,
+               label_col=None, ret_col='7个月涨跌幅'):
     print('\n' + '#' * 78)
-    print('# Part A — 内部 out-of-time 验证 (train 2020–2024 / test 2025–2026)')
+    print(f'# Part A — 内部 out-of-time 验证 (train ≤{split_year} / test ≥{split_year + 1})'
+          + (f'  [label={label_col}]' if label_col else ''))
     print('#' * 78)
 
     df = pd.read_parquet(features_path)
     df = df.dropna(subset=['报价日']).copy()
     df['_year'] = (pd.to_numeric(df['报价日'], errors='coerce') // 10000).astype(int)
-    df_train = df[df['_year'] <= 2024].drop(columns=['_year'])
-    df_test = df[df['_year'] >= 2025].drop(columns=['_year'])
+    df_train = df[df['_year'] <= split_year].drop(columns=['_year'])
+    df_test = df[df['_year'] >= split_year + 1].drop(columns=['_year'])
     print(f'  时序切分: train {len(df_train)} 行, test {len(df_test)} 行')
 
-    X_train_raw, y_train, _ = make_features(df_train, threshold)
-    X_test_raw, y_test, _ = make_features(df_test, threshold)
+    X_train_raw, y_train, _ = make_features(df_train, threshold, label_col=label_col, ret_col=ret_col)
+    X_test_raw, y_test, _ = make_features(df_test, threshold, label_col=label_col, ret_col=ret_col)
     if X_train_raw is None or X_test_raw is None:
         return None
     X_test_raw = X_test_raw.reindex(columns=X_train_raw.columns)  # 对齐列

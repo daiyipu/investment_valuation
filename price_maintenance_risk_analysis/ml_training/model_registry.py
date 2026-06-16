@@ -49,7 +49,8 @@ def save_registry(reg):
 
 def register_version(model_type, version, dir, metrics, n_features=None,
                      threshold=None, n_samples=None, positive_rate=None,
-                     files=None, note='', set_current=True):
+                     files=None, note='', set_current=True,
+                     label_config=None, dataset_version=None):
     """注册一个新版本；默认设为该 model_type 的 current。
 
     Args:
@@ -59,6 +60,8 @@ def register_version(model_type, version, dir, metrics, n_features=None,
         metrics:   dict，如 {'lgb_auc': 0.72, 'lr_auc': 0.65} 或 {'auc': 0.69, 'ks': 0.28}
         files:     该版本包含的文件名列表
         set_current: 是否同时设为 current（默认 True）
+        label_config:   训练标签配置，如 '7m_-10' / '3m_-10' / 'gray_7m'
+        dataset_version: DB 快照版本(ml_dataset_snapshot.version)，冻结该模型吃的确切数据
     """
     if model_type not in VALID_TYPES:
         raise ValueError(f'model_type 必须是 {VALID_TYPES}，得到 {model_type!r}')
@@ -80,6 +83,8 @@ def register_version(model_type, version, dir, metrics, n_features=None,
         'dir': os.path.basename(dir.rstrip(os.sep)) if isinstance(dir, str) else dir,
         'files': files or [],
         'note': note,
+        'label_config': label_config,
+        'dataset_version': dataset_version,
     }
     reg['versions'].append(entry)
 

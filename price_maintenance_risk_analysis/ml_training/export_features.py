@@ -466,13 +466,31 @@ def load_scored_features_from_db(sample_keys):
             r['定增决策'] = pe.get('decision')
             r['定增建议参与'] = 1 if '建议参与' in str(pe.get('decision', '')) else 0
 
-            # 标签
-            ret_7m = pe.get('return_7m')
-            if pd.notna(ret_7m):
-                r['7个月涨跌幅'] = float(ret_7m)
-                r['标签_盈利_0'] = int(float(ret_7m) > 0)
-                r['标签_盈利_-10'] = int(float(ret_7m) > -10)
-                r['标签_盈利_-20'] = int(float(ret_7m) > -20)
+            # 标签: 各期限涨跌幅 + 阈值标签 + 灰度剔除极性标签
+            #   灰度区 [-20%, +10%] 剔除(NaN): 只留明显赢家(>+10%) vs 明显输家(<-20%)
+            for _h in (1, 3, 6, 7, 12):
+                ret = pe.get(f'return_{_h}m')
+                if pd.notna(ret):
+                    ret = float(ret)
+                    r[f'{_h}个月涨跌幅'] = ret
+                    r[f'标签_盈利_0_{_h}m'] = int(ret > 0)
+                    r[f'标签_盈利_-10_{_h}m'] = int(ret > -10)
+                    r[f'标签_盈利_-20_{_h}m'] = int(ret > -20)
+                    # 灰度剔除极性: >+10=1(赢), <-20=0(输), 区间内=NaN(灰度, 训练时丢弃)
+                    if ret > 10:
+                        r[f'标签_极性_灰度剔除_{_h}m'] = 1
+                    elif ret < -20:
+                        r[f'标签_极性_灰度剔除_{_h}m'] = 0
+                    else:
+                        r[f'标签_极性_灰度剔除_{_h}m'] = np.nan
+                r[f'{_h}个月后价格'] = pe.get(f'price_{_h}m')
+            # 7m 向后兼容别名(默认标签口径, predict/registry 依赖)
+            if pd.notna(pe.get('return_7m')):
+                _r7 = float(pe['return_7m'])
+                r['7个月涨跌幅'] = _r7
+                r['标签_盈利_0'] = int(_r7 > 0)
+                r['标签_盈利_-10'] = int(_r7 > -10)
+                r['标签_盈利_-20'] = int(_r7 > -20)
             r['7个月后价格'] = pe.get('price_7m')
             r['最终结论'] = pe.get('final_conclusion')
 
@@ -952,6 +970,20 @@ def main():
                     rate = merged[c].notna().mean() * 100 if c in merged.columns else 0
                     f.write(f'| {c} | {rate:.1f}% |\n')
     print(f'   字段说明: {schema_path}')
+
+    # ── 冻结快照入 DB 版本库(data 文件已 gitignore, 靠此还原) ──
+    try:
+        import db_dataset_store
+        base_version = db_dataset_store.save_snapshot(
+            merged, kind='base', label_config='7m',
+            note=f'base features {len(merged)}x{total_cols}')
+        print(f'   快照入DB: {base_version}')
+        with open(schema_path, 'a', encoding='utf-8') as f:
+            f.write(f'\n\n## 数据集快照\n\n基线快照版本: `{base_version}`\n'
+                    f'还原: `python manage_snapshots.py restore {base_version} '
+                    f'--out data/features.parquet`\n')
+    except Exception as e:
+        print(f'   ⚠️ 快照入库跳过(DB不可用): {e}')
 
 
 if __name__ == '__main__':

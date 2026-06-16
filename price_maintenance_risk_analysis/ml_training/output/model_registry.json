@@ -340,6 +340,236 @@
         "lgb_full_meta.json"
       ],
       "note": "全量数值特征 LGB+LR"
+    },
+    {
+      "version": "v_20260616_2046_1m_thr_10feat_auc054",
+      "model_type": "full",
+      "created_at": "2026-06-16 20:46",
+      "n_features": 10,
+      "threshold": -10,
+      "n_samples": 1263,
+      "positive_rate": 0.7854315122723674,
+      "metrics": {
+        "lgb_oot_auc": 0.5392433653303219,
+        "lgb_oot_ks": 0.08375682288725761,
+        "lr_oot_auc": 0.5693581780538302,
+        "lr_oot_ks": 0.14172783738001132,
+        "band_spread": NaN
+      },
+      "dir": "v_20260616_2046_1m_thr_10feat_auc054",
+      "files": [
+        "(in ml_model_meta DB)"
+      ],
+      "note": "标准五步特征选择(IV top40 → PSI 30 → 去相关 15 → VIF 12 → LGBM剪 10)",
+      "label_config": "1m_thr",
+      "dataset_version": "derived_20260616_1627_a77c2bb4_7m"
+    },
+    {
+      "version": "v_20260616_2046_1m_gray_10feat_auc048",
+      "model_type": "full",
+      "created_at": "2026-06-16 20:46",
+      "n_features": 10,
+      "threshold": -10,
+      "n_samples": 499,
+      "positive_rate": 0.7595190380761523,
+      "metrics": {
+        "lgb_oot_auc": 0.4776315789473684,
+        "lgb_oot_ks": 0.2315789473684211,
+        "lr_oot_auc": 0.7342105263157894,
+        "lr_oot_ks": 0.506578947368421,
+        "band_spread": 0.03
+      },
+      "dir": "v_20260616_2046_1m_gray_10feat_auc048",
+      "files": [
+        "(in ml_model_meta DB)"
+      ],
+      "note": "标准五步特征选择(IV top40 → PSI 27 → 去相关 12 → VIF 10 → LGBM剪 10)",
+      "label_config": "1m_gray",
+      "dataset_version": "derived_20260616_1627_a77c2bb4_7m"
+    },
+    {
+      "version": "v_20260616_2046_3m_thr_12feat_auc066",
+      "model_type": "full",
+      "created_at": "2026-06-16 20:46",
+      "n_features": 12,
+      "threshold": -10,
+      "n_samples": 1263,
+      "positive_rate": 0.6413301662707839,
+      "metrics": {
+        "lgb_oot_auc": 0.6550233644859814,
+        "lgb_oot_ks": 0.3266355140186916,
+        "lr_oot_auc": 0.713785046728972,
+        "lr_oot_ks": 0.38644859813084115,
+        "band_spread": NaN
+      },
+      "dir": "v_20260616_2046_3m_thr_12feat_auc066",
+      "files": [
+        "(in ml_model_meta DB)"
+      ],
+      "note": "标准五步特征选择(IV top40 → PSI 25 → 去相关 16 → VIF 12 → LGBM剪 12)",
+      "label_config": "3m_thr",
+      "dataset_version": "derived_20260616_1627_a77c2bb4_7m"
+    },
+    {
+      "version": "v_20260616_2046_3m_gray_11feat_auc067",
+      "model_type": "full",
+      "created_at": "2026-06-16 20:46",
+      "n_features": 11,
+      "threshold": -10,
+      "n_samples": 522,
+      "positive_rate": 0.6264367816091954,
+      "metrics": {
+        "lgb_oot_auc": 0.6690251572327044,
+        "lgb_oot_ks": 0.3081761006289308,
+        "lr_oot_auc": 0.6643081761006289,
+        "lr_oot_ks": 0.45125786163522014,
+        "band_spread": 0.247
+      },
+      "dir": "v_20260616_2046_3m_gray_11feat_auc067",
+      "files": [
+        "(in ml_model_meta DB)"
+      ],
+      "note": "标准五步特征选择(IV top40 → PSI 23 → 去相关 12 → VIF 11 → LGBM剪 11)",
+      "label_config": "3m_gray",
+      "dataset_version": "derived_20260616_1627_a77c2bb4_7m"
+    },
+    {
+      "version": "v_20260616_2046_6m_thr_13feat_auc051",
+      "model_type": "full",
+      "created_at": "2026-06-16 20:46",
+      "n_features": 13,
+      "threshold": -10,
+      "n_samples": 1263,
+      "positive_rate": 0.5589865399841647,
+      "metrics": {
+        "lgb_oot_auc": 0.5133107205262617,
+        "lgb_oot_ks": 0.12745400349470654,
+        "lr_oot_auc": 0.557200123342584,
+        "lr_oot_ks": 0.1592147188816939,
+        "band_spread": NaN
+      },
+      "dir": "v_20260616_2046_6m_thr_13feat_auc051",
+      "files": [
+        "(in ml_model_meta DB)"
+      ],
+      "note": "标准五步特征选择(IV top40 → PSI 34 → 去相关 14 → VIF 13 → LGBM剪 13)",
+      "label_config": "6m_thr",
+      "dataset_version": "derived_20260616_1627_a77c2bb4_7m"
+    },
+    {
+      "version": "v_20260616_2046_6m_gray_13feat_auc066",
+      "model_type": "full",
+      "created_at": "2026-06-16 20:46",
+      "n_features": 13,
+      "threshold": -10,
+      "n_samples": 617,
+      "positive_rate": 0.47163695299837927,
+      "metrics": {
+        "lgb_oot_auc": 0.6566025215660252,
+        "lgb_oot_ks": 0.35832780358327804,
+        "lr_oot_auc": 0.6400132714001328,
+        "lr_oot_ks": 0.3045786330457863,
+        "band_spread": 0.23
+      },
+      "dir": "v_20260616_2046_6m_gray_13feat_auc066",
+      "files": [
+        "(in ml_model_meta DB)"
+      ],
+      "note": "标准五步特征选择(IV top40 → PSI 29 → 去相关 14 → VIF 13 → LGBM剪 13)",
+      "label_config": "6m_gray",
+      "dataset_version": "derived_20260616_1627_a77c2bb4_7m"
+    },
+    {
+      "version": "v_20260616_2046_7m_thr_9feat_auc060",
+      "model_type": "full",
+      "created_at": "2026-06-16 20:46",
+      "n_features": 9,
+      "threshold": -10,
+      "n_samples": 1263,
+      "positive_rate": 0.4806017418844022,
+      "metrics": {
+        "lgb_oot_auc": 0.6032545524990315,
+        "lgb_oot_ks": 0.21135218907400233,
+        "lr_oot_auc": 0.4998062766369624,
+        "lr_oot_ks": 0.09414955443626505,
+        "band_spread": NaN
+      },
+      "dir": "v_20260616_2046_7m_thr_9feat_auc060",
+      "files": [
+        "(in ml_model_meta DB)"
+      ],
+      "note": "标准五步特征选择(IV top40 → PSI 22 → 去相关 12 → VIF 9 → LGBM剪 9)",
+      "label_config": "7m_thr",
+      "dataset_version": "derived_20260616_1627_a77c2bb4_7m"
+    },
+    {
+      "version": "v_20260616_2046_7m_gray_10feat_auc067",
+      "model_type": "full",
+      "created_at": "2026-06-16 20:46",
+      "n_features": 10,
+      "threshold": -10,
+      "n_samples": 684,
+      "positive_rate": 0.3991228070175439,
+      "metrics": {
+        "lgb_oot_auc": 0.6704918032786885,
+        "lgb_oot_ks": 0.33715846994535514,
+        "lr_oot_auc": 0.5825136612021858,
+        "lr_oot_ks": 0.16885245901639345,
+        "band_spread": 0.163
+      },
+      "dir": "v_20260616_2046_7m_gray_10feat_auc067",
+      "files": [
+        "(in ml_model_meta DB)"
+      ],
+      "note": "标准五步特征选择(IV top40 → PSI 24 → 去相关 10 → VIF 10 → LGBM剪 10)",
+      "label_config": "7m_gray",
+      "dataset_version": "derived_20260616_1627_a77c2bb4_7m"
+    },
+    {
+      "version": "v_20260616_2046_12m_thr_11feat_auc051",
+      "model_type": "full",
+      "created_at": "2026-06-16 20:47",
+      "n_features": 11,
+      "threshold": -10,
+      "n_samples": 1263,
+      "positive_rate": 0.4576405384006334,
+      "metrics": {
+        "lgb_oot_auc": 0.5131740196078431,
+        "lgb_oot_ks": 0.13725490196078427,
+        "lr_oot_auc": 0.5533088235294118,
+        "lr_oot_ks": 0.16176470588235292,
+        "band_spread": NaN
+      },
+      "dir": "v_20260616_2046_12m_thr_11feat_auc051",
+      "files": [
+        "(in ml_model_meta DB)"
+      ],
+      "note": "标准五步特征选择(IV top40 → PSI 24 → 去相关 16 → VIF 12 → LGBM剪 11)",
+      "label_config": "12m_thr",
+      "dataset_version": "derived_20260616_1627_a77c2bb4_7m"
+    },
+    {
+      "version": "v_20260616_2046_12m_gray_7feat_auc047",
+      "model_type": "full",
+      "created_at": "2026-06-16 20:47",
+      "n_features": 7,
+      "threshold": -10,
+      "n_samples": 828,
+      "positive_rate": 0.40942028985507245,
+      "metrics": {
+        "lgb_oot_auc": 0.4730458221024259,
+        "lgb_oot_ks": 0.16442048517520214,
+        "lr_oot_auc": 0.408355795148248,
+        "lr_oot_ks": 0.2075471698113207,
+        "band_spread": 0.171
+      },
+      "dir": "v_20260616_2046_12m_gray_7feat_auc047",
+      "files": [
+        "(in ml_model_meta DB)"
+      ],
+      "note": "标准五步特征选择(IV top40 → PSI 14 → 去相关 9 → VIF 7 → LGBM剪 7)",
+      "label_config": "12m_gray",
+      "dataset_version": "derived_20260616_1627_a77c2bb4_7m"
     }
   ]
 }

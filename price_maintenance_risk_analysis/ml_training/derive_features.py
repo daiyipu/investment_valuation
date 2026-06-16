@@ -857,6 +857,16 @@ def main():
             rate = df[c].notna().mean() * 100
             print(f'  {c:30s} {rate:5.1f}%')
 
+    # ── 冻结快照入 DB 版本库(训练真正吃的就是这个 derived 矩阵) ──
+    try:
+        import db_dataset_store
+        derived_version = db_dataset_store.save_snapshot(
+            df, kind='derived', label_config='7m',
+            note=f'derived {len(df)}x{len(df.columns)} (orig{orig_cols}+new{new_cols_count})')
+        print(f'   快照入DB: {derived_version}')
+    except Exception as e:
+        print(f'   ⚠️ 快照入库跳过(DB不可用): {e}')
+
 
 if __name__ == '__main__':
     main()
