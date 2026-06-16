@@ -601,6 +601,138 @@ def derive_strategy_signals(df):
     return df
 
 
+# ====== J类: 月线10月均线趋势 (需 tushare 网络) ======
+
+def derive_monthly_trend(df):
+    """按每行报价日 PIT 回算 月线MA10_slope3% + 月线趋势向上, 写 2 列。
+
+    bulk-load: 每 unique 股票 pro_bar(freq='M', adj='hfq') 全量1次(缓存), 切片 ≤报价日。
+    PIT 由 ≤报价日 内存切片保证(只用已收盘完整月); hfq 保历史值不漂移。
+    单股失败填 NaN/0, 不影响整体。
+    """
+    print('\n  J类: 月线10月均线趋势 (需tushare网络)...')
+    pkg = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if pkg not in sys.path:
+        sys.path.insert(0, pkg)
+    from strategies.monthly_trend import trend10m
+    import tushare as ts
+    from tushare_token import resolve_tushare_token
+    os.environ.setdefault('TUSHARE_TOKEN', resolve_tushare_token())
+
+    slope = np.full(len(df), np.nan)
+    up = np.zeros(len(df), dtype=int)
+
+    unique_codes = df['股票代码'].astype(str).unique().tolist()
+    print(f'    取个股 hfq 月线全量: {len(unique_codes)} 只(缓存)...')
+    cache = {}
+
+    def get_monthly(code):
+        if code in cache:
+            return cache[code]
+        try:
+            d = ts.pro_bar(ts_code=code, freq='M', adj='hfq')
+            if d is None or len(d) == 0:
+                cache[code] = (None, None)
+                return (None, None)
+            d = d.sort_values('trade_date').drop_duplicates('trade_date').reset_index(drop=True)
+            res = (d['trade_date'].astype(str).to_numpy(), d['close'].astype(float).to_numpy())
+            cache[code] = res
+            return res
+        except Exception:
+            cache[code] = (None, None)
+            return (None, None)
+
+    fetched = 0
+    for i, row in enumerate(df.itertuples(index=True)):
+        code = str(getattr(row, '股票代码', ''))
+        d_raw = getattr(row, '报价日', None)
+        if d_raw is None or pd.isna(d_raw):
+            continue
+        d_str = str(int(float(d_raw))) if isinstance(d_raw, (int, float, np.floating)) else str(d_raw)
+        if len(d_str) < 8:
+            continue
+        try:
+            dates, close = get_monthly(code)
+            if dates is None:
+                continue
+            mask = dates <= d_str              # PIT: 只取 ≤报价日 的已收盘完整月
+            if not mask.any():
+                continue
+            seg = close[mask][-40:]            # 末段40月, 足够算 MA10+滞后带状态
+            if len(seg) < 13:
+                continue
+            r = trend10m(seg)
+            if not np.isnan(r['slope3_pct']):
+                slope[i] = r['slope3_pct']
+                up[i] = r['trend_up']
+            fetched += 1
+        except Exception:
+            continue
+        if (i + 1) % 100 == 0:
+            print(f'    进度 {i+1}/{len(df)} | 有信号 {fetched}')
+
+    df['月线MA10_slope3%'] = pd.Series(slope, index=df.index)
+    df['月线趋势向上'] = pd.Series(up, index=df.index)
+    cov = f"{pd.notna(slope).mean()*100:.1f}%"
+    up_rate = f"{up[pd.notna(slope)].mean()*100:.1f}%" if pd.notna(slope).any() else "n/a"
+    print(f'    匹配 {fetched}/{len(df)} | +2特征: 月线MA10_slope3%(覆盖{cov}), 月线趋势向上(上行率{up_rate})')
+    return df
+
+
+# ====== K类: 大盘(沪深300)月线10月趋势 (需 tushare 网络, 全样本共享1次取数) ======
+
+def derive_market_trend(df):
+    """每样本按报价日 PIT 回算 大盘MA10_slope3%(沪深300月线10月均线3月斜率%), 写 1 列。
+
+    标签是市场 regime 驱动 → 大盘自身10月趋势对准 regime, IV 0.18 且 train≈test 稳定
+    (个股 backward-looking 则无信号, 见 J类)。全样本共享 1 次 index_daily 取数, 切片 ≤报价日。
+    只产连续值(0/1 版 IV=0 不入模)。
+    """
+    print('\n  K类: 大盘月线10月趋势 (需tushare网络)...')
+    pkg = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if pkg not in sys.path:
+        sys.path.insert(0, pkg)
+    from strategies.monthly_trend import trend10m
+    import tushare as ts
+    from tushare_token import resolve_tushare_token
+    os.environ.setdefault('TUSHARE_TOKEN', resolve_tushare_token())
+    pro = ts.pro_api()
+
+    # 沪深300 月线(指数无需复权): index_daily → 每月最后交易日收盘
+    d = pro.index_daily(ts_code='000300.SH')
+    d = d.sort_values('trade_date').copy()
+    d['trade_date'] = d['trade_date'].astype(str)
+    d['ym'] = d['trade_date'].str[:6]
+    mon = d.groupby('ym').last().reset_index().sort_values('trade_date')
+    md = mon['trade_date'].to_numpy()
+    mc = mon['close'].astype(float).to_numpy()
+    print(f'    沪深300 月线: {len(mon)} 月')
+
+    slope = np.full(len(df), np.nan)
+    fetched = 0
+    for i, row in enumerate(df.itertuples(index=True)):
+        d0 = getattr(row, '报价日', None)
+        if d0 is None or pd.isna(d0):
+            continue
+        d_str = str(int(float(d0))) if isinstance(d0, (int, float, np.floating)) else str(d0)
+        if len(d_str) < 8:
+            continue
+        mask = md <= d_str                # PIT: ≤报价日 的已收盘完整月
+        if not mask.any():
+            continue
+        seg = mc[mask][-40:]
+        if len(seg) < 13:
+            continue
+        r = trend10m(seg)
+        if not np.isnan(r['slope3_pct']):
+            slope[i] = r['slope3_pct']
+            fetched += 1
+
+    df['大盘MA10_slope3%'] = pd.Series(slope, index=df.index)
+    print(f'    匹配 {fetched}/{len(df)} | +1特征: 大盘MA10_slope3%(覆盖{pd.notna(slope).mean()*100:.1f}%)')
+    return df
+
+
 # ====== 主流程 ======
 
 def main():
@@ -657,6 +789,22 @@ def main():
         except Exception as e:
             import traceback
             print(f'  ⚠️ 策略信号(H/I类)失败: {e}')
+            traceback.print_exc()
+
+        # J类: 月线10月均线趋势(需tushare网络, 单独try, 失败不影响前面)
+        try:
+            df = derive_monthly_trend(df)
+        except Exception as e:
+            import traceback
+            print(f'  ⚠️ 月线趋势(J类)失败: {e}')
+            traceback.print_exc()
+
+        # K类: 大盘(沪深300)月线10月趋势(需tushare网络, 单独try; 标签regime驱动→有信号, 入模)
+        try:
+            df = derive_market_trend(df)
+        except Exception as e:
+            import traceback
+            print(f'  ⚠️ 大盘趋势(K类)失败: {e}')
             traceback.print_exc()
 
     # ====== 清理 ======

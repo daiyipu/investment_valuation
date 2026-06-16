@@ -75,7 +75,18 @@ MYSQL_RATIO_COLS = [
 ]
 
 # 标签和目标列（训练时排除）
-EXCLUDE_COLS = {'7个月涨跌幅', '7个月后价格', '标签_盈利_0', '标签_盈利_-10', '标签_盈利_-20'}
+EXCLUDE_COLS = {'7个月涨跌幅', '7个月后价格', '标签_盈利_0', '标签_盈利_-10', '标签_盈利_-20',
+                # 月线趋势: 个股 backward-looking 特征对该 forward-looking regime 标签无信号
+                # (train IV≈0.03/0.00, 区分度反向); 测试验证期暂不入模, 留作 screen 用。非正式版, 不进 DROP_FIELDS。
+                '月线MA10_slope3%', '月线趋势向上'}
+
+# LightGBM 参数(降复杂度防过拟合): 原 300树/深5/叶31 在 train 1263×225 上 train AUC=1.0、OOT 仅 0.60 → 严重过拟合。
+# 收紧: n_est 300→150, 深度 5→4, 叶 31→20, +min_child_samples=40, 配合早停。
+LGB_PARAMS = dict(
+    n_estimators=150, max_depth=4, num_leaves=20, learning_rate=0.03,
+    min_child_samples=40, is_unbalance=True, subsample=0.8, colsample_bytree=0.8,
+    reg_alpha=0.1, reg_lambda=0.1, random_state=42, verbose=-1,
+)
 
 
 def load_features(filepath):
@@ -175,11 +186,7 @@ def train_lightgbm(X, y, output_dir, suffix=''):
     print(f'LightGBM 模型（精准度高）{"["+suffix+"]" if suffix else ""}')
     print('='*60)
 
-    model = lgb.LGBMClassifier(
-        n_estimators=300, max_depth=5, learning_rate=0.03, num_leaves=31,
-        is_unbalance=True, subsample=0.8, colsample_bytree=0.8,
-        reg_alpha=0.1, reg_lambda=0.1, random_state=42, verbose=-1
-    )
+    model = lgb.LGBMClassifier(**LGB_PARAMS)
 
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
     auc = cross_val_score(model, X, y, cv=cv, scoring='roc_auc')
@@ -189,7 +196,13 @@ def train_lightgbm(X, y, output_dir, suffix=''):
     print(f'\n分类报告:')
     print(classification_report(y, y_pred, target_names=['亏损', '盈利']))
 
-    model.fit(X, y)
+    # 全量拟合 + 早停防过拟合(切20%做 held-out val; 失败则退回全量无早停)
+    from sklearn.model_selection import train_test_split as _tts
+    try:
+        _a, _b, _ya, _yb = _tts(X, y, test_size=0.2, random_state=42, stratify=y)
+        model.fit(_a, _ya, eval_set=[(_b, _yb)], callbacks=[lgb.early_stopping(20, verbose=False)])
+    except Exception:
+        model.fit(X, y)
     model_file = os.path.join(output_dir, f'lgb_classifier{suffix}.txt')
     model.booster_.save_model(model_file)
 
@@ -286,6 +299,50 @@ def train_logistic_regression(X, y, output_dir, suffix=''):
     return model, scaler, auc.mean()
 
 
+def evaluate_oot(X, y, year, split_year=2024):
+    """时序 out-of-time: train(报价日年<=split_year) / test(>split_year)。真实泛化指标。
+
+    随机 5 折 CV(shuffle) 会把未来样本混进训练折 → 虚高; OOT 才是主指标。
+    LGB 用 LGB_PARAMS(降复杂度)+train内早停; LR 同 train_logistic_regression。
+    返回 dict(lgb_oot_auc, lr_oot_auc, train_n, test_n, train_pos, test_pos) 或 None。
+    """
+    from sklearn.metrics import roc_auc_score
+    from sklearn.model_selection import train_test_split
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.linear_model import LogisticRegression
+    import lightgbm as lgb
+    tr = (year <= split_year).values
+    te = (year > split_year).values
+    if te.sum() < 10 or tr.sum() < 50:
+        print('  ⚠ OOT: 时序切分样本不足, 跳过')
+        return None
+    Xtr = X[tr].replace([np.inf, -np.inf], 0).fillna(0)
+    Xte = X[te].replace([np.inf, -np.inf], 0).fillna(0)
+    ytr, yte = y[tr], y[te]
+    # LGB(降复杂度 + train内早停)
+    m = lgb.LGBMClassifier(**LGB_PARAMS)
+    a, b, ya, yb = train_test_split(Xtr, ytr, test_size=0.2, random_state=42, stratify=ytr)
+    try:
+        m.fit(a, ya, eval_set=[(b, yb)], callbacks=[lgb.early_stopping(20, verbose=False)])
+    except Exception:
+        m.fit(Xtr, ytr)
+    lgb_oot = roc_auc_score(yte, m.predict_proba(Xte)[:, 1])
+    # LR
+    sc = StandardScaler().fit(Xtr)
+    lr = LogisticRegression(C=1.0, penalty='l2', max_iter=1000, random_state=42)
+    lr.fit(sc.transform(Xtr), ytr)
+    lr_oot = roc_auc_score(yte, lr.predict_proba(sc.transform(Xte))[:, 1])
+    res = dict(lgb_oot_auc=float(lgb_oot), lr_oot_auc=float(lr_oot),
+               train_n=int(tr.sum()), test_n=int(te.sum()),
+               train_pos=float(ytr.mean()), test_pos=float(yte.mean()))
+    print(f'\n{"="*60}\n[主指标] 时序 OOT (train≤{split_year} / test>{split_year})')
+    print(f'  train n={res["train_n"]}(正{res["train_pos"]*100:.1f}%) | test n={res["test_n"]}(正{res["test_pos"]*100:.1f}%)')
+    print(f'  LightGBM OOT AUC = {res["lgb_oot_auc"]:.3f}')
+    print(f'  逻辑回归  OOT AUC = {res["lr_oot_auc"]:.3f}')
+    print(f'  (随机5折CV因shuffle混入未来样本会虚高, 以此 OOT 为准)\n{"="*60}')
+    return res
+
+
 def main():
     parser = argparse.ArgumentParser(description='定增盈利预测 - 双模型训练')
     parser.add_argument('features_path', help='features.parquet 或 features_derived.parquet 路径')
@@ -316,6 +373,13 @@ def main():
     # 训练逻辑回归
     lr_model, lr_scaler, lr_auc = train_logistic_regression(X, y, output_dir, suffix=suffix)
 
+    # 时序 OOT(真实泛化, 主指标)
+    _label = f'标签_盈利_{int(args.threshold)}'
+    _valid = df[_label].notna() if _label in df.columns else pd.Series([True] * len(df))
+    year = pd.to_numeric(pd.to_numeric(df.loc[_valid, '报价日'], errors='coerce')
+                         .astype('Int64').astype(str).str[:4], errors='coerce').reset_index(drop=True)
+    oot = evaluate_oot(X, y, year)
+
     # 保存全量模型的 meta（特征列表 + median，供 predict_profitability 使用）
     if not args.classic:
         meta = {
@@ -344,9 +408,14 @@ def main():
         f.write(f'特征模式: {"手工选择(64特征)" if args.classic else "全量数值特征"}\n')
         f.write(f'特征数: {X.shape[1]}\n')
         f.write(f'样本数: {len(y)}, 盈利占比: {y.mean()*100:.1f}%\n\n')
-        f.write(f'LightGBM AUC: {lgb_auc:.3f}\n')
-        f.write(f'逻辑回归 AUC: {lr_auc:.3f}\n\n')
-        f.write(f'逻辑回归系数表见: lr_coefficients{suffix}.csv\n')
+        f.write(f'LightGBM AUC(5折CV): {lgb_auc:.3f}\n')
+        f.write(f'逻辑回归 AUC(5折CV): {lr_auc:.3f}\n')
+        if oot:
+            f.write(f'\n[主指标] 时序 OOT (train≤2024 / test≥2025):\n')
+            f.write(f'  LightGBM OOT AUC: {oot["lgb_oot_auc"]:.3f}\n')
+            f.write(f'  逻辑回归  OOT AUC: {oot["lr_oot_auc"]:.3f}\n')
+            f.write(f'  train n={oot["train_n"]}(正{oot["train_pos"]*100:.1f}%) / test n={oot["test_n"]}(正{oot["test_pos"]*100:.1f}%)\n')
+        f.write(f'\n逻辑回归系数表见: lr_coefficients{suffix}.csv\n')
         f.write(f'LightGBM特征重要性见: lgb_feature_importance{suffix}.csv\n')
 
     # ═══════════════════════════════════════════════
@@ -385,14 +454,14 @@ def main():
         f.write(f'**特征模式**: {"手工选择(64特征)" if args.classic else "全量数值特征"}\n')
         f.write(f'**训练样本**: {len(y)}, 盈利占比: {y.mean()*100:.1f}%\n')
         f.write(f'**盈利阈值**: {args.threshold}%\n\n')
-        f.write(f'## 训练集指标\n')
-        f.write(f'| 模型 | 5折CV AUC |\n|------|----------|\n')
-        f.write(f'| LightGBM | {lgb_auc:.3f} |\n')
-        f.write(f'| 逻辑回归 | {lr_auc:.3f} |\n\n')
-        f.write(f'## LightGBM 参数\n')
-        f.write(f'- n_estimators=300, max_depth=5, learning_rate=0.03\n')
-        f.write(f'- num_leaves=31, is_unbalance=True\n')
-        f.write(f'- subsample=0.8, colsample_by=0.8, reg_alpha=0.1, reg_lambda=0.1\n\n')
+        f.write(f'## 指标\n')
+        f.write(f'| 模型 | 5折CV AUC | OOT AUC |\n|------|---------|---------|\n')
+        f.write(f'| LightGBM | {lgb_auc:.3f} | {oot["lgb_oot_auc"]:.3f} |\n' if oot else f'| LightGBM | {lgb_auc:.3f} | - |\n')
+        f.write(f'| 逻辑回归 | {lr_auc:.3f} | {oot["lr_oot_auc"]:.3f} |\n\n' if oot else f'| 逻辑回归 | {lr_auc:.3f} | - |\n\n')
+        f.write(f'## LightGBM 参数(降复杂度防过拟合 + 早停)\n')
+        f.write(f'- n_estimators={LGB_PARAMS["n_estimators"]}, max_depth={LGB_PARAMS["max_depth"]}, '
+                f'num_leaves={LGB_PARAMS["num_leaves"]}, min_child_samples={LGB_PARAMS["min_child_samples"]}, '
+                f'lr={LGB_PARAMS["learning_rate"]}, +early_stopping\n\n')
         f.write(f'## 文件清单\n')
         for fname in archive_files:
             if os.path.exists(os.path.join(version_dir, fname)):
@@ -411,7 +480,8 @@ def main():
                 model_type='full',
                 version=version_name,
                 dir=version_dir,
-                metrics={'lgb_auc': float(lgb_auc), 'lr_auc': float(lr_auc)},
+                metrics={'lgb_auc': float(lgb_auc), 'lr_auc': float(lr_auc),
+                         **({'lgb_oot_auc': oot['lgb_oot_auc'], 'lr_oot_auc': oot['lr_oot_auc']} if oot else {})},
                 n_features=X.shape[1],
                 threshold=args.threshold,
                 n_samples=len(y),

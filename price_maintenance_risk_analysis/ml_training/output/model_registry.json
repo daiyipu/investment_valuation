@@ -1,6 +1,6 @@
 {
   "current": {
-    "full": "v_20260612_0001_219feat_auc074",
+    "full": "v_20260616_1227_225feat_auc074",
     "scorecard": "v_20260612_0009_scorecard_12feat_auc069"
   },
   "versions": [
@@ -218,6 +218,128 @@
         "scorecard_report.txt"
       ],
       "note": "评分卡 12特征"
+    },
+    {
+      "version": "v_20260615_0923_224feat_auc073",
+      "model_type": "full",
+      "created_at": "2026-06-15 09:23",
+      "n_features": 224,
+      "threshold": -10,
+      "n_samples": 1497,
+      "positive_rate": 0.5230460921843687,
+      "metrics": {
+        "lgb_auc": 0.7317853154107821,
+        "lr_auc": 0.6471188271672708
+      },
+      "dir": "v_20260615_0923_224feat_auc073",
+      "files": [
+        "lgb_classifier_full.txt",
+        "lgb_feature_importance_full.csv",
+        "lgb_feature_importance_full.png",
+        "lr_classifier_full.pkl",
+        "lr_coefficients_full.csv",
+        "evaluation_report.txt",
+        "lgb_full_meta.json"
+      ],
+      "note": "全量数值特征 LGB+LR"
+    },
+    {
+      "version": "v_20260615_0924_219feat_auc073",
+      "model_type": "full",
+      "created_at": "2026-06-15 09:24",
+      "n_features": 219,
+      "threshold": -10,
+      "n_samples": 1497,
+      "positive_rate": 0.5230460921843687,
+      "metrics": {
+        "lgb_auc": 0.732381819311038,
+        "lr_auc": 0.6477326883976484
+      },
+      "dir": "v_20260615_0924_219feat_auc073",
+      "files": [
+        "lgb_classifier_full.txt",
+        "lgb_feature_importance_full.csv",
+        "lgb_feature_importance_full.png",
+        "lr_classifier_full.pkl",
+        "lr_coefficients_full.csv",
+        "evaluation_report.txt",
+        "lgb_full_meta.json"
+      ],
+      "note": "全量数值特征 LGB+LR"
+    },
+    {
+      "version": "v_20260615_0924_224feat_auc073",
+      "model_type": "full",
+      "created_at": "2026-06-15 09:24",
+      "n_features": 224,
+      "threshold": -10,
+      "n_samples": 1497,
+      "positive_rate": 0.5230460921843687,
+      "metrics": {
+        "lgb_auc": 0.7317853154107821,
+        "lr_auc": 0.6471188271672708
+      },
+      "dir": "v_20260615_0924_224feat_auc073",
+      "files": [
+        "lgb_classifier_full.txt",
+        "lgb_feature_importance_full.csv",
+        "lgb_feature_importance_full.png",
+        "lr_classifier_full.pkl",
+        "lr_coefficients_full.csv",
+        "evaluation_report.txt",
+        "lgb_full_meta.json"
+      ],
+      "note": "全量数值特征 LGB+LR"
+    },
+    {
+      "version": "v_20260616_1210_225feat_auc074",
+      "model_type": "full",
+      "created_at": "2026-06-16 12:10",
+      "n_features": 225,
+      "threshold": -10,
+      "n_samples": 1497,
+      "positive_rate": 0.5230460921843687,
+      "metrics": {
+        "lgb_auc": 0.7365268528537707,
+        "lr_auc": 0.6560879912481931
+      },
+      "dir": "v_20260616_1210_225feat_auc074",
+      "files": [
+        "lgb_classifier_full.txt",
+        "lgb_feature_importance_full.csv",
+        "lgb_feature_importance_full.png",
+        "lr_classifier_full.pkl",
+        "lr_coefficients_full.csv",
+        "evaluation_report.txt",
+        "lgb_full_meta.json"
+      ],
+      "note": "全量数值特征 LGB+LR"
+    },
+    {
+      "version": "v_20260616_1227_225feat_auc074",
+      "model_type": "full",
+      "created_at": "2026-06-16 12:27",
+      "n_features": 225,
+      "threshold": -10,
+      "n_samples": 1497,
+      "positive_rate": 0.5230460921843687,
+      "metrics": {
+        "lgb_auc": 0.7439817292243955,
+        "lr_auc": 0.6560879912481931,
+        "lgb_oot_auc": 0.6262735109717867,
+        "lr_oot_auc": 0.608444357366771
+      },
+      "dir": "v_20260616_1227_225feat_auc074",
+      "files": [
+        "lgb_classifier_full.txt",
+        "lgb_feature_importance_full.csv",
+        "lgb_feature_importance_full.png",
+        "lr_classifier_full.pkl",
+        "lr_coefficients_full.csv",
+        "evaluation_report.txt",
+        "lgb_full_meta.json"
+      ],
+      "note": "全量数值特征 LGB+LR"
     }
   ]
 }

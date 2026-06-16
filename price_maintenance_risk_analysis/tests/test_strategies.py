@@ -8,6 +8,7 @@ import pytest
 from strategies.indicators import sma, rolling_corr, fib_retracement, swing_high_low
 from strategies.wave3 import wave3_signal
 from strategies.resist import resist_score, _diverge_score
+from strategies.monthly_trend import trend10m
 
 
 # ---------- Task 1: indicators ----------
@@ -97,3 +98,26 @@ def test_data_loader_aligned_real():
     assert len(c) >= 250, '个股 qfq 序列应≥250(MA250 守卫)'
     assert len(sr) == len(kr) == len(mr), '三序列须等长(对齐)'
     assert len(sr) >= 60, '对齐后序列应≥60(基线窗口)'
+
+
+# ---------- Task: monthly_trend ----------
+def test_trend10m_uptrend():
+    r = trend10m(np.linspace(10, 60, 40))      # 月收盘线性递增
+    assert r['trend_up'] == 1 and r['slope3_pct'] > 0
+
+
+def test_trend10m_downtrend():
+    r = trend10m(np.linspace(60, 10, 40))      # 线性递减
+    assert r['trend_up'] == 0 and r['slope3_pct'] < 0
+
+
+def test_trend10m_resists_whipsaw():
+    # 长期下行后末月小反弹: 3月净仍负 → 维持 down(防单月跳动)
+    s = list(np.linspace(60, 30, 30)) + [33.0]
+    r = trend10m(s)
+    assert r['trend_up'] == 0
+
+
+def test_trend10m_too_short():
+    r = trend10m(np.linspace(10, 20, 8))       # 不足13月
+    assert r['trend_up'] == 0 and np.isnan(r['slope3_pct'])
