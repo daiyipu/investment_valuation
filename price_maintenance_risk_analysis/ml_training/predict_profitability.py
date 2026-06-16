@@ -10,10 +10,9 @@
   1. 独立运行: python ml_training/predict_profitability.py <scored_excel> [--output result.xlsx]
   2. 被调用:   from predict_profitability import predict; df = predict(scored_excel_path)
 
-输出三列:
-  - 盈利概率_LightGBM
-  - 盈利概率_逻辑回归
-  - 评分卡得分（base=600，PDO=20；scorecard 未注册时省略）
+输出两列:
+  - 盈利概率_LightGBM   (current.full 模型概率; SC 模型时即评分卡概率)
+  - 盈利概率_逻辑回归   (LGB 模型: LR 概率; SC 模型: 同评分卡概率)
 """
 
 import sys
@@ -116,7 +115,7 @@ def predict(scored_excel_path):
         scored_excel_path: 已评分的 Excel 文件路径（batch_screen_and_score 输出）
 
     Returns:
-        DataFrame: columns = [股票代码, 盈利概率_LightGBM, 盈利概率_逻辑回归]
+        DataFrame: SC 模型→[股票代码, 盈利概率_评分卡]; LGB 模型→[股票代码, 盈利概率_LightGBM, 盈利概率_逻辑回归]
     """
     import lightgbm as lgb
     from export_features import load_db_features, load_scored_features, load_financial_ratios
@@ -134,15 +133,8 @@ def predict(scored_excel_path):
     version = get_current('full')
     bundle = load_predict_bundle(version)   # 权重+features+medians 从 DB ml_model_meta 加载
     print(f'  [ML-0] 使用 full 模型版本: {version} (权重从 DB 加载)')
-    # 评分卡（可选：未注册则跳过评分卡得分列）
-    sc_version = get_current('scorecard')
-    sc_dir = None
-    if sc_version:
-        try:
-            sc_dir = require_current_dir('scorecard')
-            print(f'  [ML-0] 使用 scorecard 模型版本: {sc_version}')
-        except RuntimeError as e:
-            print(f'  [ML-0] 评分卡版本目录缺失，跳过评分卡得分: {e}')
+    # 旧的独立评分卡得分列([ML-8])已移除: current.full 现在本身就是评分卡(SC)模型,
+    # 主概率列即为评分卡概率, 不再另设老的 on-disk scorecard 得分列。
 
     # ═══════════════════════════════════════════════
     # 1. 从 Excel 提取特征
@@ -285,29 +277,33 @@ def predict(scored_excel_path):
         print(f'    概率范围: [{lr_proba.min():.3f}, {lr_proba.max():.3f}]')
 
     # ═══════════════════════════════════════════════
-    # 9. 评分卡得分（可选）
+    # 9. 返回(按模型类型出列: SC→单列评分卡概率; LGB→LightGBM+逻辑回归两列)
+    #    每个概率列配一个 1-10 档位(10=该批最高概率档, 便于挑高概率): rank(pct)*10 向上取整
     # ═══════════════════════════════════════════════
-    sc_scores = None
-    if sc_dir is not None:
-        print('  [ML-8] 评分卡得分...')
+    if is_sc:
+        result = pd.DataFrame({'股票代码': df['股票代码'], '盈利概率_评分卡': lgb_proba})
+    else:
+        result = pd.DataFrame({'股票代码': df['股票代码'],
+                               '盈利概率_LightGBM': lgb_proba, '盈利概率_逻辑回归': lr_proba})
+    # 档位 1-10(10最高): 优先用 bundle 训练标定的概率分位边界(固定映射, 跨批次可比);
+    # 老模型无边界 → 退化为当前批次相对排名
+    proba_deciles = None
+    if bdl.get('lr_bundle'):
         try:
-            sc_scores = score_with_scorecard(df, sc_dir)
-            print(f'    得分范围: [{sc_scores.min():.0f}, {sc_scores.max():.0f}]'
-                  f'  均值: {sc_scores.mean():.0f}')
-        except Exception as e:
-            print(f'    ⚠ 评分卡打分失败，跳过: {e}')
-            sc_scores = None
-
-    # ═══════════════════════════════════════════════
-    # 10. 返回
-    # ═══════════════════════════════════════════════
-    result = pd.DataFrame({
-        '股票代码': df['股票代码'],
-        '盈利概率_LightGBM': lgb_proba,
-        '盈利概率_逻辑回归': lr_proba,
-    })
-    if sc_scores is not None:
-        result['评分卡得分'] = np.round(sc_scores).astype(int)
+            proba_deciles = pickle.loads(bdl['lr_bundle']).get('proba_deciles')
+        except Exception:
+            proba_deciles = None
+    prob_cols = [c for c in result.columns if c.startswith('盈利概率')]
+    for idx, col in enumerate(prob_cols):
+        if idx == 0 and proba_deciles:   # 主概率列: 训练标定绝对档(同概率→同档, 跨批次可比)
+            tier = np.clip(np.searchsorted(proba_deciles, result[col].values, side='right') + 1, 1, 10)
+        else:                             # 次概率列/老模型: 批次相对排名
+            tier = np.clip(np.ceil(pd.Series(result[col]).rank(pct=True) * 10), 1, 10)
+        result[col.replace('盈利概率_', '档位_')] = tier.astype(int)
+    if proba_deciles:
+        print(f'  档位=训练标定(边界 {[round(d, 3) for d in proba_deciles]})')
+    else:
+        print('  ⚠ 模型无训练分位边界, 档位按本批相对排名(老模型)')
 
     print(f'  ✅ ML预测完成: {len(result)} 条\n')
     return result
@@ -325,17 +321,14 @@ def write_to_excel(scored_excel_path, result_df, output_path=None):
     wb = openpyxl.load_workbook(target)
     ws = wb.active
 
-    # 待写入列（评分卡得分仅在 result_df 中存在时写）
-    out_cols = ['盈利概率_LightGBM', '盈利概率_逻辑回归']
-    if '评分卡得分' in result_df.columns:
-        out_cols.append('评分卡得分')
-
-    # 如果已有旧列则先删除（幂等写入）
+    # 待写入列(除股票代码); 幂等: 先删所有已知概率/档位列(防 SC/LGB 切换残留旧列)
+    out_cols = [c for c in result_df.columns if c != '股票代码']
+    known_cols = ['盈利概率_LightGBM', '盈利概率_逻辑回归', '盈利概率_评分卡',
+                  '档位_LightGBM', '档位_逻辑回归', '档位_评分卡']
     header_row = [ws.cell(1, col).value for col in range(1, ws.max_column + 1)]
-    for col_name in list(out_cols):
+    for col_name in known_cols:
         if col_name in header_row:
-            col_idx = header_row.index(col_name) + 1
-            ws.delete_cols(col_idx)
+            ws.delete_cols(header_row.index(col_name) + 1)
             header_row = [ws.cell(1, col).value for col in range(1, ws.max_column + 1)]
 
     # 依次写入列
@@ -345,18 +338,16 @@ def write_to_excel(scored_excel_path, result_df, output_path=None):
         ws.cell(1, c, col_name)
         col_map[col_name] = c
 
-    # 按行序写入（row 2 = 第1条数据, 与 result_df 第0行对应）
+    # 按行序写入（row 2 = 第1条数据, 与 result_df 第0行对应）: 概率列写%, 档位列写整数
     matched = 0
     data_rows = ws.max_row - 1  # 排除 header
     n = min(len(result_df), data_rows)
     for i in range(n):
         r = i + 2  # Excel 行号
-        ws.cell(r, col_map['盈利概率_LightGBM'],
-                f'{result_df.iloc[i]["盈利概率_LightGBM"]*100:.1f}%')
-        ws.cell(r, col_map['盈利概率_逻辑回归'],
-                f'{result_df.iloc[i]["盈利概率_逻辑回归"]*100:.1f}%')
-        if '评分卡得分' in col_map:
-            ws.cell(r, col_map['评分卡得分'], int(result_df.iloc[i]['评分卡得分']))
+        for col_name in out_cols:
+            val = result_df.iloc[i][col_name]
+            cell = f'{val*100:.1f}%' if col_name.startswith('盈利概率') else int(val)
+            ws.cell(r, col_map[col_name], cell)
         matched += 1
 
     wb.save(target)
@@ -372,23 +363,23 @@ def main():
     args = parser.parse_args()
 
     print('=' * 60)
-    print('定增盈利概率预测（LightGBM + 逻辑回归·全量特征）')
+    print('定增盈利概率预测(按 current.full 模型类型: SC→评分卡 / LGB→LightGBM+逻辑回归)')
     print('=' * 60)
 
     result_df = predict(args.scored_excel)
 
-    # 汇总统计
+    # 汇总统计(概率列: 均值/>50%; 档位列: 高分档分布, 便于挑高概率)
     print('\n  汇总:')
-    print(f'    LightGBM 均值: {result_df["盈利概率_LightGBM"].mean()*100:.1f}%')
-    print(f'    逻辑回归 均值: {result_df["盈利概率_逻辑回归"].mean()*100:.1f}%')
-    high_lgb = (result_df['盈利概率_LightGBM'] > 0.5).sum()
-    high_lr = (result_df['盈利概率_逻辑回归'] > 0.5).sum()
-    print(f'    LightGBM >50%: {high_lgb} ({high_lgb/len(result_df)*100:.1f}%)')
-    print(f'    逻辑回归 >50%: {high_lr} ({high_lr/len(result_df)*100:.1f}%)')
-    if '评分卡得分' in result_df.columns:
-        s = result_df['评分卡得分']
-        print(f'    评分卡得分: 均值 {s.mean():.0f}, 区间 [{s.min()}, {s.max()}], >600 占比 '
-              f'{(s>600).sum()/len(s)*100:.1f}%')
+    for col in [c for c in result_df.columns if c != '股票代码']:
+        if col.startswith('盈利概率'):
+            m = result_df[col].mean()
+            hi = (result_df[col] > 0.5).sum()
+            print(f'    {col}: 均值 {m*100:.1f}% | >50% {hi} ({hi/len(result_df)*100:.1f}%)')
+        else:   # 档位列(1-10, 10最高)
+            dist = result_df[col].value_counts().sort_index(ascending=False)
+            top = '  '.join(f'{t}档:{int(dist.get(t, 0))}' for t in range(10, 6, -1))
+            high = int(result_df[col].ge(8).sum())
+            print(f'    {col}: {top}  (8-10档共 {high} 个, 占 {high/len(result_df)*100:.1f}%)')
 
     # 写入 Excel
     write_to_excel(args.scored_excel, result_df, args.output)

@@ -80,12 +80,16 @@ def deploy_lgb(features_path, horizon, kind, consensus, split_year, set_current)
     Xall, med = _prep(Xall_raw)
     feats = [f for f in consensus if f in Xall.columns]
     gbm, lr, sc = _train(Xall[feats], yall)
+    # LGB 训练集概率 10 分位边界(部署后 predict 映射固定档位)
+    train_proba = gbm.predict_proba(Xall[feats])[:, 1]
+    proba_deciles = np.quantile(train_proba, np.linspace(0.1, 0.9, 9)).tolist()
     ver = f'v_lgb_{pd.Timestamp.now().strftime("%Y%m%d_%H%M")}_{horizon}m_{kind}_{len(feats)}feat'
     save_model_meta({'version': ver, 'label_config': f'{horizon}m_{kind}_lgb_consensus',
                      'kind': kind, 'horizon': horizon, 'gray_cfg': gcfg, 'features': feats,
                      'n_features': len(feats), 'medians': {f: float(med[f]) for f in feats},
                      'lgb_model': gbm.booster_.model_to_string(),
-                     'lr_bundle': pickle.dumps({'model': lr, 'scaler': sc, 'features': feats}),
+                     'lr_bundle': pickle.dumps({'model': lr, 'scaler': sc, 'features': feats,
+                                                 'proba_deciles': proba_deciles}),
                      'metrics': {}, 'note': f'LGB 共识特征 {feats}',
                      'dataset_version': 'derived_20260616_2334_f35ba6f3_7m'})
     register_version('full', ver, ver, metrics={}, n_features=len(feats), threshold=-10,

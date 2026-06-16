@@ -90,8 +90,14 @@ def run(features_path, horizon, kind, split_year, set_current, features=None):
     # 入库
     cfg_tag = f'{horizon}m_{kind}_sc'
     ver = f'v_sc_{pd.Timestamp.now().strftime("%Y%m%d_%H%M")}_{cfg_tag}_{len(kept)}feat'
+    # 训练集概率的 10 分位边界(9 切点): 部署后 predict 用它把新概率映射成固定 1-10 档
+    # (训练标定的绝对档位, 跨批次可比; 10=训练集 top10% 概率)
+    train_proba = lr.predict_proba(WOE_FILL(Xall_w))[:, 1]
+    proba_deciles = np.quantile(train_proba, np.linspace(0.1, 0.9, 9)).tolist()
+    print(f'  训练集概率 10 分位边界: {[round(d, 3) for d in proba_deciles]}')
     bundle = {'kind': 'scorecard', 'features': kept, 'woe_bins': wbins,
-              'lr_model': lr, 'medians': {f: float(med[f]) for f in kept}}
+              'lr_model': lr, 'medians': {f: float(med[f]) for f in kept},
+              'proba_deciles': proba_deciles}
     save_model_meta({
         'version': ver, 'label_config': cfg_tag, 'kind': kind, 'horizon': horizon, 'gray_cfg': gcfg,
         'features': kept, 'n_features': len(kept), 'medians': {f: float(med[f]) for f in kept},
