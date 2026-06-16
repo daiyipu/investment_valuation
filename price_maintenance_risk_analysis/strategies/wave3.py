@@ -1,4 +1,4 @@
-"""波二信号函数(纯函数, 无 IO)。
+"""三浪信号函数(纯函数, 无 IO)。
 
 closes = qfq 收盘序列(oldest→newest, 末项=当日 date)。
 逻辑: 经典波浪——一浪上涨(≥20%) → 二浪回调(斐波那契0.382~0.618) → 三浪启动(突破回调高点)。
@@ -7,10 +7,10 @@ closes = qfq 收盘序列(oldest→newest, 末项=当日 date)。
 import numpy as np
 
 from .indicators import sma, swing_high_low, fib_retracement
-from .params import WAVE2 as P
+from .params import WAVE3 as P
 
 
-def wave2_signal(closes, p=P):
+def wave3_signal(closes, p=P):
     """closes: qfq 收盘序列(oldest→newest, 末项=当日)。
 
     返回 {trigger, score, gain, retr, breakout}。

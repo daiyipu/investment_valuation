@@ -57,7 +57,7 @@ def fetch_latest_data(stock_code='300735.SZ', days=500):
     print(f"   查询日期范围: {start_date} ~ {end_date}")
 
     # 获取数据（多获取一些，确保有足够的交易日）
-    df = pro.daily(ts_code=stock_code, start_date=start_date, end_date=end_date)
+    df = ts.pro_bar(ts_code=stock_code, start_date=start_date, end_date=end_date, adj='qfq')
 
     # 北交所(.BJ)或Tushare空数据时，用AKShare降级
     if df.empty or stock_code.endswith('.BJ'):
@@ -601,7 +601,7 @@ def generate_market_data(stock_code='300735.SZ', stock_name='光弘科技', issu
         print(f"📡 历史报价日{issue_date}，直接查询报价日窗口...")
         print(f"   查询日期范围: {hist_start} ~ {hist_end}")
         pro = _init_tushare_pro()
-        df = pro.daily(ts_code=stock_code, start_date=hist_start, end_date=hist_end)
+        df = ts.pro_bar(ts_code=stock_code, start_date=hist_start, end_date=hist_end, adj='qfq')
         if df is None or df.empty:
             print(f"❌ 未获取到报价日附近数据")
             return None
@@ -1995,7 +1995,42 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='生成最新市场数据')
     parser.add_argument('--stock', type=str, default='300735.SZ', help='股票代码（默认：300735.SZ）')
     parser.add_argument('--name', type=str, default=None, help='股票名称（可选）')
+    parser.add_argument('--all', action='store_true', help='批量重生成全部股票 market_data(qfq 前复权)')
     args = parser.parse_args()
+
+    if args.all:
+        # 批量: 循环 placement_evaluation 全部股票, qfq 重生成 market_data 并落库
+        import pymysql
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from tushare_token import resolve_tushare_token
+        os.environ.setdefault('TUSHARE_TOKEN', resolve_tushare_token())
+        from utils.db_manager import ValuationDB
+        db = ValuationDB()
+        conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', password='',
+                               database='investment_valuation', charset='utf8mb4')
+        rows = pd.read_sql(
+            "SELECT pe.stock_code, MAX(pe.issue_date) issue_date, MAX(s.stock_name) stock_name "
+            "FROM placement_evaluation pe LEFT JOIN stocks s ON pe.stock_code=s.stock_code "
+            "WHERE pe.issue_date IS NOT NULL AND pe.issue_date<>'' GROUP BY pe.stock_code", conn)
+        conn.close()
+        print(f"🚀 批量重生成 market_data(qfq): 共 {len(rows)} 只股票")
+        ok = fail = 0
+        for idx, r in rows.iterrows():
+            code = str(r['stock_code']); issue = str(r['issue_date'])
+            name = str(r['stock_name']) if pd.notna(r['stock_name']) else code
+            try:
+                md = generate_market_data(code, name, issue)
+                if md:
+                    db.save_market_data(code, md); ok += 1
+                else:
+                    fail += 1
+            except Exception as e:
+                fail += 1; print(f'⚠️ {code} 失败: {e}')
+            if (idx + 1) % 25 == 0:
+                print(f'   进度 {idx+1}/{len(rows)} (ok={ok} fail={fail})')
+            time.sleep(0.3)
+        print(f'批量完成: {ok} 成功 / {fail} 失败 / 共 {len(rows)}')
+        sys.exit(0)
 
     stock_code = args.stock
     stock_name = args.name if args.name else stock_code  # 如果没有提供名称，使用股票代码

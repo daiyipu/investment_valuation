@@ -1,6 +1,6 @@
 """纯计算工具: MA / 相关性 / swing高低 / 斐波那契回撤。
 
-全部无 IO, 可单测。供 wave2 / resist 信号函数复用。
+全部无 IO, 可单测。供 wave3 / resist 信号函数复用。
 """
 import numpy as np
 import pandas as pd

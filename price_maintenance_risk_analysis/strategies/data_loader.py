@@ -10,14 +10,19 @@
 三序列须按共同 trade_date 对齐、末项对齐 date → 见 aligned_returns()。
 """
 import os
+import sys
 import json
 
 import numpy as np
 import pandas as pd
 import pymysql
 
-# 与 scripts/update_market_data.py:2004 一致: env 优先, 否则用内置 token
-_TUSHARE_TOKEN_DEFAULT = 'f2380d8761bcbf165f87b85f04ed105b1bdcf8721574562294671265'
+# Tushare token 不再硬编码: 环境变量优先, 否则读本地 .tushare_token(已 gitignore), 都没有则报错
+_PKG_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _PKG_ROOT not in sys.path:
+    sys.path.insert(0, _PKG_ROOT)
+from tushare_token import resolve_tushare_token
+
 _MARKET_INDEX = '000300.SH'   # 沪深300
 
 
@@ -27,7 +32,7 @@ def _conn():
 
 
 def _ts():
-    os.environ.setdefault('TUSHARE_TOKEN', _TUSHARE_TOKEN_DEFAULT)
+    os.environ.setdefault('TUSHARE_TOKEN', resolve_tushare_token())
     import tushare as ts
     return ts
 
@@ -55,7 +60,7 @@ def stock_qfq_df(stock_code, date, maxlen=300):
 
 
 def stock_qfq_closes(stock_code, date, maxlen=300):
-    """个股 ≤date 的 qfq 收盘(oldest→newest, 末项=对齐 date), numpy array。供 wave2。"""
+    """个股 ≤date 的 qfq 收盘(oldest→newest, 末项=对齐 date), numpy array。供 wave3。"""
     return stock_qfq_df(stock_code, date, maxlen)['close'].to_numpy(dtype=float)
 
 

@@ -458,10 +458,10 @@ def derive_market_index_features(df):
     return df
 
 
-# ====== H/I类: 波二/抵抗策略信号 (需 tushare 网络) ======
+# ====== H/I类: 三浪/抵抗策略信号 (需 tushare 网络) ======
 
 def derive_strategy_signals(df):
-    """按每行报价日 PIT 回算 波二/抵抗 信号, 写 5 个特征列。
+    """按每行报价日 PIT 回算 三浪/抵抗 信号, 写 5 个特征列。
 
     bulk-load 优化(避免逐样本打 tushare):
       - 大盘: index_daily('000300.SH') 全量 1 次
@@ -469,13 +469,13 @@ def derive_strategy_signals(df):
       - 行业: industry_daily 全量 1 次 MySQL(同F类), 切片 ≤报价日
     PIT 由 ≤报价日 内存切片保证。单股失败填 NaN, 不影响整体。
     """
-    print('\n  H/I类: 波二/抵抗策略信号 (需tushare网络)...')
+    print('\n  H/I类: 三浪/抵抗策略信号 (需tushare网络)...')
     import time
     pkg = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # price_maintenance_risk_analysis
     if pkg not in sys.path:
         sys.path.insert(0, pkg)
     from strategies.data_loader import _align_three, _MARKET_INDEX
-    from strategies.wave2 import wave2_signal
+    from strategies.wave3 import wave3_signal
     from strategies.resist import resist_score
 
     import pymysql
@@ -498,7 +498,8 @@ def derive_strategy_signals(df):
 
     # 3) 大盘全量(1 次 tushare)
     import tushare as ts
-    os.environ.setdefault('TUSHARE_TOKEN', 'f2380d8761bcbf165f87b85f04ed105b1bdcf8721574562294671265')
+    from tushare_token import resolve_tushare_token
+    os.environ.setdefault('TUSHARE_TOKEN', resolve_tushare_token())
     mrt = ts.pro_api().index_daily(ts_code=_MARKET_INDEX)
     mrt = mrt.sort_values('trade_date').reset_index(drop=True)
     mkt_dates = mrt['trade_date'].values
@@ -539,9 +540,9 @@ def derive_strategy_signals(df):
 
     # 5) 逐样本回算
     maxlen = 300
-    w2_score = np.full(len(df), np.nan)
-    w2_gain = np.full(len(df), np.nan)
-    w2_retr = np.full(len(df), np.nan)
+    w3_score = np.full(len(df), np.nan)
+    w3_gain = np.full(len(df), np.nan)
+    w3_retr = np.full(len(df), np.nan)
     rs_score = np.full(len(df), np.nan)
     rs_div = np.full(len(df), np.nan)
     fetched = 0
@@ -559,11 +560,11 @@ def derive_strategy_signals(df):
             sd2, sc2 = _slice(sd, sc, d_str, maxlen)
             if sd2 is None or len(sc2) < 250:
                 continue
-            # 波二
-            w = wave2_signal(sc2)
-            w2_gain[i] = w['gain'] if w['gain'] else np.nan
-            w2_retr[i] = w['retr'] if w['retr'] else np.nan
-            w2_score[i] = w['score'] if w['trigger'] else 0.0
+            # 三浪
+            w = wave3_signal(sc2)
+            w3_gain[i] = w['gain'] if w['gain'] else np.nan
+            w3_retr[i] = w['retr'] if w['retr'] else np.nan
+            w3_score[i] = w['score'] if w['trigger'] else 0.0
             # 抵抗(个股/行业/大盘 对齐收益)
             idx = stock_to_idx.get(code)
             ig = ind_groups.get(idx)
@@ -587,9 +588,9 @@ def derive_strategy_signals(df):
             print(f'    进度 {i+1}/{len(df)} | 有信号 {fetched}')
 
     new_cols = {
-        '波二_score': pd.Series(w2_score, index=df.index),
-        '波二_gain':  pd.Series(w2_gain, index=df.index),
-        '波二_retr':  pd.Series(w2_retr, index=df.index),
+        '三浪_score': pd.Series(w3_score, index=df.index),
+        '三浪_gain':  pd.Series(w3_gain, index=df.index),
+        '三浪_retr':  pd.Series(w3_retr, index=df.index),
         '抵抗_score': pd.Series(rs_score, index=df.index),
         '抵抗_corr_div_stock': pd.Series(rs_div, index=df.index),
     }
@@ -650,7 +651,7 @@ def main():
         except Exception as e:
             print(f'  ⚠️ DB特征失败: {e}')
 
-        # H/I类: 波二/抵抗策略信号(需tushare网络, 单独try, 失败不影响F/G)
+        # H/I类: 三浪/抵抗策略信号(需tushare网络, 单独try, 失败不影响F/G)
         try:
             df = derive_strategy_signals(df)
         except Exception as e:

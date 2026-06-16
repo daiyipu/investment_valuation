@@ -1,4 +1,4 @@
-"""屏幕 runner: 全市场 or 标的池, 输出波二/抵抗 CSV 列表。
+"""屏幕 runner: 全市场 or 标的池, 输出三浪/抵抗 CSV 列表。
 
 用法:
   python strategies/screen_strategies.py --date 20240601
@@ -21,7 +21,7 @@ if _PKG_ROOT not in sys.path:
     sys.path.insert(0, _PKG_ROOT)
 
 from strategies.data_loader import stock_qfq_closes, stock_qfq_df, industry_df, market_df, _align_three
-from strategies.wave2 import wave2_signal
+from strategies.wave3 import wave3_signal
 from strategies.resist import resist_score
 
 
@@ -37,7 +37,7 @@ def _all_stocks():
 def screen(date, universe=None, out_dir='output', limit=None, maxlen=300):
     """universe=None → 全市场(stocks 表); 否则传股票列表。limit 截断(调试用)。
 
-    输出 {out_dir}/wave2_list_{date}.csv 与 resist_list_{date}.csv。
+    输出 {out_dir}/wave3_list_{date}.csv 与 resist_list_{date}.csv。
     """
     os.makedirs(out_dir, exist_ok=True)
     codes = universe or _all_stocks()
@@ -46,15 +46,15 @@ def screen(date, universe=None, out_dir='output', limit=None, maxlen=300):
     print(f'屏幕 {date}: {len(codes)} 只标的...')
 
     mdf = market_df(date, maxlen)   # 大盘仅取一次, 复用
-    w2_rows, rs_rows = [], []
+    w3_rows, rs_rows = [], []
     for i, code in enumerate(codes):
         try:
-            # 波二: 个股 qfq 收盘
+            # 三浪: 个股 qfq 收盘
             c = stock_qfq_closes(code, date, maxlen)
             if len(c) > 250:
-                r = wave2_signal(c)
+                r = wave3_signal(c)
                 if r['trigger']:
-                    w2_rows.append({'股票代码': code, 'gain': r['gain'], 'retr': r['retr'],
+                    w3_rows.append({'股票代码': code, 'gain': r['gain'], 'retr': r['retr'],
                                     'breakout': r['breakout'], 'score': r['score']})
             # 抵抗: 个股/行业/大盘 对齐收益(个股收益, 非 ind 占位)
             sdf = stock_qfq_df(code, date, maxlen)
@@ -69,20 +69,20 @@ def screen(date, universe=None, out_dir='output', limit=None, maxlen=300):
         except Exception as e:
             print(f'  {code} skip: {e}')
         if (i + 1) % 50 == 0:
-            print(f'  进度 {i+1}/{len(codes)} | 波二 {len(w2_rows)} / 抵抗 {len(rs_rows)}')
+            print(f'  进度 {i+1}/{len(codes)} | 三浪 {len(w3_rows)} / 抵抗 {len(rs_rows)}')
 
-    w2_df = pd.DataFrame(w2_rows).sort_values('score', ascending=False) if w2_rows else pd.DataFrame()
+    w3_df = pd.DataFrame(w3_rows).sort_values('score', ascending=False) if w3_rows else pd.DataFrame()
     rs_df = pd.DataFrame(rs_rows).sort_values('score', ascending=False) if rs_rows else pd.DataFrame()
-    w2_df.to_csv(f'{out_dir}/wave2_list_{date}.csv', index=False, encoding='utf-8-sig')
+    w3_df.to_csv(f'{out_dir}/wave3_list_{date}.csv', index=False, encoding='utf-8-sig')
     rs_df.to_csv(f'{out_dir}/resist_list_{date}.csv', index=False, encoding='utf-8-sig')
-    print(f'完成: 波二 {len(w2_rows)} / 抵抗 {len(rs_rows)} 只, 已输出 CSV 到 {out_dir}/')
-    return w2_df, rs_df
+    print(f'完成: 三浪 {len(w3_rows)} / 抵抗 {len(rs_rows)} 只, 已输出 CSV 到 {out_dir}/')
+    return w3_df, rs_df
 
 
 if __name__ == '__main__':
     import warnings
     warnings.filterwarnings('ignore')
-    ap = argparse.ArgumentParser(description='波二/抵抗 选股屏幕')
+    ap = argparse.ArgumentParser(description='三浪/抵抗 选股屏幕')
     ap.add_argument('--date', required=True, help='屏幕日 YYYYMMDD')
     ap.add_argument('--universe', default=None, help='逗号分隔股票代码, 缺省全市场')
     ap.add_argument('--limit', type=int, default=None, help='截断标的数(调试)')

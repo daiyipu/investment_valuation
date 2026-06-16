@@ -1,4 +1,4 @@
-"""波二/抵抗策略信号函数单测(合成序列)。
+"""三浪/抵抗策略信号函数单测(合成序列)。
 
 运行: cd price_maintenance_risk_analysis && python -m pytest tests/test_strategies.py -v
 """
@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from strategies.indicators import sma, rolling_corr, fib_retracement, swing_high_low
-from strategies.wave2 import wave2_signal
+from strategies.wave3 import wave3_signal
 from strategies.resist import resist_score, _diverge_score
 
 
@@ -37,8 +37,8 @@ def test_rolling_corr_perfect():
     assert all(abs(x - 1.0) < 1e-9 for x in c)
 
 
-# ---------- Task 3: wave2 ----------
-def _synth_wave2():
+# ---------- Task 3: wave3 ----------
+def _synth_wave3():
     """构造: 平台→一浪上涨(10→15,+50%)→回调(15→12.5,retr≈0.5)→突破回调高点15。
 
     lookback 窗口 [today-120, today-30] 排除最后 30 日, 故一浪高点须在 today-30 之前,
@@ -51,17 +51,17 @@ def _synth_wave2():
     return base + ramp + pull + brk
 
 
-def test_wave2_triggers_on_synthetic():
-    c = _synth_wave2()
-    r = wave2_signal(c)
+def test_wave3_triggers_on_synthetic():
+    c = _synth_wave3()
+    r = wave3_signal(c)
     assert r['trigger'] is True
     assert r['gain'] >= 0.20
     assert 0.382 <= r['retr'] <= 0.618
 
 
-def test_wave2_no_trigger_in_downtrend():
+def test_wave3_no_trigger_in_downtrend():
     c = list(np.linspace(50, 20, 300))  # 单边下跌
-    assert wave2_signal(c)['trigger'] is False
+    assert wave3_signal(c)['trigger'] is False
 
 
 # ---------- Task 4: resist ----------
