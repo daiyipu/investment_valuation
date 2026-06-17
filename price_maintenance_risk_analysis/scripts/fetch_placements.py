@@ -17,12 +17,12 @@ PARAMS = {"reportName": "RPT_SEO_DETAIL", "columns": "ALL",
 
 COLS = {  # eastmoney 字段 → 中文
     'SECUCODE': '股票代码', 'SECURITY_NAME_ABBR': '股票简称', 'SEO_TYPE': '增发类型码',
-    'ISSUE_WAY': '发行方式', 'ISSUE_LISTING_DATE': '增发上市日',
-    'EQUITY_RECORD_DATE': '股权登记日', 'ISSUE_PRICE': '发行价',
-    'ISSUE_NUM': '发行数量(股)', 'TOTAL_RAISE_FUNDS': '募资总额',
-    'NET_RAISE_FUNDS': '净募资', 'ISSUE_OBJECT': '发行对象',
-    'PRICE_PRINCIPLE': '定价原则', 'ISSUE_ON_DATE': '询价开始日',
-    'ISSUE_OFF_DATE': '询价结束日', 'LOT_DATE': '摇号日',
+    'ISSUE_WAY': '发行方式', 'ISSUE_DATE': '发行日(报价日)',
+    'ISSUE_LISTING_DATE': '增发上市日', 'EQUITY_RECORD_DATE': '股权登记日',
+    'ISSUE_PRICE': '发行价', 'ISSUE_NUM': '发行数量(股)',
+    'TOTAL_RAISE_FUNDS': '募资总额', 'NET_RAISE_FUNDS': '净募资',
+    'ISSUE_OBJECT': '发行对象', 'PRICE_PRINCIPLE': '定价原则',
+    'ISSUE_ON_DATE': '询价开始日', 'ISSUE_OFF_DATE': '询价结束日', 'LOT_DATE': '摇号日',
     'ISSUE_SHARE_BEFORE': '发行前股本', 'ISSUE_SHARE_AFTER': '发行后股本',
     'BVPS_BEFORE': '发行前每股净资产', 'BVPS_AFTER': '发行后每股净资产',
 }
@@ -53,13 +53,13 @@ def main(years=20):
     # 增发类型: SEO_TYPE '1'=定向增发, '2'=公开增发 (eastmoney 返回字符串)
     out['增发类型'] = out['增发类型码'].astype(str).map({'1': '定向增发', '2': '公开增发'}).fillna('其他')
     # 日期解析
-    for c in ['增发上市日', '股权登记日', '询价开始日', '询价结束日', '摇号日']:
+    for c in ['发行日(报价日)', '增发上市日', '股权登记日', '询价开始日', '询价结束日', '摇号日']:
         out[c] = pd.to_datetime(out[c], errors='coerce')
     # 过滤: 定向增发 + 时间范围
     dx = out[out['增发类型'] == '定向增发'].copy()
     if years:
         cutoff = pd.Timestamp.now() - pd.DateOffset(years=years)
-        dx = dx[dx['增发上市日'] >= cutoff]
+        dx = dx[dx['发行日(报价日)'].fillna(dx['增发上市日']) >= cutoff]
         span = f'近{years}年'
     else:
         span = '全部'
