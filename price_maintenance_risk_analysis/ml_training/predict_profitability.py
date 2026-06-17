@@ -284,7 +284,7 @@ def predict(scored_excel_path):
 
     def _score_sc(sc_bundle, sc_features, sc_medians, sc_deciles, label_tag, X_src_df):
         """用一套 SC 模型打分, 返回 {盈利概率_tag, 档位_tag} 两列 + 概率数组。"""
-        from eval_loye import apply_woe as _aw
+        from eval_loyo import apply_woe as _aw
         X_sc = pd.DataFrame(index=X_src_df.index)
         for feat in sc_features:
             X_sc[feat] = pd.to_numeric(X_src_df[feat], errors='coerce') if feat in X_src_df.columns else np.nan
