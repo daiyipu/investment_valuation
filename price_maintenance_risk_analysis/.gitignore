@@ -54,3 +54,4 @@ ml_training/output/gray_zone*.csv
 ml_training/output/*_compare.csv
 ml_training/output/old_scorecard*.csv
 ml_training/output/frozen_scorecard*.csv
+ml_training/data/placements_*.xlsx
