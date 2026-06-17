@@ -328,7 +328,7 @@ def predict(scored_excel_path):
     try:
         from db_model_store import list_model_metas
         all_metas = list_model_metas(kind='gray')
-        cur_nfeat = len(green['features']) if is_sc else 0
+        cur_nfeat = len(sc_main['features']) if is_sc else 0
         # 找非当前的 SC 模型, 优先选特征数差异最大的(对比更有意义)
         blue_candidates = [m for m in all_metas
                            if m['version'] != version and not m.get('lgb_model')
