@@ -205,6 +205,16 @@ def predict(scored_excel_path):
     except Exception as e:
         print(f'    行业/大盘衍生跳过: {e}')
 
+    # ── 因子引擎 + 策略信号(与 derive_features 完全一致, 保证训练/预测特征空间统一) ──
+    try:
+        from derive_features import derive_strategy_signals, derive_alpha_beta_factors
+        df = derive_strategy_signals(df)
+        df = derive_alpha_beta_factors(df)
+        print(f'    因子引擎: +{sum(1 for c in df.columns if c.startswith(("MACD","RSI","KDJ","BOLL","ROC_","k_","ret_","vol_","amount_","corr_","vwap_","beta_","idiovol","三浪","抵抗")))} 因子列')
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        print(f'    ⚠ 因子引擎跳过: {e}')
+
     df = df.replace([np.inf, -np.inf], np.nan)
     print(f'    最终特征: {df.shape[1]} 列')
 
