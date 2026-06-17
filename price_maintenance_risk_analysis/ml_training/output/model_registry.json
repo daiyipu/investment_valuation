@@ -1,6 +1,6 @@
 {
   "current": {
-    "full": "v_sc_20260617_0040_7m_gray_sc_4feat",
+    "full": "v_sc_20260617_1458_7m_gray_sc_11feat",
     "scorecard": "v_20260612_0009_scorecard_12feat_auc069"
   },
   "versions": [
@@ -624,6 +624,46 @@
         "sc_oot_ks": 0.26939890710382514
       },
       "dir": "v_sc_20260617_0040_7m_gray_sc_4feat",
+      "files": [
+        "(in ml_model_meta DB)"
+      ],
+      "note": "WOE评分卡 7m_gray_sc",
+      "label_config": "7m_gray_sc",
+      "dataset_version": "derived_20260616_2334_f35ba6f3_7m"
+    },
+    {
+      "version": "v_sc_20260617_1408_7m_gray_sc_12feat",
+      "model_type": "full",
+      "created_at": "2026-06-17 14:08",
+      "n_features": 12,
+      "threshold": -10,
+      "n_samples": 3010,
+      "positive_rate": 0.5299003322259136,
+      "metrics": {
+        "sc_oot_auc": 0.6088730239673635,
+        "sc_oot_ks": 0.25752167261601216
+      },
+      "dir": "v_sc_20260617_1408_7m_gray_sc_12feat",
+      "files": [
+        "(in ml_model_meta DB)"
+      ],
+      "note": "WOE评分卡 7m_gray_sc",
+      "label_config": "7m_gray_sc",
+      "dataset_version": "derived_20260616_2334_f35ba6f3_7m"
+    },
+    {
+      "version": "v_sc_20260617_1458_7m_gray_sc_11feat",
+      "model_type": "full",
+      "created_at": "2026-06-17 14:58",
+      "n_features": 11,
+      "threshold": -10,
+      "n_samples": 2931,
+      "positive_rate": 0.5407710678949164,
+      "metrics": {
+        "sc_oot_auc": 0.6289308176100629,
+        "sc_oot_ks": 0.23933367329593747
+      },
+      "dir": "v_sc_20260617_1458_7m_gray_sc_11feat",
       "files": [
         "(in ml_model_meta DB)"
       ],

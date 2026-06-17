@@ -440,7 +440,8 @@ def load_scored_features_from_db(sample_keys):
                 'sub_monte_carlo': '蒙特卡洛', 'sub_reverse_calc': '反向推算',
             }
             for db_col, cn_name in sub_map.items():
-                r[f'{cn_name}_通过'] = int(pe.get(db_col, 0) or 0)
+                v = pe.get(db_col, 0)
+                r[f'{cn_name}_通过'] = int(v) if v and not (isinstance(v, float) and pd.isna(v)) else 0
 
             sub_cols = [f'{v}_通过' for v in sub_map.values()]
             r['子场景通过数'] = sum(r.get(c, 0) for c in sub_cols)

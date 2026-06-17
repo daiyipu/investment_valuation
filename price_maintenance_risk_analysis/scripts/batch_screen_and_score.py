@@ -72,7 +72,11 @@ def main():
     parser.add_argument('--input', required=True, help='输入Excel文件路径（含"股票代码"和"股票简称"列）')
     parser.add_argument('--sheet', default='0', help='读取Excel的第几个sheet（序号从0开始，默认0）')
     parser.add_argument('--force', action='store_true', help='强制全量重跑(忽略已有结果, 默认断点续传)')
+    parser.add_argument('--step', type=int, default=1, choices=[1, 2, 3],
+                        help='从指定步骤开始(默认1全流程): 2=跳过Step1直接财务评分(行级续传补失败行), '
+                             '3=只重算最终结论+落库+ML(不动评分)')
     args = parser.parse_args()
+    start_step = args.step
 
     if not os.path.exists(args.input):
         print(f'❌ 文件不存在: {args.input}')
@@ -101,7 +105,13 @@ def main():
     skip_mode = not args.force   # --force 强制全量重跑; 默认断点续传(已有结果跳过)
 
     # ── Step 1: 定增决策筛选 (已有结果则跳过, 断点续传) ──
-    if skip_mode and os.path.exists(screening_output):
+    if start_step > 1:
+        if not os.path.exists(screening_output):
+            print(f'❌ --step {start_step} 需要 Step 1 结果已存在: {screening_output}')
+            print('   请先去掉 --step 跑一次完整流程。')
+            sys.exit(1)
+        print(f'  ⏭️  Step 1 跳过（--step {start_step}），复用已有筛选结果')
+    elif skip_mode and os.path.exists(screening_output):
         print(f'  ✅ Step 1 已完成(文件存在)，跳过')
     else:
         step1_cmd = [PYTHON, SCREENER_SCRIPT, '--input', args.input,
@@ -111,11 +121,17 @@ def main():
         if not os.path.exists(screening_output):
             print(f'❌ 筛选结果文件未生成: {screening_output}'); sys.exit(1)
 
-    # ── Step 2: 财务评分 (已有结果则跳过) ──
-    if skip_mode and os.path.exists(scored_output):
-        print(f'  ✅ Step 2 已完成(文件存在)，跳过')
+    # ── Step 2: 财务评分（内部行级续传：scored 存在则只补评分失败的行；--force 透传为全量重算）──
+    if start_step > 2:
+        if not os.path.exists(scored_output):
+            print(f'❌ --step {start_step} 需要 Step 2 结果已存在: {scored_output}')
+            sys.exit(1)
+        print(f'  ⏭️  Step 2 跳过（--step {start_step}），复用已有评分结果')
     else:
-        if not run_step('Step 2/4: 财务评分 (batch_financial_score)', [PYTHON, EFAES_SCRIPT, screening_output]):
+        step2_cmd = [PYTHON, EFAES_SCRIPT, screening_output]
+        if args.force:
+            step2_cmd.append('--force')   # 透传：强制全量重算（否则行级续传只补失败行）
+        if not run_step('Step 2/4: 财务评分 (batch_financial_score)', step2_cmd):
             sys.exit(1)
         if not os.path.exists(scored_output):
             print(f'⚠️ 评分结果文件未生成: {scored_output}'); sys.exit(1)
@@ -236,7 +252,7 @@ def main():
                 try:
                     return float(str(v).replace('%', '').replace('+', ''))
                 except (ValueError, TypeError):
-                    return v
+                    return None   # '-' 等非数值占位符 → NULL，避免插 DOUBLE 列失败导致整批落库中断
 
             def _sub_val(ci):
                 """子场景: ✓→1, 其他→0"""
