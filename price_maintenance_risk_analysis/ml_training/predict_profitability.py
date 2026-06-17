@@ -280,30 +280,64 @@ def predict(scored_excel_path):
     # 9. 返回(按模型类型出列: SC→单列评分卡概率; LGB→LightGBM+逻辑回归两列)
     #    每个概率列配一个 1-10 档位(10=该批最高概率档, 便于挑高概率): rank(pct)*10 向上取整
     # ═══════════════════════════════════════════════
+    result = pd.DataFrame({'股票代码': df['股票代码']})
+
+    def _score_sc(sc_bundle, sc_features, sc_medians, sc_deciles, label_tag, X_src_df):
+        """用一套 SC 模型打分, 返回 {盈利概率_tag, 档位_tag} 两列 + 概率数组。"""
+        from eval_loye import apply_woe as _aw
+        X_sc = pd.DataFrame(index=X_src_df.index)
+        for feat in sc_features:
+            X_sc[feat] = pd.to_numeric(X_src_df[feat], errors='coerce') if feat in X_src_df.columns else np.nan
+        X_sc = X_sc.fillna(sc_medians).replace([np.inf, -np.inf], 0)
+        Xw = _aw(X_sc, sc_features, sc_bundle['woe_bins']).replace([np.inf, -np.inf], 0).fillna(0)
+        proba = sc_bundle['lr_model'].predict_proba(Xw)[:, 1]
+        if sc_deciles:
+            tier = np.clip(np.searchsorted(sc_deciles, proba, side='right') + 1, 1, 10)
+        else:
+            tier = np.clip(np.ceil(pd.Series(proba).rank(pct=True) * 10), 1, 10)
+        return proba, tier.astype(int)
+
+    # 主模型(当前生产)
     if is_sc:
-        result = pd.DataFrame({'股票代码': df['股票代码'], '盈利概率_评分卡': lgb_proba})
+        sc_main = pickle.loads(bundle['lr_bundle'])
+        main_feats = sc_main['features']
+        main_deciles = sc_main.get('proba_deciles')
+        main_tag = f'评分卡({len(main_feats)}特征)'
+        p_main, t_main = _score_sc(sc_main, main_feats, sc_main.get('medians', {}),
+                                    main_deciles, main_tag, df)
+        result[f'盈利概率_{main_tag}'] = p_main
+        result[f'档位_{main_tag}'] = t_main
     else:
-        result = pd.DataFrame({'股票代码': df['股票代码'],
-                               '盈利概率_LightGBM': lgb_proba, '盈利概率_逻辑回归': lr_proba})
-    # 档位 1-10(10最高): 优先用 bundle 训练标定的概率分位边界(固定映射, 跨批次可比);
-    # 老模型无边界 → 退化为当前批次相对排名
-    proba_deciles = None
-    if bundle.get('lr_bundle'):
-        try:
-            proba_deciles = pickle.loads(bundle['lr_bundle']).get('proba_deciles')
-        except Exception:
-            proba_deciles = None
-    prob_cols = [c for c in result.columns if c.startswith('盈利概率')]
-    for idx, col in enumerate(prob_cols):
-        if idx == 0 and proba_deciles:   # 主概率列: 训练标定绝对档(同概率→同档, 跨批次可比)
-            tier = np.clip(np.searchsorted(proba_deciles, result[col].values, side='right') + 1, 1, 10)
-        else:                             # 次概率列/老模型: 批次相对排名
-            tier = np.clip(np.ceil(pd.Series(result[col]).rank(pct=True) * 10), 1, 10)
-        result[col.replace('盈利概率_', '档位_')] = tier.astype(int)
-    if proba_deciles:
-        print(f'  档位=训练标定(边界 {[round(d, 3) for d in proba_deciles]})')
-    else:
-        print('  ⚠ 模型无训练分位边界, 档位按本批相对排名(老模型)')
+        main_tag = 'LightGBM'
+        result[f'盈利概率_{main_tag}'] = lgb_proba
+        result[f'档位_{main_tag}'] = np.clip(np.ceil(pd.Series(lgb_proba).rank(pct=True) * 10), 1, 10).astype(int)
+
+    # ═══════════════════════════════════════════════
+    # 9b. 蓝绿对比: 同时用上一个生产版本(BLUE)打分
+    # ═══════════════════════════════════════════════
+    try:
+        from db_model_store import list_model_metas
+        all_metas = list_model_metas(kind='gray')
+        cur_nfeat = len(green['features']) if is_sc else 0
+        # 找非当前的 SC 模型, 优先选特征数差异最大的(对比更有意义)
+        blue_candidates = [m for m in all_metas
+                           if m['version'] != version and not m.get('lgb_model')
+                           and m.get('kind') == 'gray']
+        if blue_candidates:
+            blue_candidates.sort(key=lambda m: abs(m.get('n_features', 0) - cur_nfeat), reverse=True)
+            blue_ver = blue_candidates[0]['version']
+            blue_bundle_data = load_predict_bundle(blue_ver)
+            sc_blue = pickle.loads(blue_bundle_data['lr_bundle'])
+            blue_feats = sc_blue['features']
+            blue_deciles = sc_blue.get('proba_deciles')
+            blue_tag = f'评分卡BLUE({len(blue_feats)}特征)'
+            p_blue, t_blue = _score_sc(sc_blue, blue_feats, sc_blue.get('medians', {}),
+                                        blue_deciles, blue_tag, df)
+            result[f'盈利概率_{blue_tag}'] = p_blue
+            result[f'档位_{blue_tag}'] = t_blue
+            print(f'  🔄 蓝绿对比: 同时输出 BLUE({blue_ver}, {len(blue_feats)}特征)')
+    except Exception as e:
+        print(f'  (无蓝绿对比: {e})')
 
     print(f'  ✅ ML预测完成: {len(result)} 条\n')
     return result
