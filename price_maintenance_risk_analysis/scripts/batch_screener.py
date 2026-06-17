@@ -281,7 +281,18 @@ def _normalize_issue_date(value):
     # 字符串：统一去分隔符
     for sep in ('-', '/', '.'):
         s = s.replace(sep, '')
-    return s if len(s) == 8 and s.isdigit() else None
+    if len(s) == 8 and s.isdigit():
+        return s
+    # Excel 序列号 (如 46182 = 2026-05-20): 整数且在合理范围 → 转 YYYYMMDD
+    try:
+        num = int(float(s))
+        if 20000 <= num <= 60000:
+            from datetime import datetime, timedelta
+            dt = datetime(1899, 12, 30) + timedelta(days=num)
+            return dt.strftime('%Y%m%d')
+    except (ValueError, TypeError):
+        pass
+    return None
 
 
 def main():
