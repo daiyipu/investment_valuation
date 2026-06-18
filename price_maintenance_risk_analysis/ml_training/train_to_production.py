@@ -111,12 +111,14 @@ def main():
 
     df = pd.read_parquet(args.features_path)
     consensus = derive_consensus(df, args.horizon, args.kind, args.min_folds)
-    # 锁定共识特征 LOYO(对齐验证)
-    loyo_fixed(args.features_path, args.horizon, args.kind, ','.join(consensus))
+    # 锁定共识特征 LOYO(对齐验证); 返回 SC 去偏 AUC/KS → 写入模型 meta(替代含泄漏的全量自评)
+    loyo_res = loyo_fixed(args.features_path, args.horizon, args.kind, ','.join(consensus))
+    _sc_loyo = (loyo_res or {}).get('sc')
     # 部署
     if args.model == 'sc':
         print(f'\n--- 训 SC(共识特征) 并部署 ---')
-        run_sc(args.features_path, args.horizon, args.kind, 2024, args.set_current, features=consensus)
+        run_sc(args.features_path, args.horizon, args.kind, 2024, args.set_current,
+               features=consensus, loyo_stats=_sc_loyo)
     else:
         deploy_lgb(args.features_path, args.horizon, args.kind, consensus, 2024, args.set_current)
 

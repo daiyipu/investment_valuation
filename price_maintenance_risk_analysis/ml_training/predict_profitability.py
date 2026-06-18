@@ -326,13 +326,15 @@ def predict(scored_excel_path):
     # 9b. 蓝绿对比: 同时用上一个生产版本(BLUE)打分
     # ═══════════════════════════════════════════════
     try:
-        from db_model_store import list_model_metas
+        from db_model_store import list_model_metas, get_model_meta
         all_metas = list_model_metas(kind='gray')
         cur_nfeat = len(sc_main['features']) if is_sc else 0
-        # 找非当前的 SC 模型, 优先选特征数差异最大的(对比更有意义)
+        _cur_h = (get_model_meta(version) or {}).get('horizon')   # current 期限(如 7m)
+        # BLUE = 同期限的另一个 gray SC; 排除 1m/3m 等不同期限模型(否则会误选短期模型当对比)
         blue_candidates = [m for m in all_metas
                            if m['version'] != version and not m.get('lgb_model')
-                           and m.get('kind') == 'gray']
+                           and m.get('kind') == 'gray'
+                           and (_cur_h is None or m.get('horizon') == _cur_h)]
         if blue_candidates:
             blue_candidates.sort(key=lambda m: abs(m.get('n_features', 0) - cur_nfeat), reverse=True)
             blue_ver = blue_candidates[0]['version']
@@ -348,6 +350,39 @@ def predict(scored_excel_path):
             print(f'  🔄 蓝绿对比: 同时输出 BLUE({blue_ver}, {len(blue_feats)}特征)')
     except Exception as e:
         print(f'  (无蓝绿对比: {e})')
+
+    # ═══════════════════════════════════════════════
+    # 9c. 多期限短期补充列: 1m / 3m 灰度 SC(7m 生产之外的短期价格维持概率)
+    #     灰度极性标签(>10%/<0%), 与 7m 同套 _score_sc 打分; 模型由
+    #     train_to_production.py --horizon 1/3 --kind gray 训。DB 找不到最新版则跳过(不报错)。
+    # ═══════════════════════════════════════════════
+    try:
+        from db_model_store import list_model_metas as _lmm
+    except Exception:
+        _lmm = None
+    if _lmm is not None:
+        for _horizon, _lc in ((1, '1m_gray_sc'), (3, '3m_gray_sc')):
+            try:
+                _cands = [m for m in _lmm(label_config=_lc) if not m.get('lgb_model')]
+                if not _cands:
+                    continue
+                _m = _cands[0]                       # created_at DESC → 最新版
+                _sc = pickle.loads(_m['lr_bundle'])
+                _feats = _sc['features']
+                _p, _t = _score_sc(_sc, _feats, _sc.get('medians', {}),
+                                   _sc.get('proba_deciles'), f'{_horizon}m', df)
+                result[f'盈利概率_{_horizon}m'] = _p
+                result[f'档位_{_horizon}m'] = _t
+                _mt = _m.get('metrics', {})
+                _loyo = _mt.get('sc_loyo_auc')
+                if isinstance(_loyo, float) and _loyo == _loyo:
+                    _perf = f', LOYO AUC={_loyo:.3f}±{_mt.get("sc_loyo_auc_std", 0):.3f}'
+                else:
+                    _fit = _mt.get('sc_fit_auc') or _mt.get('sc_oot_auc')
+                    _perf = f', 自评AUC={_fit:.3f}(含泄漏)' if isinstance(_fit, float) else ''
+                print(f'  ➕ 短期补充 {_horizon}m灰度SC: {_m["version"]} ({len(_feats)}特征{_perf})')
+            except Exception as e:
+                print(f'  ({_horizon}m短期列跳过: {e})')
 
     print(f'  ✅ ML预测完成: {len(result)} 条\n')
     return result
@@ -365,15 +400,15 @@ def write_to_excel(scored_excel_path, result_df, output_path=None):
     wb = openpyxl.load_workbook(target)
     ws = wb.active
 
-    # 待写入列(除股票代码); 幂等: 先删所有已知概率/档位列(防 SC/LGB 切换残留旧列)
+    # 待写入列(除股票代码); 幂等: 先删所有 盈利概率_* / 档位_* 列(防多次运行残留, 含 1m/3m 等任意期限)
     out_cols = [c for c in result_df.columns if c != '股票代码']
-    known_cols = ['盈利概率_LightGBM', '盈利概率_逻辑回归', '盈利概率_评分卡',
-                  '档位_LightGBM', '档位_逻辑回归', '档位_评分卡']
-    header_row = [ws.cell(1, col).value for col in range(1, ws.max_column + 1)]
-    for col_name in known_cols:
-        if col_name in header_row:
-            ws.delete_cols(header_row.index(col_name) + 1)
-            header_row = [ws.cell(1, col).value for col in range(1, ws.max_column + 1)]
+    while True:
+        header_row = [ws.cell(1, col).value for col in range(1, ws.max_column + 1)]
+        tgt = next((h for h in header_row if isinstance(h, str)
+                    and (h.startswith('盈利概率_') or h.startswith('档位_'))), None)
+        if tgt is None:
+            break
+        ws.delete_cols(header_row.index(tgt) + 1)
 
     # 依次写入列
     col_map = {}

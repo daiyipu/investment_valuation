@@ -68,6 +68,12 @@ def _ensure_table(conn):
                      ('lr_bundle', 'LONGBLOB')]:
         if col not in existing:
             cur.execute(f'ALTER TABLE ml_model_meta ADD COLUMN {col} {ddl}')
+    # 自愈: selection 列放宽到 LONGTEXT(LOYO 共识特征串 / 长 selection 可能超 VARCHAR(160))
+    cur.execute("""SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS
+                   WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='ml_model_meta' AND COLUMN_NAME='selection'""")
+    _sel_type = (cur.fetchone() or (None,))[0]
+    if _sel_type and _sel_type.lower() not in ('longtext', 'mediumtext', 'text'):
+        cur.execute('ALTER TABLE ml_model_meta MODIFY COLUMN selection LONGTEXT')
     conn.commit()
 
 

@@ -17,7 +17,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from validate_methods import make_features, eval_metrics
-from feature_selection import select_features, pipeline_summary, N_IV, PSI_MAX, CORR_MAX, VIF_MAX
+from feature_selection import select_features, pipeline_summary, IV_MIN, PSI_MAX, CORR_MAX, VIF_MAX
 from train_horizon_models import GRAY_CFG, build_label, _prep
 from eval_loyo import fit_woe, apply_woe
 from db_model_store import save_model_meta
@@ -46,7 +46,7 @@ def print_scorecard(features, woe_bins, lr):
             print('    (无分箱/常数)')
 
 
-def run(features_path, horizon, kind, split_year, set_current, features=None):
+def run(features_path, horizon, kind, split_year, set_current, features=None, loyo_stats=None):
     df = pd.read_parquet(features_path).dropna(subset=['报价日']).reset_index(drop=True)
     df['_y'] = (pd.to_numeric(df['报价日'], errors='coerce') // 10000).astype('Int64')
     dtr_s = df[df['_y'] <= split_year].drop(columns=['_y'])      # 选特征用(算 PSI)
@@ -64,7 +64,7 @@ def run(features_path, horizon, kind, split_year, set_current, features=None):
     if features:
         kept = [f for f in features if f in Xtr_s.columns]
         detail = None
-        sel = f'locked({len(kept)}共识特征: {",".join(kept)})'
+        sel = f'locked({len(kept)}共识特征, 名单见 features 列)'
         print(f'⚠ 锁定特征(跳过select_features): {kept}')
     else:
         kept, detail = select_features(Xtr_s, ytr_s, Xte_s)
@@ -79,10 +79,15 @@ def run(features_path, horizon, kind, split_year, set_current, features=None):
     lr = LogisticRegression(C=1.0, penalty='l2', max_iter=1000, random_state=42)
     lr.fit(WOE_FILL(Xall_w), yall)
 
-    # OOS 参考(用 split 时的 dte_s)
+    # 全量训练后自评: test 年已入训练 → 含泄漏偏高, 非真实泛化(仅拟合参考)。
+    # 真泛化能力看 loyo_stats(由 train_to_production 跑 loyo_fixed 传入)。
     Xte_s_w = apply_woe(Xte_s[kept], kept, wbins)
     ate = eval_metrics(yte_s.values, lr.predict_proba(WOE_FILL(Xte_s_w))[:, 1])
-    print(f'\nOOT({split_year+1}+) 参考: SC AUC={ate["auc"]:.3f} KS={ate["ks"]:.3f} (LOYO 去偏见 eval_loyo)')
+    print(f'\n全量拟合自评(⚠️含泄漏, 非泛化): SC AUC={ate["auc"]:.3f} KS={ate["ks"]:.3f} '
+          f'— test({split_year+1}+)已入训练, 勿当泛化能力')
+    if loyo_stats:
+        print(f'LOYO 去偏(✅真泛化): SC AUC={loyo_stats["auc_mean"]:.3f}±{loyo_stats["auc_std"]:.3f} | '
+              f'KS={loyo_stats["ks_mean"]:.3f}±{loyo_stats["ks_std"]:.3f} ({loyo_stats["n_folds"]}折)')
 
     # 打印评分卡
     print_scorecard(kept, wbins, lr)
@@ -102,14 +107,23 @@ def run(features_path, horizon, kind, split_year, set_current, features=None):
         'version': ver, 'label_config': cfg_tag, 'kind': kind, 'horizon': horizon, 'gray_cfg': gcfg,
         'features': kept, 'n_features': len(kept), 'medians': {f: float(med[f]) for f in kept},
         'lgb_model': None, 'lr_bundle': pickle.dumps(bundle),
-        'metrics': {'sc_oot_auc': ate['auc'], 'sc_oot_ks': ate['ks'], 'sc_loyo_auc': 0.645},
+        'metrics': {
+            'sc_fit_auc': ate['auc'], 'sc_fit_ks': ate['ks'],   # 全量拟合自评(含泄漏, 非泛化)
+            'sc_loyo_auc': loyo_stats['auc_mean'] if loyo_stats else None,
+            'sc_loyo_auc_std': loyo_stats['auc_std'] if loyo_stats else None,
+            'sc_loyo_ks': loyo_stats['ks_mean'] if loyo_stats else None,
+            'sc_loyo_ks_std': loyo_stats['ks_std'] if loyo_stats else None,
+            'sc_loyo_n_folds': loyo_stats['n_folds'] if loyo_stats else None,
+        },
         'selection': sel,
-        'selection_thresholds': {'n_iv': N_IV, 'psi_max': PSI_MAX, 'corr_max': CORR_MAX, 'vif_max': VIF_MAX},
+        'selection_thresholds': {'iv_min': IV_MIN, 'psi_max': PSI_MAX, 'corr_max': CORR_MAX, 'vif_max': VIF_MAX},
         'n_train': int(len(yall)), 'dataset_version': 'derived_20260616_2334_f35ba6f3_7m',
         'note': f'WOE评分卡(标准五步特征) {cfg_tag}',
     })
     register_version('full', ver, ver,
-                     metrics={'sc_oot_auc': ate['auc'], 'sc_oot_ks': ate['ks']},
+                     metrics={'sc_fit_auc': ate['auc'], 'sc_fit_ks': ate['ks'],
+                              'sc_loyo_auc': (loyo_stats or {}).get('auc_mean'),
+                              'sc_loyo_ks': (loyo_stats or {}).get('ks_mean')},
                      n_features=len(kept), threshold=-10, n_samples=len(yall),
                      positive_rate=float(yall.mean()), files=['(in ml_model_meta DB)'],
                      note=f'WOE评分卡 {cfg_tag}', set_current=set_current,

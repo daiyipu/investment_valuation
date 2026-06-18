@@ -230,9 +230,19 @@ def loyo_fixed(features_path, horizon, kind, features):
               f"LR {r['lr_auc']:.3f}/{r['lr_ks']:.3f} | SC {r['sc_auc']:.3f}/{r['sc_ks']:.3f}")
     print('\n' + '=' * 70)
     print(f'🔒 锁定特征 LOYO 结果(部署对齐):')
+    out = {}
     for m, label in (('lgb', 'LGB'), ('lr', 'LR'), ('sc', 'SC 评分卡')):
-        print(f'  {label:<10} AUC {np.mean(per[m]):.3f}±{np.std(per[m]):.3f} | '
-              f'KS {np.mean(per_ks[m]):.3f}±{np.std(per_ks[m]):.3f} | per-year {[round(a,3) for a in per[m]]}')
+        _a = np.array([x for x in per[m] if x == x], float)      # 丢 nan 折(样本不足/单类)
+        _k = np.array([x for x in per_ks[m] if x == x], float)
+        print(f'  {label:<10} AUC {np.mean(_a):.3f}±{np.std(_a):.3f} | '
+              f'KS {np.mean(_k):.3f}±{np.std(_k):.3f} | per-year {[round(a,3) for a in per[m]]}')
+        out[m] = {'auc_mean': float(np.mean(_a)) if len(_a) else None,
+                  'auc_std': float(np.std(_a)) if len(_a) else None,
+                  'ks_mean': float(np.mean(_k)) if len(_k) else None,
+                  'ks_std': float(np.std(_k)) if len(_k) else None,
+                  'n_folds': int(len(_a)),
+                  'auc_per_year': [None if a != a else round(float(a), 3) for a in per[m]]}
+    return out
 
 
 def main():

@@ -35,7 +35,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from train_scorecard import calc_iv_all_features, remove_correlated, filter_by_vif
 
 # ─────────────── 固定阈值(定标, 勿轻易改) ───────────────
-N_IV = 40          # 步1: IV 候选池大小
+IV_MIN = 0.01      # 步1: IV 下限, >此值即进入漏斗(替代旧 top-N 截断; 弱信号短期目标勿被排名挤出)
+N_IV = None        # (已弃用) 旧 top-N 硬上限; 保留常量名供历史 import, 步1 实际用 IV_MIN
 PSI_MAX = 0.25     # 步2: PSI 上界(<0.1稳, 0.1~0.25微移, >0.25弃)
 CORR_MAX = 0.7     # 步3: 相关系数上界(|r|>此值视为冗余)
 VIF_MAX = 5.0      # 步4: VIF 上界(<5 严格, <10 宽松)
@@ -62,16 +63,18 @@ def calc_psi(train, test, bins=10):
 
 
 def select_features(Xtr, ytr, Xte,
-                    n_iv=N_IV, psi_max=PSI_MAX, corr_max=CORR_MAX,
-                    vif_max=VIF_MAX, min_feat=MIN_FEAT, verbose=False):
+                    iv_min=IV_MIN, psi_max=PSI_MAX, corr_max=CORR_MAX,
+                    vif_max=VIF_MAX, min_feat=MIN_FEAT, n_iv=None, verbose=False):
     """标准五步之步 1-4: IV→PSI→去相关→VIF。
 
     返回 (kept_features, detail_df)。
     detail_df 列: feature, iv, psi, kept_psi, kept_corr, kept_vif, selected。
     """
-    iv_df = (calc_iv_all_features(Xtr, ytr)
-             .sort_values('iv', ascending=False)
-             .head(n_iv).reset_index(drop=True))
+    iv_all = (calc_iv_all_features(Xtr, ytr)
+              .sort_values('iv', ascending=False).reset_index(drop=True))
+    iv_df = iv_all[iv_all['iv'] > iv_min].reset_index(drop=True)   # IV 下限进漏斗
+    if n_iv:                                                       # 可选硬上限(防极端池过大), 默认不限
+        iv_df = iv_df.head(int(n_iv))
     iv_map = dict(zip(iv_df['feature'], iv_df['iv']))
 
     detail = {}
@@ -124,8 +127,9 @@ def prune_by_lgb_importance(model, features, min_imp=1):
 def pipeline_summary(kept_after_vif, kept_after_lgb, detail_df):
     """人读摘要: 各步留下多少。"""
     n_iv = len(detail_df)
+    iv_floor = round(float(detail_df['iv'].min()), 3) if n_iv else 0
     n_psi = int(detail_df['kept_psi'].sum())
     n_corr = int(detail_df['kept_corr'].sum())
     n_vif = int(detail_df['kept_vif'].sum())
-    return (f'IV top{n_iv} → PSI {n_psi} → 去相关 {n_corr} '
+    return (f'IV>{iv_floor}({n_iv}个) → PSI {n_psi} → 去相关 {n_corr} '
             f'→ VIF {n_vif} → LGBM剪 {len(kept_after_lgb)}')

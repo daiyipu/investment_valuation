@@ -25,13 +25,13 @@ from feature_exclusions import get_excluded_columns
 from train_models import LGB_PARAMS
 # 特征选择统一走标准模块 feature_selection(IV→PSI→去相关→VIF→LGBM), 不再各脚本各搞一套
 from feature_selection import (select_features, prune_by_lgb_importance,
-                               pipeline_summary, N_IV, PSI_MAX, CORR_MAX, VIF_MAX)
+                               pipeline_summary, IV_MIN, PSI_MAX, CORR_MAX, VIF_MAX)
 from db_model_store import save_model_meta   # 模型元信息入 DB(替代散落 meta.json)
 
 HORIZONS = [1, 3, 6, 7, 12]
-# 灰度区阈值: 最初方案, 默认 [-20,+10] 通用于所有期限;
-# 仅 1m 因月收益量级小(默认区间下极性样本太少且 84% 偏正)用较窄的 [-15,+5]。其余一律默认。
-GRAY_CFG = {1: (-15, 5), 3: (-20, 10), 6: (-20, 10), 7: (-20, 10), 12: (-20, 10)}
+# 灰度区阈值: 短期(1m/3m)用户决策(2026-06-18)定为 [0,+10] —— 跌(<0)即输 / 涨超10%即赢,
+# 中间 [0,+10](微涨/横盘)灰度剔除。中长限期(6/7/12m)沿用默认 [-20,+10]。
+GRAY_CFG = {1: (0, 10), 3: (0, 10), 6: (-20, 10), 7: (-20, 10), 12: (-20, 10)}
 
 
 def _prep(X_raw, medians=None):
@@ -131,7 +131,7 @@ def run(features_path, split_year=2024):
                 'version': ver, 'label_config': cfg_tag, 'kind': kind, 'horizon': h,
                 'gray_cfg': gcfg, 'features': kept, 'n_features': len(kept),
                 'selection': sel_summary,
-                'selection_thresholds': {'n_iv': N_IV, 'psi_max': PSI_MAX,
+                'selection_thresholds': {'iv_min': IV_MIN, 'psi_max': PSI_MAX,
                                          'corr_max': CORR_MAX, 'vif_max': VIF_MAX},
                 'metrics': {'lgb_oot_auc': al['auc'], 'lgb_oot_ks': al['ks'],
                             'lr_oot_auc': ar['auc'], 'lr_oot_ks': ar['ks'],
