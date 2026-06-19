@@ -78,8 +78,8 @@ def check_data_paths():
     print("检查脚本文件路径配置:")
     scripts_to_check = [
         'generate_word_report_v2.py',
-        'update_market_data.py',
-        'update_indices_data.py'
+        'data_pipeline/update_market_data.py',
+        'data_pipeline/update_indices_data.py'
     ]
 
     for script_name in scripts_to_check:

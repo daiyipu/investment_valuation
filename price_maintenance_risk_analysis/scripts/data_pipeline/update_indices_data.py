@@ -233,11 +233,11 @@ def rebuild_locked_indices_data(stock_code, issue_date):
     # 保存锁定数据到DB和文件
     if results:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        data_dir = os.path.join(os.path.dirname(script_dir), 'data')
+        data_dir = os.path.join(os.path.dirname(os.path.dirname(script_dir)), 'data')
 
         # 保存到DB
         try:
-            sys.path.insert(0, os.path.dirname(script_dir))
+            sys.path.insert(0, os.path.dirname(os.path.dirname(script_dir)))
             from utils.db_manager import ValuationDB
             db = ValuationDB()
             db.save_market_indices(results, locked_date=issue_date)
@@ -420,7 +420,7 @@ def update_existing_indices_data():
     # 获取脚本所在目录的绝对路径
     script_dir = os.path.dirname(os.path.abspath(__file__))
     # data目录在项目根目录下（scripts的父目录）
-    data_dir = os.path.join(os.path.dirname(script_dir), 'data')
+    data_dir = os.path.join(os.path.dirname(os.path.dirname(script_dir)), 'data')
     data_file = os.path.join(data_dir, 'market_indices_scenario_data.json')
 
     if not os.path.exists(data_file):

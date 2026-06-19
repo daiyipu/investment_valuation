@@ -28,7 +28,7 @@ import argparse
 import pandas as pd
 
 # 把项目根加入 sys.path，以便 from utils.db_manager import ValuationDB
-_PROJ_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_PROJ_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _PROJ_ROOT not in sys.path:
     sys.path.insert(0, _PROJ_ROOT)
 

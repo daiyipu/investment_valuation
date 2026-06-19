@@ -180,6 +180,97 @@ def beta_factors(sret, mret, iret):
     return out
 
 
+def smc_factors(o, h, l, c, N=60, M=20):
+    """Smart Money Concepts 因子(OHLC, 报价日=末根K线快照)。纯机械代理变量。
+
+    N/M 为 lookback 窗口(K线数); 日线默认 60/20, 周线 48/12, 月线 24/6(由调用方传)。
+    注: SMC 本质主观/盘中, 此处是机械代理, 捕捉机构足迹的结构性快照:
+      smc_premium_discount  末根收盘在近N根区间的位置(0折价~1溢价; 均值回归)
+      smc_fvg_net           近M根看涨FVG−看跌FVG 计数(价格不平衡方向)
+      smc_bos               末根收盘破近N-1根 swing高/低(+1/-1/0, 结构突破)
+      smc_liq_sweep         末根影线破前swing但收盘回归(±1猎杀止损, 0否)
+      smc_displacement      近M根最大实体/真实波幅(机构强动能)
+      smc_ob_retest         末根是否回到近M根最强阳线前的反向K线区域(订单块再入场, 1/0)
+    """
+    keys = ('smc_premium_discount', 'smc_fvg_net', 'smc_bos', 'smc_liq_sweep',
+            'smc_displacement', 'smc_ob_retest')
+    out = {k: np.nan for k in keys}
+    o = np.asarray(o, float); h = np.asarray(h, float)
+    l = np.asarray(l, float); c = np.asarray(c, float)
+    n = len(c)
+    if n < max(25, M + 2):
+        return out
+    hN, lN = h[max(0, n-N):], l[max(0, n-N):]
+    hM, lM, cM, oM = h[max(0, n-M):], l[max(0, n-M):], c[max(0, n-M):], o[max(0, n-M):]
+    rng = hN.max() - lN.min()
+    if rng <= 0:
+        return out
+
+    out['smc_premium_discount'] = (c[-1] - lN.min()) / rng
+
+    bull = bear = 0
+    for t in range(len(hM) - 2):
+        if lM[t + 2] > hM[t]:
+            bull += 1
+        if hM[t + 2] < lM[t]:
+            bear += 1
+    out['smc_fvg_net'] = float(bull - bear)
+
+    prev_hi = hN[:-1].max() if len(hN) > 1 else hN.max()
+    prev_lo = lN[:-1].min() if len(lN) > 1 else lN.min()
+    if c[-1] > prev_hi:
+        out['smc_bos'] = 1.0
+    elif c[-1] < prev_lo:
+        out['smc_bos'] = -1.0
+    else:
+        out['smc_bos'] = 0.0
+
+    if h[-1] > prev_hi and c[-1] < prev_hi:
+        out['smc_liq_sweep'] = -1.0
+    elif l[-1] < prev_lo and c[-1] > prev_lo:
+        out['smc_liq_sweep'] = 1.0
+    else:
+        out['smc_liq_sweep'] = 0.0
+
+    body = np.abs(cM - oM)
+    tr = np.maximum.reduce([hM - lM, np.abs(hM - oM), np.abs(lM - oM)])
+    atr = float(tr.mean())
+    out['smc_displacement'] = float(body.max() / atr) if atr > 0 else np.nan
+
+    if len(oM) >= 3:
+        up_body = np.where(cM > oM, body, 0)
+        bi = int(np.argmax(up_body))
+        if bi > 0 and oM[bi - 1] > cM[bi - 1]:    # 强阳线前是阴线 = 经典 OB
+            seg = [lM[bi - 1], oM[bi - 1], cM[bi - 1]]
+            ob_lo, ob_hi = min(seg), max(max(seg), hM[bi - 1])
+            out['smc_ob_retest'] = 1.0 if ob_lo <= c[-1] <= ob_hi else 0.0
+        else:
+            out['smc_ob_retest'] = 0.0
+    return out
+
+
+def smc_factors_multiperiod(dates, o, h, l, c):
+    """SMC 因子的周线(_W)/月线(_M)版, 匹配中期标签(1m/3m/7m)。
+    日线 SMC 配短标签(1w/2w); 周/月线 SMC 配月标签。lookback: W=48/12, M=24/6。"""
+    out = {}
+    keys = ('smc_premium_discount', 'smc_fvg_net', 'smc_bos', 'smc_liq_sweep',
+            'smc_displacement', 'smc_ob_retest')
+    for rule, tag, N, M in (('W', '_W', 48, 12), ('M', '_M', 24, 6)):
+        try:
+            ow, hw, lw, cw = _resample_ohlc(dates, o, h, l, c, rule)
+            if len(cw) < max(25, M + 2):
+                for k in keys:
+                    out[f'{k}{tag}'] = np.nan
+                continue
+            f = smc_factors(ow, hw, lw, cw, N=N, M=M)
+            for k in keys:
+                out[f'{k}{tag}'] = f.get(k, np.nan)
+        except Exception:
+            for k in keys:
+                out[f'{k}{tag}'] = np.nan
+    return out
+
+
 def compute_factors(o, h, l, c, v, amount, sret, mret, iret, dates=None):
     """主入口: 给定 OHLCV(同日期升序) + 对齐的三序列收益, 返回全部因子 dict。
     dates 给定时额外计算周/月线多周期因子(慢趋势)。单族异常不影响其余(每族 try/except)。"""
@@ -190,9 +281,11 @@ def compute_factors(o, h, l, c, v, amount, sret, mret, iret, dates=None):
         (volume_factors, (c, v, amount)),
         (moment_factors, (c,)),
         (beta_factors, (sret, mret, iret)),
+        (smc_factors, (o, h, l, c)),
     ]
     if dates is not None:
         families.append((multiperiod_factors, (dates, o, h, l, c)))
+        families.append((smc_factors_multiperiod, (dates, o, h, l, c)))
     for fn, args in families:
         try:
             out.update(fn(*args))
@@ -254,6 +347,11 @@ _FACTOR_NAMES_OF = {
     'moment_factors': ['ret_skew_20', 'ret_kurt_20', 'ret_skew_60', 'ret_kurt_60',
                        'ROC_5', 'ROC_10', 'ROC_20', 'ROC_60'],
     'beta_factors': ['beta_mkt_60', 'beta_mkt_120', 'beta_mkt_250', 'beta_ind_120', 'idiovol_120'],
+    'smc_factors': ['smc_premium_discount', 'smc_fvg_net', 'smc_bos', 'smc_liq_sweep',
+                    'smc_displacement', 'smc_ob_retest'],
+    'smc_factors_multiperiod': [f'{k}{t}' for t in ('_W', '_M') for k in
+                                ('smc_premium_discount', 'smc_fvg_net', 'smc_bos',
+                                 'smc_liq_sweep', 'smc_displacement', 'smc_ob_retest')],
     'multiperiod_factors': [f'{x}_{t}' for t in ('W', 'M') for x in
                             ('RSI', 'MACD_DIF', 'MACD_DEA', 'MACD_HIST', 'KDJ_K', 'KDJ_D', 'KDJ_J',
                              'BOLL_pctB', 'BOLL_BW', 'ROC_1', 'ROC_3')],

@@ -8,14 +8,20 @@ fina_indicator.ann_date ≈ 年报公告日，用于 load_financial_ratios 做 p
 用法: python backfill_ann_date.py [--token T]
 """
 import argparse
+import os
+import sys
 import time
 import pymysql
 import tushare as ts
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from tushare_token import resolve_tushare_token   # noqa: E402
+os.environ.setdefault('TUSHARE_TOKEN', resolve_tushare_token())
+
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--token', default='f2380d8761bcbf165f87b85f04ed105b1bdcf8721574562294671265')
+    ap.add_argument('--token', default=None, help='tushare token(默认走 resolve_tushare_token)')
     ap.add_argument('--sleep', type=float, default=0.18)
     args = ap.parse_args()
 
@@ -26,7 +32,7 @@ def main():
     codes = [r[0] for r in cur.fetchall()]
     print(f'待回填 ann_date 的股票: {len(codes)}')
 
-    pro = ts.pro_api(args.token)
+    pro = ts.pro_api(args.token or os.environ['TUSHARE_TOKEN'])
     ok = rows = fail = 0
     for i, code in enumerate(codes):
         try:

@@ -24,7 +24,6 @@
 │
 ├── scripts/                        # 工具脚本
 │   ├── generate_word_report.py         # Word报告生成器
-│   ├── fetch_gh_data.py                # 数据获取脚本
 │   └── update_market_data.py           # 市场数据更新
 │
 └── utils/                          # 工具模块

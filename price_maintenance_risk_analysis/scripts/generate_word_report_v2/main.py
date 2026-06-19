@@ -107,7 +107,7 @@ def _get_historical_price_and_ma20(stock_code, issue_date_str, force_regenerate=
                 return bidding_date_price, ma20_price
 
         # DB中无数据或需要重新生成
-        from update_market_data import generate_market_data, fetch_latest_data
+        from data_pipeline.update_market_data import generate_market_data, fetch_latest_data
 
         print(f"  基于发行日{issue_date_str}生成市场数据...")
         market_data = generate_market_data(stock_code, stock_code, issue_date_str)
@@ -147,7 +147,7 @@ def _get_historical_price_and_ma20(stock_code, issue_date_str, force_regenerate=
         print()
         print(f"  🔄 生成基于发行日的锁定指数数据...")
         try:
-            from update_indices_data import rebuild_locked_indices_data
+            from data_pipeline.update_indices_data import rebuild_locked_indices_data
             indices_results = rebuild_locked_indices_data(stock_code, issue_date_str)
             if indices_results:
                 print(f"  ✅ 锁定指数数据生成成功")
@@ -279,7 +279,7 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
 
             # 使用模块导入方式，避免命名冲突
             import importlib
-            update_module = importlib.import_module('update_market_data')
+            update_module = importlib.import_module('data_pipeline.update_market_data')
 
             # 生成市场数据
             print(f"   调用update_market_data.generate_market_data...")
@@ -415,7 +415,7 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
             import subprocess
 
             # 更新市场指数数据
-            update_indices_script = os.path.join(PROJECT_DIR, 'scripts', 'update_indices_data.py')
+            update_indices_script = os.path.join(PROJECT_DIR, 'scripts', 'data_pipeline', 'update_indices_data.py')
 
             if os.path.exists(update_indices_script):
                 print(" 1. 更新市场指数数据...")
@@ -434,7 +434,7 @@ def generate_report(stock_code='300735.SZ', stock_name='光弘科技', issue_dat
             scripts_dir = os.path.join(PROJECT_DIR, 'scripts')
             if scripts_dir not in sys.path:
                 sys.path.insert(0, scripts_dir)
-            from update_market_data import generate_market_data
+            from data_pipeline.update_market_data import generate_market_data
 
             updated_market_data = generate_market_data(stock_code, stock_name, issue_date)
 
@@ -607,7 +607,7 @@ def _ensure_market_data(stock_code, stock_name, market_data_file, issue_date=Non
     if scripts_dir not in sys.path:
         sys.path.insert(0, scripts_dir)
     import importlib
-    update_module = importlib.import_module('update_market_data')
+    update_module = importlib.import_module('data_pipeline.update_market_data')
     updated_data = update_module.generate_market_data(
         stock_code, stock_name or stock_code, issue_date,
     )
@@ -844,7 +844,7 @@ def _load_industry_data(stock_code, auto_generate=True, issue_date=None):
                                 scripts_dir = os.path.join(PROJECT_DIR, 'scripts')
                                 if scripts_dir not in sys.path:
                                     sys.path.insert(0, scripts_dir)
-                                from update_market_data import generate_industry_data
+                                from data_pipeline.update_market_data import generate_industry_data
                                 new_data = generate_industry_data(stock_code, issue_date=issue_date)
                                 if new_data:
                                     db.save_industry_data(stock_code, new_data)
@@ -887,7 +887,7 @@ def _load_industry_data(stock_code, auto_generate=True, issue_date=None):
             scripts_dir = os.path.join(PROJECT_DIR, 'scripts')
             if scripts_dir not in sys.path:
                 sys.path.insert(0, scripts_dir)
-            from update_market_data import generate_industry_data
+            from data_pipeline.update_market_data import generate_industry_data
             industry_data = generate_industry_data(stock_code, issue_date=issue_date)
             if industry_data:
                 # 保存到DB

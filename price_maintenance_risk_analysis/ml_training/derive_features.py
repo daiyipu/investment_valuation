@@ -231,6 +231,55 @@ def derive_market_momentum(df):
     return df
 
 
+# ====== M类: 定增结构衍生(折价率/稀释率/募集市值比/大股东参与/锁定期, 优先级1 domain核心) ======
+
+def derive_placement_structure(df):
+    """定增结构衍生特征。原料: 定增_发行价/增发数/募资/股本/发行对象/定价原则/发行方式/解禁日。
+    绝对原料(发行价/增发数/募资/股本)不可跨公司比较, 由 feature_exclusions 剔除, 仅留衍生比率/类别。
+    数据源: 东方财富 RPT_SEO_DETAIL(81%覆盖) + 易米主表解禁日(20%)。
+    """
+    print('\n  M类: 定增结构衍生特征...')
+    new = {}
+    price = pd.to_numeric(df.get('报价日价格'), errors='coerce')
+    iprice = pd.to_numeric(df.get('定增_发行价'), errors='coerce')
+    inum = pd.to_numeric(df.get('定增_增发数量'), errors='coerce')
+    share_b = pd.to_numeric(df.get('定增_发行前股本'), errors='coerce')
+    raise_total = pd.to_numeric(df.get('定增_募资总额'), errors='coerce')
+
+    # 折价率 = 发行价/市价 - 1 (负=折价; 折价越深, 解禁抛压越大)
+    new['折价率'] = _safe_divide(iprice, price) - 1
+    # 稀释率 = 增发数 / 发行前股本
+    new['定增稀释率'] = _safe_divide(inum, share_b)
+    # 募集市值比 = 募资 / (发行前股本 × 市价) ≈ 募资/发行前总市值
+    new['募集市值比'] = _safe_divide(raise_total, share_b * price)
+
+    # 大股东参与(heuristic): 发行对象含 控股/实际控制/实控人, 或与股票简称同名实体
+    obj = df.get('定增_发行对象', pd.Series(index=df.index, dtype=object)).fillna('').astype(str)
+    name = df.get('股票简称', pd.Series(index=df.index, dtype=object)).fillna('').astype(str)
+    kw_hit = obj.str.contains('控股|实际控制|实控人', regex=True)
+    name_hit = pd.Series([(len(n) >= 2 and n in o) for n, o in zip(name, obj)], index=df.index)
+    big_holder = (kw_hit | name_hit).fillna(False)
+    new['定增大股东参与'] = big_holder.astype(int)
+
+    # 锁定期天数: 有解禁日则(解禁日−报价日); 否则规则 18m(大股东/战投)/6m(其他)
+    issue = pd.to_datetime(df.get('报价日'), format='%Y%m%d', errors='coerce')
+    unlock = pd.to_datetime(df.get('定增_解禁日'), format='%Y%m%d', errors='coerce')
+    lock_from_date = (unlock - issue).dt.days
+    lock_rule = pd.Series(np.where(big_holder, 540, 180), index=df.index)
+    new['定增锁定期天数'] = lock_from_date.combine_first(lock_rule)
+
+    # 询价发行(0/1): 发行方式/定价原则含"询价" → 市场化定价代理
+    way = (df.get('定增_发行方式', pd.Series(index=df.index, dtype=object)).fillna('').astype(str)
+           + df.get('定增_定价原则', pd.Series(index=df.index, dtype=object)).fillna('').astype(str))
+    new['定增_询价发行'] = way.str.contains('询价').astype(int)
+
+    for k, v in new.items():
+        df[k] = v
+    cov = {k: f'{pd.Series(v).notna().mean()*100:.0f}%' for k, v in new.items()}
+    print(f'    +{len(new)}个特征: {", ".join(f"{k}({v})" for k,v in cov.items())}')
+    return df
+
+
 # ====== F类: 行业PE/PB增长率 (+6特征, 需DB) ======
 
 def derive_industry_valuation_growth(df):
@@ -923,6 +972,7 @@ def main():
     df = derive_financial_score_deltas(df)
     df = derive_valuation_relative(df)
     df = derive_market_momentum(df)
+    df = derive_placement_structure(df)
 
     # ====== Stage 2: DB-dependent ======
     if not args.no_db:

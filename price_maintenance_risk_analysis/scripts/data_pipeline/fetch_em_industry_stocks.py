@@ -76,7 +76,7 @@ _req_mod.request_with_retry = _patched_request_with_retry
 # ==================== 主逻辑 ====================
 
 # 添加项目路径
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from utils.db_manager import ValuationDB
 
 import akshare as ak

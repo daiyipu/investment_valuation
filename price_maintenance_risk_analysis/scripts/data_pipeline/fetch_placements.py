@@ -66,7 +66,7 @@ def main(years=20):
     dx = dx.sort_values('增发上市日', ascending=False).reset_index(drop=True)
     dx.insert(0, '序号', range(1, len(dx) + 1))
 
-    out_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'ml_training', 'data')
+    out_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'ml_training', 'data')
     os.makedirs(out_dir, exist_ok=True)
     tag = pd.Timestamp.now().strftime('%Y%m%d')
     path = os.path.join(out_dir, f'placements_{span}_{tag}.xlsx')

@@ -11,6 +11,7 @@ cash_to_liqdebt_withinterest/rd_exp_ratio)为 NULL 的股票做完整重算。
     python backfill_financial_indicators.py <scored_excel> [--token T] [--years 5]
 """
 import argparse
+import os
 import sys
 import time
 import numpy as np
@@ -23,6 +24,11 @@ EFAES_PATH = '/Users/davy/github/EFAES'
 if EFAES_PATH not in sys.path:
     sys.path.insert(0, EFAES_PATH)
 from src.core.calculate_financial_ratios import calculate_financial_ratios  # noqa: E402
+
+# tushare token: 走 resolve_tushare_token(不再硬编码; 旧 literal f2380... 已泄漏, 需在 tushare.pro 轮换)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from tushare_token import resolve_tushare_token  # noqa: E402
+os.environ.setdefault('TUSHARE_TOKEN', resolve_tushare_token())
 
 TABLE_FIELDS = [
     'current_ratio', 'quick_ratio', 'inv_turn', 'ar_turn', 'ca_turn', 'assets_turn',
@@ -67,7 +73,7 @@ def _fetch_statements(pro, code, start, end):
 def main():
     ap = argparse.ArgumentParser(description='回填 financial_indicators(三表算法, 与定增同源)')
     ap.add_argument('excel', help='含 股票代码 列的 Excel')
-    ap.add_argument('--token', default='f2380d8761bcbf165f87b85f04ed105b1bdcf8721574562294671265')
+    ap.add_argument('--token', default=None, help='tushare token(默认走 resolve_tushare_token)')
     ap.add_argument('--years', type=int, default=5)
     ap.add_argument('--start-year', type=int, default=2016)  # 多取几年供平均值(当年+上年)
     ap.add_argument('--end-year', type=int, default=2025)
@@ -85,7 +91,7 @@ def main():
     missing = [c for c in codes if c in null_codes]
     print(f'Excel {len(codes)} 只; 缺 5 报表字段待重算: {len(missing)}')
 
-    pro = ts.pro_api(args.token)
+    pro = ts.pro_api(args.token or os.environ['TUSHARE_TOKEN'])
     cur = conn.cursor()
     sd, ed = f'{args.start_year}0101', f'{args.end_year}1231'
     target_years = list(range(args.end_year - args.years + 1, args.end_year + 1))

@@ -156,7 +156,7 @@ def load_placement_config(
         print(f"✅ 使用配置文件中的发行价: {issue_price:.2f} 元/股")
     else:
         # 没有市场数据且配置文件中没有发行价，抛出错误
-        raise ValueError("无法获取发行价：系统应自动生成市场数据，但自动生成失败。请检查网络连接和Tushare API配置，或手动运行: python scripts/update_market_data.py")
+        raise ValueError("无法获取发行价：系统应自动生成市场数据，但自动生成失败。请检查网络连接和Tushare API配置，或手动运行: python scripts/data_pipeline/update_market_data.py")
 
     # 4. 计算发行数量（固定使用1亿元投资金额）
     # 固定投资金额为1亿元，与实际融资金额无关，仅用于风险评估
@@ -173,7 +173,7 @@ def load_placement_config(
         current_price = placement_params['current_price']
         print(f"✅ 使用配置文件中的当前价格: {current_price:.2f} 元")
     else:
-        raise ValueError("无法获取当前价格：系统应自动生成市场数据，但自动生成失败。请检查网络连接和Tushare API配置，或手动运行: python scripts/update_market_data.py")
+        raise ValueError("无法获取当前价格：系统应自动生成市场数据，但自动生成失败。请检查网络连接和Tushare API配置，或手动运行: python scripts/data_pipeline/update_market_data.py")
 
     # 6. 构建项目参数
     project_params = {
@@ -341,5 +341,5 @@ if __name__ == '__main__':
     except FileNotFoundError as e:
         print(f"❌ {e}")
         print("\n请确保:")
-        print("1. 已运行 fetch_gh_data.py 生成定增参数文件")
+        print("1. 定增参数已在 DB placement_params 表(batch_screener 自动加载)")
         print("2. 已运行 07_market_data_analysis.ipynb 生成市场数据文件")

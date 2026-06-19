@@ -20,7 +20,7 @@ import pymysql
 import pandas as pd
 import tushare as ts
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from tushare_token import resolve_tushare_token
 from utils.db_manager import ValuationDB
 os.environ.setdefault('TUSHARE_TOKEN', resolve_tushare_token())

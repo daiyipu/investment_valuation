@@ -2784,7 +2784,7 @@ def update_market_data(stock_code='300735.SZ'):
     """
     print(f"\n📡 正在更新 {stock_code} 的市场数据...")
 
-    update_script = os.path.join(SCRIPT_DIR, 'update_market_data.py')
+    update_script = os.path.join(SCRIPT_DIR, 'data_pipeline', 'update_market_data.py')
 
     if not os.path.exists(update_script):
         print(f"❌ 未找到更新脚本: {update_script}")
@@ -4195,7 +4195,7 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
     historical_incomes = None
 
     try:
-        from update_market_data import TushareFinancialData
+        from data_pipeline.update_market_data import TushareFinancialData
 
         ts_token = os.environ.get('TUSHARE_TOKEN', '')
         if ts_token:

@@ -72,9 +72,9 @@ def main():
     parser.add_argument('--input', required=True, help='输入Excel文件路径（含"股票代码"和"股票简称"列）')
     parser.add_argument('--sheet', default='0', help='读取Excel的第几个sheet（序号从0开始，默认0）')
     parser.add_argument('--force', action='store_true', help='强制全量重跑(忽略已有结果, 默认断点续传)')
-    parser.add_argument('--step', type=int, default=1, choices=[1, 2, 3],
+    parser.add_argument('--step', type=int, default=1, choices=[1, 2, 3, 4],
                         help='从指定步骤开始(默认1全流程): 2=跳过Step1直接财务评分(行级续传补失败行), '
-                             '3=只重算最终结论+落库+ML(不动评分)')
+                             '3=复用评分跑ML+最终结论+落库, 4=只重算最终结论+落库(需已含ML档位列)')
     args = parser.parse_args()
     start_step = args.step
 
@@ -136,12 +136,25 @@ def main():
         if not os.path.exists(scored_output):
             print(f'⚠️ 评分结果文件未生成: {scored_output}'); sys.exit(1)
 
-    # ── Step 3: 追加最终结论列 (幂等: 已有则复用列, 不重复添加) ──
-    # 规则: 定增决策="建议参与" 且 成长能力_趋势="通过" → 最终"通过"
-    t_step3 = time.time()
+    # ── Step 3: ML 盈利概率预测 — 须在最终结论之前, 供 7m 评分卡档位筛选 ──
+    if start_step > 3:
+        if not os.path.exists(scored_output):
+            print(f'❌ --step {start_step} 需要 Step 2 结果已存在: {scored_output}')
+            sys.exit(1)
+        print(f'  ⏭️  Step 3 跳过（--step {start_step}），复用已有 ML 预测结果')
+    elif not os.path.exists(PREDICT_SCRIPT):
+        print(f'\n⚠️ ML预测脚本不存在: {PREDICT_SCRIPT}，跳过 Step 3')
+    else:
+        step3_cmd = [PYTHON, PREDICT_SCRIPT, scored_output]
+        if not run_step('Step 3/4: ML盈利概率预测', step3_cmd):
+            print('⚠️ ML预测失败，最终结论将不含 ML 档位筛选（退回纯策略结论）')
+
+    # ── Step 4: 最终结论(含 ML 档位筛选) + 落库 (幂等: 已有则复用列, 不重复添加) ──
+    # 规则: 定增决策="建议参与" 且 成长能力_趋势="通过" 且 7m评分卡档位均>5 → 最终"通过"
+    t_step4 = time.time()
     print()
     print('=' * 60)
-    print('  Step 3/4: 生成最终结论')
+    print('  Step 4/4: 生成最终结论')
     print('=' * 60)
 
     wb = openpyxl.load_workbook(scored_output)
@@ -151,6 +164,10 @@ def main():
     header_row = [ws.cell(1, col).value for col in range(1, ws.max_column + 1)]
     decision_col = header_row.index('定增决策') + 1
     growth_col = header_row.index('成长能力_趋势') + 1
+    # 7m 评分卡档位列(主评分卡 + BLUE, 排除 1m/3m 短期与 LGB): 用于 ML 档位筛选
+    tier_cols_7m = [i + 1 for i, h in enumerate(header_row) if str(h).startswith('档位_评分卡')]
+    if not tier_cols_7m:
+        print('  ⚠️ 未发现 档位_评分卡* 列(ML 未产出), 最终结论退回纯策略判定(定增✓且成长✓)')
 
     # 最终结论列: 已有则复用(幂等), 无则新增
     if '最终结论' in header_row:
@@ -164,19 +181,33 @@ def main():
         decision = str(ws.cell(row_idx, decision_col).value or '')
         growth = str(ws.cell(row_idx, growth_col).value or '')
 
-        # 定增决策: 包含"建议参与"即为通过
+        # 策略: 定增含"建议参与" 且 成长趋势=="通过"
         decision_pass = '建议参与' in decision
-        # 成长能力趋势: 精确匹配"通过"
         growth_pass = growth.strip() == '通过'
 
-        conclusion = '通过' if (decision_pass and growth_pass) else '不通过'
+        # ML 档位筛选: 所有 7m 评分卡档位 > 5(≥6); 缺列→跳过ML(退回策略); 缺值→该档位记0(不达标)
+        if not tier_cols_7m:
+            ml_pass, ml_note = True, '无ML'
+        else:
+            vals = []
+            for ci in tier_cols_7m:
+                raw = ws.cell(row_idx, ci).value
+                try:
+                    vals.append(int(float(raw)))
+                except (TypeError, ValueError):
+                    vals.append(0)
+            ml_pass = all(v > 5 for v in vals)
+            ml_note = ','.join(str(v) for v in vals)
+
+        conclusion = '通过' if (decision_pass and growth_pass and ml_pass) else '不通过'
         ws.cell(row_idx, final_col, conclusion)
         if conclusion == '通过':
             pass_count += 1
 
         stock_name = ws.cell(row_idx, header_row.index('股票简称') + 1).value or ''
         stock_code = ws.cell(row_idx, header_row.index('股票代码') + 1).value or ''
-        print(f'  {stock_code} {stock_name}: 定增={"✓" if decision_pass else "✗"} 成长={"✓" if growth_pass else "✗"} → {conclusion}')
+        print(f'  {stock_code} {stock_name}: 定增={"✓" if decision_pass else "✗"} '
+              f'成长={"✓" if growth_pass else "✗"} ML档位[{ml_note}]={"✓" if ml_pass else "✗"} → {conclusion}')
 
     wb.save(scored_output)
 
@@ -306,25 +337,10 @@ def main():
     except Exception as e:
         print(f'  ⚠️ 落库失败(不影响Excel输出): {e}')
 
-    step3_elapsed = time.time() - t_step3
+    step4_elapsed = time.time() - t_step4
     total = ws.max_row - 1
     print()
-    print(f'  最终结论: {pass_count}/{total} 通过 [耗时 {step3_elapsed:.1f}s]')
-
-    # ── Step 4: ML模型预测盈利概率 ──
-    if not os.path.exists(PREDICT_SCRIPT):
-        print(f'\n⚠️ ML预测脚本不存在: {PREDICT_SCRIPT}，跳过 Step 4')
-    else:
-        print()
-        print('=' * 60)
-        print('  Step 4/4: ML模型预测盈利概率（LightGBM + 逻辑回归）')
-        print('=' * 60)
-        step4_cmd = [
-            PYTHON, PREDICT_SCRIPT,
-            scored_output,
-        ]
-        if not run_step('Step 4/4: ML盈利概率预测', step4_cmd):
-            print('⚠️ ML预测失败，不影响前面步骤的结果')
+    print(f'  最终结论: {pass_count}/{total} 通过 [耗时 {step4_elapsed:.1f}s]')
 
     print()
     total_elapsed = time.time() - t_total

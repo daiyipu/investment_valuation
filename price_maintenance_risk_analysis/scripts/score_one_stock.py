@@ -123,12 +123,20 @@ def build_sections(row, code, name, issue_date):
     sections.append(('财务评分趋势', fin_items))
 
     # ── ML 盈利概率(动态发现所有 盈利概率_* / 档位_* 列, 配对输出) ──
+    # 7m 评分卡档位(主+BLUE, tag 以"评分卡"开头)参与最终结论门槛: >5 标 ✓, ≤5 标 ✗;
+    # 1m/3m 短期列仅展示不标门槛。
     prob_cols = [c for c in row.keys() if str(c).startswith('盈利概率_')]
     ml_items = []
     for pc in prob_cols:
         tag = str(pc)[len('盈利概率_'):]
-        tier = _fmt(row.get(f'档位_{tag}'))
-        ml_items.append((tag, f'{_fmt(row.get(pc))}   (档位 {tier})'))
+        tier_raw = _fmt(row.get(f'档位_{tag}'))
+        mark = ''
+        if tag.startswith('评分卡'):   # 主评分卡 / BLUE(7m), 排除 1m/3m/LGB
+            try:
+                mark = ' ✓' if int(float(tier_raw)) > 5 else ' ✗'
+            except (TypeError, ValueError):
+                mark = ' ✗'
+        ml_items.append((tag, f'{_fmt(row.get(pc))}   (档位 {tier_raw}{mark})'))
     if ml_items:
         sections.append(('ML 盈利概率', ml_items))
 

@@ -467,6 +467,53 @@ def load_scored_features_from_db(sample_keys):
             r['定增决策'] = pe.get('decision')
             r['定增建议参与'] = 1 if '建议参与' in str(pe.get('decision', '')) else 0
 
+            # 定增结构(东方财富 RPT_SEO_DETAIL + 易米主表; domain 核心特征源)
+            #   raw 字段 → derive_features 算干净比率(折价率/稀释率/募集市值比/大股东参与/锁定期)
+            #   绝对值(发行价/增发数/募资/股本)不可跨公司比较, 由 feature_exclusions 剔除, 仅作衍生原料
+            r['定增_发行价'] = pe.get('em_issue_price')
+            r['定增_增发数量'] = pe.get('em_issue_num')
+            r['定增_募资总额'] = pe.get('em_raise_total')
+            r['定增_发行前股本'] = pe.get('em_share_before')
+            r['定增_发行后股本'] = pe.get('em_share_after')
+            r['定增_发行对象'] = pe.get('em_issue_object')
+            r['定增_定价原则'] = pe.get('em_price_principle')
+            r['定增_发行方式'] = pe.get('em_issue_way')
+            r['定增_解禁日'] = pe.get('pp_unlock_date')
+            r['定增_承销商'] = pe.get('pp_underwriter')
+
+            # 筹码分布衍生(cyq_chips 2018起; 强信号: chip_concentration 7m IV=0.22)
+            #   由 fetch_chip_distribution.py 在报价日 PIT 算好回填, 此处直接发射
+            r['chip_winner_rate'] = pe.get('chip_winner_rate')       # 获利盘比例
+            r['chip_avg_cost_dev'] = pe.get('chip_avg_cost_dev')   # 平均成本/现价-1
+            r['chip_concentration'] = pe.get('chip_concentration') # 筹码集中度 HHI
+            r['chip_peak_dev'] = pe.get('chip_peak_dev')           # 筹码峰/现价-1
+            r['chip_cost_spread'] = pe.get('chip_cost_spread')     # 成本离散 P75-P25/现价
+
+            # 资金流 + 北向(moneyflow/hk_hold; fetch_factors capitalflow 回填) — 特征
+            for _c in ('mf_main_net_ratio_5d', 'mf_main_net_ratio_20d', 'mf_net_mf_ratio_20d',
+                       'mf_main_mom', 'mf_sm_net_ratio_20d', 'nb_hold_ratio',
+                       'nb_hold_chg_20d', 'nb_hold_chg_60d'):
+                r[_c] = pe.get(_c)
+            # SMC 聪明钱(日/W/M; fetch_factors smc 回填; 周月线配月标签) — 特征
+            for _base in ('smc_premium_discount', 'smc_fvg_net', 'smc_bos', 'smc_liq_sweep',
+                          'smc_displacement', 'smc_ob_retest'):
+                r[_base] = pe.get(_base)
+                for _t in ('_W', '_M'):
+                    r[f'{_base}{_t}'] = pe.get(f'{_base}{_t}')
+            # 超额收益原始(compute_labels excess 回填; 目标变量→feature_exclusions 排除) + _0标签(跑赢基准)
+            for _h in (1, 3, 7):
+                for _b in ('mkt', 'ind'):
+                    _e = pe.get(f'excess_{_b}_{_h}m')
+                    r[f'excess_{_b}_{_h}m'] = _e
+                    if pd.notna(_e):
+                        r[f'标签_超{_b}_{_h}m_0'] = int(float(_e) > 0)
+            # 短线收益原始(compute_labels shortterm 回填; 目标变量→排除) + _0标签
+            for _w, _wn in (('1w', '1周'), ('2w', '2周'), ('4w', '4周')):
+                _sr = pe.get(f'return_{_w}')
+                r[f'{_wn}涨跌幅'] = _sr
+                if pd.notna(_sr):
+                    r[f'标签_短_{_w}_0'] = int(float(_sr) > 0)
+
             # 标签: 各期限涨跌幅 + 阈值标签 + 灰度剔除极性标签
             #   灰度区 [-20%, +10%] 剔除(NaN): 只留明显赢家(>+10%) vs 明显输家(<-20%)
             for _h in (1, 3, 6, 7, 12):
@@ -522,6 +569,19 @@ def load_scored_features_from_db(sample_keys):
         results.append(r)
 
     result_df = pd.DataFrame(results)
+    # 超额/短线 gray 极性标签(p75/p25 分位, 全样本算) — compute_labels 只存原始, 标签在此统一发射
+    for _h in (1, 3, 7):
+        for _b in ('mkt', 'ind'):
+            _col = f'excess_{_b}_{_h}m'
+            if _col in result_df.columns:
+                _s = pd.to_numeric(result_df[_col], errors='coerce')
+                _p25, _p75 = _s.quantile(0.25), _s.quantile(0.75)
+                result_df[f'标签_超{_b}_{_h}m_gray'] = np.where(_s > _p75, 1, np.where(_s < _p25, 0, np.nan))
+    for _w, _wn in (('1w', '1周'), ('2w', '2周'), ('4w', '4周')):
+        if f'{_wn}涨跌幅' in result_df.columns:
+            _s = pd.to_numeric(result_df[f'{_wn}涨跌幅'], errors='coerce')
+            _p25, _p75 = _s.quantile(0.25), _s.quantile(0.75)
+            result_df[f'标签_短_{_w}_gray'] = np.where(_s > _p75, 1, np.where(_s < _p25, 0, np.nan))
     n = len(result_df)
     print(f'  DB评分数据: {n}条 (placement_evaluation + company_annual_scores)')
     return result_df
@@ -769,7 +829,7 @@ def main():
     sample_keys = load_sample_keys_from_db()
     print(f'   {len(sample_keys)} 条 (stock_code, issue_date)')
     if not sample_keys:
-        print('   ⚠️ placement_evaluation 无数据，请先运行 backfill_evaluations.py')
+        print('   ⚠️ placement_evaluation 无数据，请先运行 scripts/data_pipeline/backfill_evaluations.py')
         sys.exit(1)
 
     print('   加载评分/标签 (placement_evaluation + company_annual_scores)...')

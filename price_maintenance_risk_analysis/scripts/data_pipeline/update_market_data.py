@@ -2001,7 +2001,7 @@ if __name__ == '__main__':
     if args.all:
         # 批量: 循环 placement_evaluation 全部股票, qfq 重生成 market_data 并落库
         import pymysql
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
         from tushare_token import resolve_tushare_token
         os.environ.setdefault('TUSHARE_TOKEN', resolve_tushare_token())
         from utils.db_manager import ValuationDB
@@ -2048,11 +2048,11 @@ if __name__ == '__main__':
 
         # 保存到DB
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        data_dir = os.path.join(os.path.dirname(script_dir), 'data')
+        data_dir = os.path.join(os.path.dirname(os.path.dirname(script_dir)), 'data')
         os.makedirs(data_dir, exist_ok=True)
 
         try:
-            sys.path.insert(0, os.path.dirname(script_dir))
+            sys.path.insert(0, os.path.dirname(os.path.dirname(script_dir)))
             from utils.db_manager import ValuationDB
             db = ValuationDB()
             db.save_market_data(stock_code, market_data)
