@@ -193,7 +193,7 @@ def smc_factors(o, h, l, c, N=60, M=20):
       smc_ob_retest         末根是否回到近M根最强阳线前的反向K线区域(订单块再入场, 1/0)
     """
     keys = ('smc_premium_discount', 'smc_fvg_net', 'smc_bos', 'smc_liq_sweep',
-            'smc_displacement', 'smc_ob_retest')
+            'smc_displacement', 'smc_ob_retest', 'smc_ote', 'smc_liqvoid')
     out = {k: np.nan for k in keys}
     o = np.asarray(o, float); h = np.asarray(h, float)
     l = np.asarray(l, float); c = np.asarray(c, float)
@@ -246,6 +246,17 @@ def smc_factors(o, h, l, c, N=60, M=20):
             out['smc_ob_retest'] = 1.0 if ob_lo <= c[-1] <= ob_hi else 0.0
         else:
             out['smc_ob_retest'] = 0.0
+
+    # smc_ote: OTE 最优入场区(fib 0.62-0.79 回撤带; 价格落入=1, 均值回归入场)
+    ote_lo = lN.min() + 0.62 * rng
+    ote_hi = lN.min() + 0.79 * rng
+    out['smc_ote'] = 1.0 if ote_lo <= c[-1] <= ote_hi else 0.0
+    # smc_liqvoid: 流动性真空(近M日大实体 |c-o|>1.5*ATR 视为跳空真空; 上下方向计数差)
+    if atr > 0:
+        vmask = body > 1.5 * atr
+        out['smc_liqvoid'] = float(np.where(cM[vmask] > oM[vmask], 1, -1).sum()) if vmask.any() else 0.0
+    else:
+        out['smc_liqvoid'] = 0.0
     return out
 
 
@@ -254,7 +265,7 @@ def smc_factors_multiperiod(dates, o, h, l, c):
     日线 SMC 配短标签(1w/2w); 周/月线 SMC 配月标签。lookback: W=48/12, M=24/6。"""
     out = {}
     keys = ('smc_premium_discount', 'smc_fvg_net', 'smc_bos', 'smc_liq_sweep',
-            'smc_displacement', 'smc_ob_retest')
+            'smc_displacement', 'smc_ob_retest', 'smc_ote', 'smc_liqvoid')
     for rule, tag, N, M in (('W', '_W', 48, 12), ('M', '_M', 24, 6)):
         try:
             ow, hw, lw, cw = _resample_ohlc(dates, o, h, l, c, rule)
@@ -348,10 +359,11 @@ _FACTOR_NAMES_OF = {
                        'ROC_5', 'ROC_10', 'ROC_20', 'ROC_60'],
     'beta_factors': ['beta_mkt_60', 'beta_mkt_120', 'beta_mkt_250', 'beta_ind_120', 'idiovol_120'],
     'smc_factors': ['smc_premium_discount', 'smc_fvg_net', 'smc_bos', 'smc_liq_sweep',
-                    'smc_displacement', 'smc_ob_retest'],
+                    'smc_displacement', 'smc_ob_retest', 'smc_ote', 'smc_liqvoid'],
     'smc_factors_multiperiod': [f'{k}{t}' for t in ('_W', '_M') for k in
                                 ('smc_premium_discount', 'smc_fvg_net', 'smc_bos',
-                                 'smc_liq_sweep', 'smc_displacement', 'smc_ob_retest')],
+                                 'smc_liq_sweep', 'smc_displacement', 'smc_ob_retest',
+                                 'smc_ote', 'smc_liqvoid')],
     'multiperiod_factors': [f'{x}_{t}' for t in ('W', 'M') for x in
                             ('RSI', 'MACD_DIF', 'MACD_DEA', 'MACD_HIST', 'KDJ_K', 'KDJ_D', 'KDJ_J',
                              'BOLL_pctB', 'BOLL_BW', 'ROC_1', 'ROC_3')],

@@ -50,10 +50,10 @@ COLS = {
                     ('nb_hold_chg_20d', 'DOUBLE'), ('nb_hold_chg_60d', 'DOUBLE')],
     'smc': [(c, 'DOUBLE') for c in
             ['smc_premium_discount', 'smc_fvg_net', 'smc_bos', 'smc_liq_sweep',
-             'smc_displacement', 'smc_ob_retest']
+             'smc_displacement', 'smc_ob_retest', 'smc_ote', 'smc_liqvoid']
             + [f'{k}{t}' for t in ('_W', '_M') for k in
                ['smc_premium_discount', 'smc_fvg_net', 'smc_bos', 'smc_liq_sweep',
-                'smc_displacement', 'smc_ob_retest']]],
+                'smc_displacement', 'smc_ob_retest', 'smc_ote', 'smc_liqvoid']]],
 }
 
 

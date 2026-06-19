@@ -495,11 +495,10 @@ def load_scored_features_from_db(sample_keys):
                        'nb_hold_chg_20d', 'nb_hold_chg_60d'):
                 r[_c] = pe.get(_c)
             # SMC 聪明钱(日/W/M; fetch_factors smc 回填; 周月线配月标签) — 特征
-            for _base in ('smc_premium_discount', 'smc_fvg_net', 'smc_bos', 'smc_liq_sweep',
-                          'smc_displacement', 'smc_ob_retest'):
-                r[_base] = pe.get(_base)
-                for _t in ('_W', '_M'):
-                    r[f'{_base}{_t}'] = pe.get(f'{_base}{_t}')
+            # 通用发射: 自动发所有 smc_* 列(新增 smc_ote/smc_liqvoid 等免改此处)
+            for _k, _v in pe.items():
+                if isinstance(_k, str) and _k.startswith('smc_'):
+                    r[_k] = _v
             # 超额收益原始(compute_labels excess 回填; 目标变量→feature_exclusions 排除) + _0标签(跑赢基准)
             for _h in (1, 3, 7):
                 for _b in ('mkt', 'ind'):
