@@ -4,7 +4,7 @@
 
 ═══════════════════════════════════════════════════════════════════
 固定五步 (阈值见下方常量, 已定标; 改阈值 = 只改这一处):
-  1. IV top-N      候选池       单变量区分力(信息值)
+  1. IV>0.02且top50 候选池      单变量区分力(IV下限+top50 双条件, 2026-06-20 收紧)
   2. PSI ≤ ψ_max   跨期稳定     train/test 分布漂移; 防 regime 走捷径
   3. |r| ≤ ρ_max   去相关       冗余特征(如 ROE vs ROE摊薄), 保留 IV 高者
   4. VIF < ν_max   多重共线     逐步剔 VIF 最大者
@@ -35,8 +35,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from train_scorecard import calc_iv_all_features, remove_correlated, filter_by_vif
 
 # ─────────────── 固定阈值(定标, 勿轻易改) ───────────────
-IV_MIN = 0.01      # 步1: IV 下限, >此值即进入漏斗(替代旧 top-N 截断; 弱信号短期目标勿被排名挤出)
-N_IV = None        # (已弃用) 旧 top-N 硬上限; 保留常量名供历史 import, 步1 实际用 IV_MIN
+IV_MIN = 0.02      # 步1: IV 下限, >此值才进漏斗(2026-06-20 由 0.01 收紧; 与 N_IV 双条件同时生效)
+N_IV = 50          # 步1: IV top-N 硬上限(与 IV_MIN 双条件: IV>0.02 且 排名≤50; 防每折选太多致共识膨胀→评分卡过拟合)
 PSI_MAX = 0.25     # 步2: PSI 上界(<0.1稳, 0.1~0.25微移, >0.25弃)
 CORR_MAX = 0.7     # 步3: 相关系数上界(|r|>此值视为冗余)
 VIF_MAX = 5.0      # 步4: VIF 上界(<5 严格, <10 宽松)
@@ -64,7 +64,7 @@ def calc_psi(train, test, bins=10):
 
 def select_features(Xtr, ytr, Xte,
                     iv_min=IV_MIN, psi_max=PSI_MAX, corr_max=CORR_MAX,
-                    vif_max=VIF_MAX, min_feat=MIN_FEAT, n_iv=None, verbose=False):
+                    vif_max=VIF_MAX, min_feat=MIN_FEAT, n_iv=N_IV, verbose=False):
     """标准五步之步 1-4: IV→PSI→去相关→VIF。
 
     返回 (kept_features, detail_df)。
@@ -73,7 +73,7 @@ def select_features(Xtr, ytr, Xte,
     iv_all = (calc_iv_all_features(Xtr, ytr)
               .sort_values('iv', ascending=False).reset_index(drop=True))
     iv_df = iv_all[iv_all['iv'] > iv_min].reset_index(drop=True)   # IV 下限进漏斗
-    if n_iv:                                                       # 可选硬上限(防极端池过大), 默认不限
+    if n_iv:                                                       # 硬上限(默认 N_IV=50; 与 IV_MIN 双条件)
         iv_df = iv_df.head(int(n_iv))
     iv_map = dict(zip(iv_df['feature'], iv_df['iv']))
 

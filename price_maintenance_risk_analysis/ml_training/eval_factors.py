@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
 from train_scorecard import calc_iv_all_features   # noqa: E402
 from sklearn.metrics import roc_auc_score          # noqa: E402
 
-# bar 粒度 → 对齐的 target 期限。'1w'/'2w'/'4w'=短线gray; '1m'/'3m'/'7m'=gray(-20/+10)。
+# bar 粒度 → 对齐的 target 期限。'1w'/'2w'/'4w'=短线gray(quantile p25/p75); '1m'/'3m'/'7m'=gray(GRAY_CFG 生产口径: 1m/3m=(0,10), 7m=(-20,10))。
 ALIGN = {
     'daily': ['1w', '2w', '4w', '1m'],   # 日线: 短标签 + 1m
     '_W':    ['1m', '3m'],               # 周线: 中期
@@ -49,14 +49,21 @@ def granularity(col):
 
 
 def build_labels(df):
-    """内存构 gray 标签列: 标签_短_{w}_gray(p25/p75), 标签_极性_灰度剔除_{h}m(-20/+10)。"""
+    """内存构 gray 标签列。
+
+    月级(1m/3m/7m)用生产口径 GRAY_CFG(train_horizon_models): 1m/3m=(0,10), 7m=(-20,10)。
+      ⚠ 必须与训练一致, 否则 IV/AUC 评的是错标签(2026-06-20 修: 原硬编码 >10/<-20 只对7m对)。
+    短线(1w/2w/4w)无生产模型, 用 quantile gray(p25/p75)作相对排名代理(与月级不同口径, 勿直接比)。
+    """
+    from train_horizon_models import GRAY_CFG
     for w, rc in SHORT.items():
         s = pd.to_numeric(df[rc], errors='coerce')
         p25, p75 = s.quantile(0.25), s.quantile(0.75)
         df[f'_lab_{w}'] = np.where(s > p75, 1, np.where(s < p25, 0, np.nan))
     for h, rc in MONTH.items():
+        lo, hi = GRAY_CFG.get(int(h[0]), (-20, 10))   # 生产口径: 1m/3m=(0,10), 7m=(-20,10)
         r = pd.to_numeric(df[rc], errors='coerce')
-        df[f'_lab_{h}'] = np.where(r > 10, 1, np.where(r < -20, 0, np.nan))
+        df[f'_lab_{h}'] = np.where(r > hi, 1, np.where(r < lo, 0, np.nan))
     return df
 
 
@@ -70,6 +77,24 @@ def load(factor_cols):
                 'WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8')
     df = pd.DataFrame(cur.fetchall())
     conn.close()
+    return df
+
+
+def load_parquet(path):
+    """从 features_derived.parquet 读 derive 因子, 用生产口径 GRAY_CFG 重算月级 gray 标签。
+
+    ⚠ parquet 里预算的 标签_极性_灰度剔除_{h}m 是 >10/<-20(export_features 硬编码),
+      只对 7m 匹配生产; 1m/3m 生产口径是 (0,10)。故月级标签必须用 GRAY_CFG 从收益重算,
+      不能用 parquet 预算列(否则 1m/3m IV 评错标签)。短线用 parquet 预算的 quantile gray。
+    """
+    from train_horizon_models import GRAY_CFG
+    df = pd.read_parquet(path)
+    for h, rc in (('1m', '1个月涨跌幅'), ('3m', '3个月涨跌幅'), ('7m', '7个月涨跌幅')):
+        lo, hi = GRAY_CFG.get(int(h[0]), (-20, 10))
+        r = pd.to_numeric(df[rc], errors='coerce') if rc in df.columns else pd.Series(np.nan, index=df.index)
+        df[f'_lab_{h}'] = np.where(r > hi, 1, np.where(r < lo, 0, np.nan))
+    for w, src in (('1w', '标签_短_1w_gray'), ('2w', '标签_短_2w_gray'), ('4w', '标签_短_4w_gray')):
+        df[f'_lab_{w}'] = pd.to_numeric(df[src], errors='coerce') if src in df.columns else np.nan
     return df
 
 
@@ -97,12 +122,23 @@ def main():
     ap = argparse.ArgumentParser(description='因子效力评估(coverage-aware + 粒度对齐)')
     ap.add_argument('factors', nargs='*', help='因子列名(可多个)')
     ap.add_argument('--prefix', help='评估所有以该前缀开头的因子列(如 smc_)')
+    ap.add_argument('--parquet', help='从 features_derived.parquet 读 derive 因子+预计算灰度标签(评 量价/turnover 等)')
     ap.add_argument('--horizons', default='aligned',
                     help="aligned(默认,按粒度对齐) | all(全期限1w/2w/4w/1m/3m/7m) | 自定义如 1m,3m")
     args = ap.parse_args()
 
-    # 确定因子列
-    if args.prefix:
+    # 确定因子列 + 载入
+    if args.parquet:
+        df = load_parquet(args.parquet)
+        if args.prefix:
+            factors = [c for c in df.columns if isinstance(c, str) and c.startswith(args.prefix)]
+        else:
+            factors = args.factors
+        miss = [f for f in factors if f not in df.columns]
+        if miss:
+            print(f'⚠️ parquet 缺列(跳过): {miss}')
+            factors = [f for f in factors if f in df.columns]
+    elif args.prefix:
         import pymysql
         from utils.db_manager import ValuationDB
         conn = pymysql.connect(**ValuationDB.MYSQL_CONFIG)
@@ -111,12 +147,13 @@ def main():
                     "WHERE TABLE_SCHEMA=%s AND TABLE_NAME='placement_evaluation'", (ValuationDB.MYSQL_CONFIG['database'],))
         factors = [r[0] for r in cur.fetchall() if r[0].startswith(args.prefix)]
         conn.close()
+        df = build_labels(load(factors))
     else:
         factors = args.factors
+        df = build_labels(load(factors))
     if not factors:
         print('❌ 未指定因子(用 位置参数 或 --prefix)'); sys.exit(1)
 
-    df = build_labels(load(factors))
     all_h = ['1w', '2w', '4w', '1m', '3m', '7m']
     print(f'因子 {len(factors)} 个 | 样本 {len(df)} | 对齐: {args.horizons}\n')
     for col in factors:
