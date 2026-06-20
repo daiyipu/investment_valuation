@@ -1,16 +1,16 @@
 定增盈利预测模型评估报告
 盈利阈值: -10%
 特征模式: 全量数值特征
-特征数: 225
-样本数: 1497, 盈利占比: 52.3%
+特征数: 257
+样本数: 5561, 盈利占比: 80.6%
 
-LightGBM AUC(5折CV): 0.744
-逻辑回归 AUC(5折CV): 0.656
+LightGBM AUC(5折CV): 0.735
+逻辑回归 AUC(5折CV): 0.638
 
 [主指标] 时序 OOT (train≤2024 / test≥2025):
-  LightGBM OOT AUC: 0.626
-  逻辑回归  OOT AUC: 0.608
-  train n=1263(正48.1%) / test n=234(正75.2%)
+  LightGBM OOT AUC: 0.698
+  逻辑回归  OOT AUC: 0.667
+  train n=5220(正79.9%) / test n=341(正90.9%)
 
 逻辑回归系数表见: lr_coefficients_full.csv
 LightGBM特征重要性见: lgb_feature_importance_full.csv

@@ -499,6 +499,11 @@ def load_scored_features_from_db(sample_keys):
             for _k, _v in pe.items():
                 if isinstance(_k, str) and _k.startswith('smc_'):
                     r[_k] = _v
+            # 业绩超预期 SUE(fetch_factors sue 回填; forecast/express/income PIT)
+            # 通用发射: 自动发所有 sue_* 列(sue_yoy/zscore/beat/recency_d)
+            for _k, _v in pe.items():
+                if isinstance(_k, str) and _k.startswith('sue_'):
+                    r[_k] = _v
             # 超额收益原始(compute_labels excess 回填; 目标变量→feature_exclusions 排除) + _0标签(跑赢基准)
             for _h in (1, 3, 7):
                 for _b in ('mkt', 'ind'):

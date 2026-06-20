@@ -573,6 +573,68 @@ def prefetch_ohlcv(codes, max_workers=12):
     print(f'    预取完成: {ok}/{len(todo)} 成功')
 
 
+# ====== 模块级 daily_basic 缓存(换手率/量比, 与 OHLCV 缓存并列) ======
+_DAILY_BASIC_CACHE = {}   # code -> (dates, {turnover, vol_ratio}) 或 (None, None)
+
+
+def _fetch_daily_basic_raw(code):
+    """实际调 daily_basic(无缓存), 返回 (dates, {turnover, vol_ratio}); 失败抛异常。"""
+    import tushare as ts
+    from tushare_token import resolve_tushare_token
+    os.environ.setdefault('TUSHARE_TOKEN', resolve_tushare_token())
+    d = ts.pro_api().daily_basic(ts_code=code,
+                                 fields='ts_code,trade_date,turnover_rate,volume_ratio')
+    if d is None or len(d) == 0:
+        raise ValueError(f'daily_basic 空返回: {code}')
+    d = d.sort_values('trade_date').drop_duplicates('trade_date').reset_index(drop=True)
+    return (d['trade_date'].values,
+            {'turnover': d['turnover_rate'].astype(float).values,
+             'vol_ratio': d['volume_ratio'].astype(float).values})
+
+
+def _get_daily_basic(code):
+    """daily_basic 全量(缓存), 返回 (dates, {turnover, vol_ratio}) 或 (None, None)。"""
+    if code in _DAILY_BASIC_CACHE:
+        return _DAILY_BASIC_CACHE[code]
+    try:
+        res = _fetch_daily_basic_raw(code)
+    except Exception:
+        res = (None, None)
+    _DAILY_BASIC_CACHE[code] = res
+    return res
+
+
+def prefetch_daily_basic(codes, max_workers=12):
+    """并发预取所有 unique 股票 daily_basic 入缓存。tushare 限流时单股退避重试(3 次)。"""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import time
+    todo = [c for c in dict.fromkeys(str(c) for c in codes) if c not in _DAILY_BASIC_CACHE]
+    if not todo:
+        print(f'    daily_basic 缓存已热({len(_DAILY_BASIC_CACHE)}), 跳过预取')
+        return
+    print(f'    并发预取 {len(todo)} 只 daily_basic (max_workers={max_workers}, 限流重试)...')
+
+    def _work(code):
+        for attempt in range(3):
+            try:
+                _DAILY_BASIC_CACHE[code] = _fetch_daily_basic_raw(code)
+                return True
+            except Exception:
+                time.sleep(1.5 * (attempt + 1))
+        _DAILY_BASIC_CACHE[code] = (None, None)
+        return False
+
+    ok = 0
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futs = [ex.submit(_work, c) for c in todo]
+        for n, fut in enumerate(as_completed(futs), 1):
+            if fut.result():
+                ok += 1
+            if n % 50 == 0:
+                print(f'    预取 {n}/{len(todo)} (成功 {ok})')
+    print(f'    预取完成: {ok}/{len(todo)} 成功')
+
+
 # ====== H/I类: 三浪/抵抗策略信号 (需 tushare 网络) ======
 
 def derive_strategy_signals(df):
@@ -744,6 +806,7 @@ def derive_alpha_beta_factors(df):
     mkt_dates, mkt_close = mrt['trade_date'].values, mrt['close'].astype(float).values
 
     prefetch_ohlcv(df['股票代码'].astype(str).unique())   # 并发预取(若策略信号先跑则缓存已热, 秒过)
+    prefetch_daily_basic(df['股票代码'].astype(str).unique())  # 换手率/量比(量价族 turnover_factors)
     maxlen = 800   # 月线 MACD 需 ~35 个月 ≈ 800 日线(日线技术因子用尾部, 不受影响)
     all_factors = {}
     fetched = 0
@@ -785,7 +848,18 @@ def derive_alpha_beta_factors(df):
                             sret, iret, mret = sr, kr, mr
                     except Exception:
                         pass
-            f = compute_factors(o, h, l, c, v, amt, sret, mret, iret, dates=sd2)
+            # daily_basic 换手率/量比(≤报价日 切片, 喂 turnover_factors + 周月线)
+            td, db = _get_daily_basic(code)
+            turnover = vol_ratio_d = turnover_dates = None
+            if td is not None:
+                dbm = td <= d_str
+                if dbm.any():
+                    turnover = db['turnover'][dbm]
+                    vol_ratio_d = db['vol_ratio'][dbm]
+                    turnover_dates = td[dbm]
+            f = compute_factors(o, h, l, c, v, amt, sret, mret, iret, dates=sd2,
+                                turnover=turnover, vol_ratio=vol_ratio_d,
+                                turnover_dates=turnover_dates)
             for k, val in f.items():
                 all_factors.setdefault(k, np.full(len(df), np.nan))[i] = val
             fetched += 1

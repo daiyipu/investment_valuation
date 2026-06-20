@@ -122,8 +122,14 @@ def tech_factors(c, h, l):
     return out
 
 
-def volume_factors(c, v, amount):
-    """量价: 量比/额比/量价相关/VWAP偏离。"""
+def volume_factors(c, h, l, v, amount):
+    """量价族: 量比/额比/量价相关/VWAP偏离 + 量能动量(OBV/MFI/CMF/PVT)/多窗口收益-量相关。
+
+    corr_ret_vol_n 为方正"量价协同/背离"核心(<0=价涨量缩的量价背离);
+    OBV/CMF/PVT 捕捉资金累积方向; MFI 为量加权 RSI; vol_surge/mom 为"量在价先"。
+    """
+    c = np.asarray(c, float); h = np.asarray(h, float); l = np.asarray(l, float)
+    v = np.asarray(v, float); amount = np.asarray(amount, float)
     out = {
         'vol_ratio_20': float(v[-1] / (_sma(v, 20) + EPS)) if len(v) >= 20 else np.nan,
         'amount_ratio_20': float(amount[-1] / (_sma(amount, 20) + EPS)) if len(amount) >= 20 else np.nan,
@@ -138,6 +144,111 @@ def volume_factors(c, v, amount):
         out['vwap_dist'] = float(c[-1] / (amount[-1] / v[-1]) - 1)
     else:
         out['vwap_dist'] = np.nan
+
+    # 多窗口 收益-成交量 相关(方正量价协同/背离核心: <0=量价背离)
+    ret = _ret(c)
+    rv = v[1:]
+    for n in (5, 20, 60):
+        if len(ret) >= n and len(rv) >= n:
+            r_s = pd.Series(ret[-n:]); v_s = pd.Series(rv[-n:])
+            out[f'corr_ret_vol_{n}'] = float(r_s.corr(v_s)) if v_s.std() > EPS else np.nan
+        else:
+            out[f'corr_ret_vol_{n}'] = np.nan
+
+    # OBV 斜率(归一化净买入): 20 日 signed volume / 总量
+    if len(c) >= 22:
+        sign = np.sign(np.diff(c))
+        obv = np.cumsum(sign * v[1:])
+        out['obv_slope_20'] = float((obv[-1] - obv[-21]) / (np.sum(v[-20:]) + EPS))
+    else:
+        out['obv_slope_20'] = np.nan
+    # PVT 斜率(归一化): cumsum(ret*vol) 变动 /(均价×总量)
+    if len(c) >= 22:
+        pvt = np.cumsum(ret * v[1:])
+        denom = np.mean(c[-20:]) * np.sum(v[-20:]) + EPS
+        out['pvt_slope_20'] = float((pvt[-1] - pvt[-21]) / denom)
+    else:
+        out['pvt_slope_20'] = np.nan
+    # MFI(14): 量加权 RSI, typical_price=(h+l+c)/3
+    if len(c) >= 15:
+        tp = (h + l + c) / 3.0
+        mf = tp * v
+        dtp = np.diff(tp)
+        pos = np.where(dtp > 0, mf[1:], 0.0); neg = np.where(dtp < 0, mf[1:], 0.0)
+        pmf = np.sum(pos[-14:]); nmf = np.sum(neg[-14:])
+        out['mfi_14'] = float(100 - 100 / (1 + pmf / (nmf + EPS))) if nmf > EPS else 100.0
+    else:
+        out['mfi_14'] = np.nan
+    # CMF(20): Chaikin Money Flow = Σ(CLV·vol)/Σvol, CLV∈[-1,1]
+    if len(c) >= 20:
+        clv = ((c - l) - (h - c)) / (h - l + EPS)
+        out['cmf_20'] = float(np.sum((clv * v)[-20:]) / (np.sum(v[-20:]) + EPS))
+    else:
+        out['cmf_20'] = np.nan
+    # 量在价先: 当日量/近20日最大量; 量能动量=5日均量/20日均量-1
+    if len(v) >= 20:
+        out['vol_surge_20'] = float(v[-1] / (np.max(v[-20:]) + EPS))
+        s5, s20 = _sma(v, 5), _sma(v, 20)
+        out['vol_mom_5_20'] = float(s5 / (s20 + EPS) - 1)
+    else:
+        out['vol_surge_20'] = out['vol_mom_5_20'] = np.nan
+    return out
+
+
+def turnover_factors(turnover, vol_ratio):
+    """换手率/量比族(daily_basic 派生, 报价日快照)。
+
+    窗口扩到 120/250(≈半年/1年)匹配 7m 长期限(短窗 20/60 信号偏 1m/3m, 7m 衰减)。
+    turnover_std/skew = 华西"交易稳定性"; turnover_trend_250_60 = 长期/中期换手趋势。
+    """
+    out = {}
+    t = np.asarray(turnover, float) if (turnover is not None and len(turnover)) else None
+    if t is not None:
+        out['turnover_now'] = float(t[-1])
+        s60 = None
+        for w in (20, 60, 120, 250):
+            sw = _sma(t, w)
+            if w == 60:
+                s60 = sw
+            out[f'turnover_mean_{w}'] = sw
+            if len(t) >= w:
+                out[f'turnover_std_{w}'] = _std(t, w)
+                s = pd.Series(t[-w:])
+                out[f'turnover_skew_{w}'] = float(s.skew()) if s.std() > EPS else np.nan
+            else:
+                out[f'turnover_std_{w}'] = out[f'turnover_skew_{w}'] = np.nan
+        out['turnover_mom_20'] = float(t[-1] / (_sma(t, 20) + EPS) - 1)
+        out['turnover_trend_250_60'] = (float(_sma(t, 250) / (s60 + EPS) - 1)
+                                        if len(t) >= 250 and s60 is not None else np.nan)
+    else:
+        for w in (20, 60, 120, 250):
+            out[f'turnover_mean_{w}'] = out[f'turnover_std_{w}'] = out[f'turnover_skew_{w}'] = np.nan
+        out['turnover_now'] = out['turnover_mom_20'] = out['turnover_trend_250_60'] = np.nan
+    out['volratio_now'] = float(vol_ratio[-1]) if (vol_ratio is not None and len(vol_ratio)) else np.nan
+    return out
+
+
+def turnover_multiperiod(turnover_dates, turnover):
+    """换手率周线(_W)/月线(_M)版: 日换手率按 W/M 重采样(期内日均)取近 N 根 mean/std。
+
+    月线换手率配月级标签(7m), 尺度匹配(类比 SMC 多周期 +2.4pp: 周/月线 bar 配月标签)。
+    turnover_dates 与 turnover 等长('YYYYMMDD'); 无则全 NaN。
+    """
+    out = {f'turnover_mean{t}': np.nan for t in ('_W', '_M')}
+    out.update({f'turnover_std{t}': np.nan for t in ('_W', '_M')})
+    if turnover_dates is None or turnover is None or len(turnover) == 0:
+        return out
+    try:
+        idx = pd.to_datetime(pd.Series(turnover_dates).astype(str), format='%Y%m%d')
+        s = pd.Series(np.asarray(turnover, float), index=idx).dropna()
+        for rule, tag, nbars in (('W', '_W', 13), ('M', '_M', 6)):   # 近13周/近6月
+            r = s.resample(rule).mean().dropna()                      # 每周/月内的日均换手率
+            if len(r) >= 3:
+                rec = r.tail(nbars)
+                out[f'turnover_mean{tag}'] = float(rec.mean())
+                out[f'turnover_std{tag}'] = float(rec.std())
+    except Exception:
+        pass
     return out
 
 
@@ -282,17 +393,23 @@ def smc_factors_multiperiod(dates, o, h, l, c):
     return out
 
 
-def compute_factors(o, h, l, c, v, amount, sret, mret, iret, dates=None):
+def compute_factors(o, h, l, c, v, amount, sret, mret, iret, dates=None,
+                    turnover=None, vol_ratio=None, turnover_dates=None):
     """主入口: 给定 OHLCV(同日期升序) + 对齐的三序列收益, 返回全部因子 dict。
-    dates 给定时额外计算周/月线多周期因子(慢趋势)。单族异常不影响其余(每族 try/except)。"""
+    dates 给定时额外计算周/月线多周期因子(慢趋势)。
+    turnover/vol_ratio(daily_basic 派生, ≤报价日 升序)给定时算换手率族;
+    turnover_dates 给定时额外算周/月线换手率(配月级标签)。
+    单族异常不影响其余(每族 try/except)。"""
     out = {}
     families = [
         (kline_factors, (o, h, l, c)),
         (tech_factors, (c, h, l)),
-        (volume_factors, (c, v, amount)),
+        (volume_factors, (c, h, l, v, amount)),
         (moment_factors, (c,)),
         (beta_factors, (sret, mret, iret)),
         (smc_factors, (o, h, l, c)),
+        (turnover_factors, (turnover, vol_ratio)),
+        (turnover_multiperiod, (turnover_dates, turnover)),
     ]
     if dates is not None:
         families.append((multiperiod_factors, (dates, o, h, l, c)))
@@ -354,7 +471,14 @@ _FACTOR_NAMES_OF = {
     'kline_factors': ['k_KMID', 'k_KLEN', 'k_KMID2', 'k_KUP', 'k_KLOW', 'k_BODY_RATIO'],
     'tech_factors': ['RSI_6', 'RSI_12', 'RSI_24', 'KDJ_K', 'KDJ_D', 'KDJ_J',
                      'MACD_DIF', 'MACD_DEA', 'MACD_HIST', 'BOLL_%B', 'BOLL_BW'],
-    'volume_factors': ['vol_ratio_20', 'amount_ratio_20', 'corr_close_vol_20', 'vwap_dist'],
+    'volume_factors': ['vol_ratio_20', 'amount_ratio_20', 'corr_close_vol_20', 'vwap_dist',
+                       'corr_ret_vol_5', 'corr_ret_vol_20', 'corr_ret_vol_60',
+                       'obv_slope_20', 'pvt_slope_20', 'mfi_14', 'cmf_20',
+                       'vol_surge_20', 'vol_mom_5_20'],
+    'turnover_factors': ['turnover_now', 'turnover_mom_20', 'turnover_trend_250_60', 'volratio_now']
+                       + [f'{s}_{w}' for s in ('turnover_mean', 'turnover_std', 'turnover_skew')
+                          for w in (20, 60, 120, 250)],
+    'turnover_multiperiod': ['turnover_mean_W', 'turnover_std_W', 'turnover_mean_M', 'turnover_std_M'],
     'moment_factors': ['ret_skew_20', 'ret_kurt_20', 'ret_skew_60', 'ret_kurt_60',
                        'ROC_5', 'ROC_10', 'ROC_20', 'ROC_60'],
     'beta_factors': ['beta_mkt_60', 'beta_mkt_120', 'beta_mkt_250', 'beta_ind_120', 'idiovol_120'],
@@ -382,8 +506,10 @@ if __name__ == '__main__':
     l = np.minimum(o, c) * (1 - np.abs(np.random.randn(n)) * 0.005)
     v = np.abs(np.random.randn(n)) * 1e6 + 1e5
     amt = c * v
+    turnover = np.abs(np.random.randn(n)) * 0.5 + 1.0
+    vol_ratio = np.abs(np.random.randn(n)) * 0.5 + 1.0
     sret = _ret(c); mret = _ret(c * 0.8 + np.random.randn(n) * 0.01); iret = _ret(c * 0.9)
-    f = compute_factors(o, h, l, c, v, amt, sret, mret, iret)
+    f = compute_factors(o, h, l, c, v, amt, sret, mret, iret, turnover=turnover, vol_ratio=vol_ratio)
     print(f'因子数: {len(f)} (期望 {len(ALL_FACTOR_NAMES)})')
     for k in sorted(f):
         print(f'  {k:<22} {f[k]:.4f}' if isinstance(f[k], float) and np.isfinite(f[k]) else f'  {k:<22} {f[k]}')

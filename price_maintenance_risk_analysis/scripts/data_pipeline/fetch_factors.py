@@ -54,6 +54,10 @@ COLS = {
             + [f'{k}{t}' for t in ('_W', '_M') for k in
                ['smc_premium_discount', 'smc_fvg_net', 'smc_bos', 'smc_liq_sweep',
                 'smc_displacement', 'smc_ob_retest', 'smc_ote', 'smc_liqvoid']]],
+    'sue': [('sue_yoy', 'DOUBLE'), ('sue_zscore', 'DOUBLE'),
+            ('sue_beat', 'DOUBLE'), ('sue_recency_d', 'DOUBLE'),
+            ('sue_yoy_mean3', 'DOUBLE'), ('sue_yoy_acc', 'DOUBLE'),
+            ('sue_pos_streak', 'DOUBLE'), ('sue_up_trend', 'DOUBLE')],
 }
 
 
@@ -393,8 +397,195 @@ def ingest_smc(conn, write, limit):
         print(f'  ✅ 回写 {n} 行')
 
 
+# ── sue: 业绩预告/快报/利润表 → 业绩超预期(同比 surprise + 超自家指引) ──
+def _fetch_disc_df(pro, stock, api):
+    """forecast/express/income 全历史, 3 重试。"""
+    for attempt in range(3):
+        try:
+            if api == 'forecast':
+                return pro.forecast(ts_code=stock)
+            if api == 'express':
+                return pro.express(ts_code=stock)
+            return pro.income(ts_code=stock,
+                              fields='ts_code,ann_date,end_date,n_income,n_income_attr_p')
+        except Exception:
+            time.sleep(1.0 * (attempt + 1))
+    return None
+
+
+def _build_disclosure_timeline(pro, stock):
+    """合并 forecast/express/income → 按 ann_date 升序的披露时间线。
+
+    每条: {ann_date, end_date, source, n_income, yoy}。income 同时提供
+    prior-year 同期做 yoy 随机游走基准(无分析师一致预期时的"预期")。
+    """
+    inc = _fetch_disc_df(pro, stock, 'income')
+    ex = _fetch_disc_df(pro, stock, 'express')
+    fc = _fetch_disc_df(pro, stock, 'forecast')
+
+    # income: end_date → (ann_date, 归母净利)。同期多次披露(修正)取最早(首次)。
+    inc_map = {}
+    if inc is not None and len(inc):
+        inc = inc.dropna(subset=['ann_date', 'end_date'])
+        for _, r in inc.iterrows():
+            ed, ad = str(r['end_date']), str(r['ann_date'])
+            if len(ed) != 8 or len(ad) != 8:
+                continue
+            ni = _clean(r.get('n_income_attr_p'))
+            if ni is None:
+                ni = _clean(r.get('n_income'))
+            if ni is None:
+                continue
+            if ed not in inc_map or ad < inc_map[ed][0]:
+                inc_map[ed] = (ad, ni)
+
+    def prior_year_end(ed):
+        try:
+            return str(int(ed[:4]) - 1) + ed[4:]
+        except Exception:
+            return None
+
+    def yoy_from_baseline(ed, ni):
+        py = prior_year_end(ed)
+        if py and py in inc_map and inc_map[py][1] not in (0, None):
+            return ni / abs(inc_map[py][1]) - 1
+        return None
+
+    rows = []
+    for ed, (ad, ni) in inc_map.items():
+        rows.append({'ann_date': ad, 'end_date': ed, 'source': 'income',
+                     'n_income': ni, 'yoy': yoy_from_baseline(ed, ni)})
+    if ex is not None and len(ex):
+        for _, r in ex.iterrows():
+            ed, ad = str(r.get('end_date', '')), str(r.get('ann_date', ''))
+            if len(ed) != 8 or len(ad) != 8:
+                continue
+            ni = _clean(r.get('n_income'))
+            yoy = None
+            for yf in ('yoy_net_profit', 'n_income_yoy', 'net_profit_yoy'):
+                v = _clean(r.get(yf))
+                if v is not None:
+                    yoy = v / 100.0
+                    break
+            if yoy is None and ni is not None:
+                yoy = yoy_from_baseline(ed, ni)
+            rows.append({'ann_date': ad, 'end_date': ed, 'source': 'express',
+                         'n_income': ni, 'yoy': yoy})
+    if fc is not None and len(fc):
+        for _, r in fc.iterrows():
+            ed, ad = str(r.get('end_date', '')), str(r.get('ann_date', ''))
+            if len(ed) != 8 or len(ad) != 8:
+                continue
+            # forecast net_profit_min/max 单位为万元; income/express 为元 → 统一换算为元
+            nmin, nmax = _clean(r.get('net_profit_min')), _clean(r.get('net_profit_max'))
+            if nmin is not None and nmax is not None:
+                ni = (nmin + nmax) / 2 * 1e4
+            elif nmin is not None:
+                ni = nmin * 1e4
+            elif nmax is not None:
+                ni = nmax * 1e4
+            else:
+                ni = None
+            pmin, pmax = _clean(r.get('p_change_min')), _clean(r.get('p_change_max'))
+            if pmin is not None and pmax is not None:
+                yoy = (pmin + pmax) / 2 / 100.0
+            elif ni is not None:
+                yoy = yoy_from_baseline(ed, ni)
+            else:
+                yoy = None
+            rows.append({'ann_date': ad, 'end_date': ed, 'source': 'forecast',
+                         'n_income': ni, 'yoy': yoy})
+
+    if not rows:
+        return None
+    tl = pd.DataFrame(rows).sort_values('ann_date').reset_index(drop=True)
+    tl['ad_int'] = tl['ann_date'].astype(int)
+    return tl
+
+
+def _sue_for_sample(tl, issue_date):
+    """报价日前最近一期披露 → sue_yoy/zscore/beat/recency。PIT: ann_date ≤ 报价日。"""
+    if tl is None or len(tl) == 0:
+        return {}
+    iss = int(issue_date)
+    pit = tl[tl['ad_int'] <= iss]
+    if len(pit) == 0:
+        return {}
+    cur = pit.iloc[-1]
+    out = {}
+    if pd.notna(cur['yoy']):
+        out['sue_yoy'] = float(cur['yoy'])
+    try:
+        out['sue_recency_d'] = (pd.Timestamp(str(iss)) - pd.Timestamp(cur['ann_date'])).days
+    except Exception:
+        pass
+    # z-score: 该股 income 同比序列的自身历史标准化(Latane-Jones SUE)
+    inc_yoy = tl[(tl['source'] == 'income') & tl['yoy'].notna()]['yoy']
+    if len(inc_yoy) >= 3 and pd.notna(cur['yoy']):
+        s = inc_yoy.std()
+        if s and s > 1e-9:
+            out['sue_zscore'] = float((cur['yoy'] - inc_yoy.mean()) / s)
+    # 超自家指引: 当前(快报/实际) vs 同 end_date 最早 forecast(指引)
+    if cur['source'] != 'forecast' and pd.notna(cur['n_income']):
+        fc_same = pit[(pit['end_date'] == cur['end_date']) & (pit['source'] == 'forecast')]
+        if len(fc_same):
+            f0 = fc_same.iloc[0]
+            if pd.notna(f0['n_income']) and abs(f0['n_income']) > 1e-9:
+                out['sue_beat'] = float((cur['n_income'] - f0['n_income']) / abs(f0['n_income']))
+    # 盈利动量/趋势(中长期信号: 报价日前已披露的年报 YoY 序列的趋势/持续性, 补 7m 弱的短板)
+    inc_ann = pit[(pit['source'] == 'income') & pit['yoy'].notna()
+                  & pit['end_date'].astype(str).str.endswith('1231')]
+    if len(inc_ann):
+        ys = inc_ann['yoy'].tolist()
+        out['sue_yoy_mean3'] = float(np.mean(ys[-3:]))       # 近3年报同比均值(盈利水平, 稳定→中长期)
+        if len(ys) >= 2:
+            out['sue_yoy_acc'] = float(ys[-1] - ys[-2])      # 最新-上年同比(盈利加速度)
+        streak = 0
+        for y in reversed(ys):                                # 连续盈利年限(YoY>0, 持续盈利能力)
+            if y > 0:
+                streak += 1
+            else:
+                break
+        out['sue_pos_streak'] = float(streak)
+        if len(ys) >= 3:
+            last3 = ys[-3:]
+            out['sue_up_trend'] = float(np.mean(
+                [1 if last3[i + 1] > last3[i] else 0 for i in range(len(last3) - 1)]))   # 改善趋势比例
+    return out
+
+
+def ingest_sue(conn, write, limit):
+    cur = conn.cursor()
+    cur.execute("SELECT stock_code, issue_date FROM placement_evaluation "
+                "WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8")
+    samp = pd.DataFrame(cur.fetchall(), columns=['stock_code', 'issue_date'])
+    cur.close()
+    samp['issue_date'] = samp['issue_date'].astype(str)
+    stocks = sorted(samp['stock_code'].unique())
+    if limit:
+        stocks = stocks[:limit]
+    pro = ts.pro_api()
+    rows, skip = [], 0
+    for i, stock in enumerate(stocks):
+        tl = _build_disclosure_timeline(pro, stock)
+        if tl is None:
+            skip += 1
+            continue
+        for _, r in samp[samp['stock_code'] == stock].iterrows():
+            f = _sue_for_sample(tl, r['issue_date'])
+            if f:
+                rows.append((stock, r['issue_date'], f))
+        time.sleep(0.25)
+        if (i + 1) % 200 == 0:
+            print(f'  [sue] {i+1}/{len(stocks)} | {len(rows)} 样本 (跳过 {skip} 无披露)', flush=True)
+    print(f'  [sue] 匹配 {len(rows)} 样本 (跳过 {skip} 只股无披露)')
+    if write:
+        n = batch_update(conn, 'sue', rows)
+        print(f'  ✅ 回写 {n} 行')
+
+
 SOURCES = {'placement': ingest_placement, 'chip': ingest_chip,
-           'capitalflow': ingest_capitalflow, 'smc': ingest_smc}
+           'capitalflow': ingest_capitalflow, 'smc': ingest_smc, 'sue': ingest_sue}
 
 
 def main():
