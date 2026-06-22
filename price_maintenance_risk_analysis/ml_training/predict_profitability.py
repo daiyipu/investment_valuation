@@ -363,16 +363,17 @@ def predict(scored_excel_path):
         print(f'  (无蓝绿对比: {e})')
 
     # ═══════════════════════════════════════════════
-    # 9c. 多期限短期补充列: 1m / 3m 灰度 SC(7m 生产之外的短期价格维持概率)
-    #     灰度极性标签(>10%/<0%), 与 7m 同套 _score_sc 打分; 模型由
-    #     train_to_production.py --horizon 1/3 --kind gray 训。DB 找不到最新版则跳过(不报错)。
+    # 9c. 多期限短期补充列: 1m / 3m / 1w / 2w 灰度 SC(7m 生产之外的短期价格维持概率)
+    #     各期限生产 gray 标签(GRAY_CFG sweep 定: 1m·3m±10 / 1w±5 / 2w±6), 同套 _score_sc 打分;
+    #     模型由 train_to_production.py --horizon 1/3/1w/2w --kind gray 训。DB 找不到最新版则跳过。
     # ═══════════════════════════════════════════════
     try:
         from db_model_store import list_model_metas as _lmm
     except Exception:
         _lmm = None
     if _lmm is not None:
-        for _horizon, _lc in ((1, '1m_gray_sc'), (3, '3m_gray_sc')):
+        for _horizon, _lc, _tag in ((1, '1m_gray_sc', '1m'), (3, '3m_gray_sc', '3m'),
+                                    ('1w', '1w_gray_sc', '1w'), ('2w', '2w_gray_sc', '2w')):
             try:
                 _cands = [m for m in _lmm(label_config=_lc) if not m.get('lgb_model')]
                 if not _cands:
@@ -381,9 +382,9 @@ def predict(scored_excel_path):
                 _sc = pickle.loads(_m['lr_bundle'])
                 _feats = _sc['features']
                 _p, _t = _score_sc(_sc, _feats, _sc.get('medians', {}),
-                                   _sc.get('proba_deciles'), f'{_horizon}m', df)
-                result[f'盈利概率_{_horizon}m'] = _p
-                result[f'档位_{_horizon}m'] = _t
+                                   _sc.get('proba_deciles'), _tag, df)
+                result[f'盈利概率_{_tag}'] = _p
+                result[f'档位_{_tag}'] = _t
                 _mt = _m.get('metrics', {})
                 _loyo = _mt.get('sc_loyo_auc')
                 if isinstance(_loyo, float) and _loyo == _loyo:
@@ -391,9 +392,9 @@ def predict(scored_excel_path):
                 else:
                     _fit = _mt.get('sc_fit_auc') or _mt.get('sc_oot_auc')
                     _perf = f', 自评AUC={_fit:.3f}(含泄漏)' if isinstance(_fit, float) else ''
-                print(f'  ➕ 短期补充 {_horizon}m灰度SC: {_m["version"]} ({len(_feats)}特征{_perf})')
+                print(f'  ➕ 短期补充 {_tag}灰度SC: {_m["version"]} ({len(_feats)}特征{_perf})')
             except Exception as e:
-                print(f'  ({_horizon}m短期列跳过: {e})')
+                print(f'  ({_tag}短期列跳过: {e})')
 
     print(f'  ✅ ML预测完成: {len(result)} 条\n')
     return result
