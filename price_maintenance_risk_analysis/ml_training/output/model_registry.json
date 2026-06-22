@@ -1089,6 +1089,57 @@
       "note": "LGB共识['行业PE_250d增长', 'MACD_W_HIST', '净资产增长', 'pvt_slope_20', 'turnover_mean_20', 'nb_hold_ratio', 'PB_vs_同行中位', '应收账款周转率', '产权比率', 'FCF_加速', 'ROC_W_3', 'ret_skew_60', 'sue_beat', '总分_delta_2y', '利息资本化率']",
       "label_config": "7m_gray_lgb_consensus",
       "dataset_version": null
+    },
+    {
+      "version": "v_lgb_20260623_0755_2w_gray_13feat",
+      "model_type": "full",
+      "created_at": "2026-06-23 07:55",
+      "n_features": 13,
+      "threshold": -10,
+      "n_samples": 2603,
+      "positive_rate": 0.5343834037648867,
+      "metrics": {},
+      "dir": "v_lgb_20260623_0755_2w_gray_13feat",
+      "files": [
+        "(in DB)"
+      ],
+      "note": "LGB共识['行业年化收益_20d', 'MACD_W_HIST', '行业年化收益_120d', '资本支出_T', '产权比率', 'NOPAT_3年斜率', 'turnover_std_20', '资本支出_CAGR2', 'FCF_T4', '资产负债率', 'smc_liqvoid_W', 'sue_zscore', '同行PS_均值']",
+      "label_config": "2w_gray_lgb_consensus",
+      "dataset_version": null
+    },
+    {
+      "version": "v_lgb_20260623_0756_1w_gray_21feat",
+      "model_type": "full",
+      "created_at": "2026-06-23 07:56",
+      "n_features": 21,
+      "threshold": -10,
+      "n_samples": 2236,
+      "positive_rate": 0.5398032200357782,
+      "metrics": {},
+      "dir": "v_lgb_20260623_0756_1w_gray_21feat",
+      "files": [
+        "(in DB)"
+      ],
+      "note": "LGB共识21特征",
+      "label_config": "1w_gray_lgb_consensus",
+      "dataset_version": null
+    },
+    {
+      "version": "v_lgb_20260623_0756_2w_gray_13feat",
+      "model_type": "full",
+      "created_at": "2026-06-23 07:56",
+      "n_features": 13,
+      "threshold": -10,
+      "n_samples": 2603,
+      "positive_rate": 0.5343834037648867,
+      "metrics": {},
+      "dir": "v_lgb_20260623_0756_2w_gray_13feat",
+      "files": [
+        "(in DB)"
+      ],
+      "note": "LGB共识13特征",
+      "label_config": "2w_gray_lgb_consensus",
+      "dataset_version": null
     }
   ],
   "previous": {

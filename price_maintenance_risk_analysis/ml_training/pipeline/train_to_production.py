@@ -181,17 +181,17 @@ def deploy_lgb(features_path, horizon, kind, consensus, split_year, set_current)
     train_proba = gbm.predict_proba(Xall[feats])[:, 1]
     proba_deciles = np.quantile(train_proba, np.linspace(0.1, 0.9, 9)).tolist()
     ver = f'v_lgb_{pd.Timestamp.now().strftime("%Y%m%d_%H%M")}_{_tag(horizon)}_{kind}_{len(feats)}feat'
-    save_model_meta({'version': ver, 'label_config': f'{horizon}m_{kind}_lgb_consensus',
+    save_model_meta({'version': ver, 'label_config': f'{_tag(horizon)}_{kind}_lgb_consensus',
                      'kind': kind, 'horizon': horizon, 'gray_cfg': gcfg, 'features': feats,
                      'n_features': len(feats), 'medians': {f: float(med[f]) for f in feats},
                      'lgb_model': gbm.booster_.model_to_string(),
                      'lr_bundle': pickle.dumps({'model': lr, 'scaler': sc, 'features': feats,
                                                  'proba_deciles': proba_deciles}),
-                     'metrics': {}, 'note': f'LGB 共识特征 {feats}',
+                     'metrics': {}, 'note': f'LGB共识{len(feats)}特征',
                      'dataset_version': 'derived_20260616_2334_f35ba6f3_7m'})
     register_version('full', ver, ver, metrics={}, n_features=len(feats), threshold=-10,
                      n_samples=len(yall), positive_rate=float(yall.mean()),
-                     files=['(in DB)'], note=f'LGB共识{feats}', set_current=set_current,
+                     files=['(in DB)'], note=f'LGB共识{len(feats)}特征', set_current=set_current,
                      label_config=f'{_tag(horizon)}_{kind}_lgb_consensus')
     print(f'\n✅ LGB 入库 {ver} | {"已设生产" if set_current else "未切生产"}')
     return ver
