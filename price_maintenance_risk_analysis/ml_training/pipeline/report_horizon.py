@@ -105,6 +105,36 @@ def per_year_loyo(df, horizon, features, lo, hi):
     return rows
 
 
+def tier_distribution(df, horizon, ver, lo, hi):
+    """全样本按 档位(训练集概率10分位)分桶, 报每档实际胜率/收益分布(in-sample 校准视图)。
+    档位 = 部署模型的 proba_deciles 把预测概率切成 10 档(10=训练集 top10% 概率)。"""
+    b = pickle.loads(load_predict_bundle(ver)['lr_bundle'])
+    feats, medians, lr = b['features'], b.get('medians', {}), b['lr_model']
+    dec = b.get('proba_deciles', [])
+    X = pd.DataFrame(index=df.index)
+    for f in feats:
+        X[f] = pd.to_numeric(df[f], errors='coerce') if f in df.columns else np.nan
+    X = X.fillna({f: medians.get(f, 0) for f in feats}).replace([np.inf, -np.inf], 0)
+    Xw = apply_woe(X, feats, b['woe_bins']).replace([np.inf, -np.inf], 0).fillna(0)
+    p = lr.predict_proba(Xw)[:, 1]
+    tier = (np.digitize(p, dec) + 1) if dec else np.ones(len(p), dtype=int)
+    ret = pd.to_numeric(df[_ret_col(horizon)], errors='coerce')
+    t = pd.DataFrame({'tier': tier, 'p': p, 'ret': ret}).dropna(subset=['ret'])
+    rows = []
+    for k in range(10, 0, -1):
+        g = t[t['tier'] == k]
+        if len(g) == 0:
+            continue
+        plo = dec[k - 2] if k >= 2 else 0.0
+        phi = dec[k - 1] if k <= 9 else 1.0
+        rows.append({'tier': k, 'n': len(g), 'plo': plo, 'phi': phi,
+                     'win': float((g['ret'] > hi).mean()),
+                     'lose': float((g['ret'] < lo).mean()),
+                     'gray': float(((g['ret'] >= lo) & (g['ret'] <= hi)).mean()),
+                     'mean': float(g['ret'].mean()), 'median': float(g['ret'].median())})
+    return rows, len(t), float(t['ret'].mean()), float(t['ret'].median())
+
+
 def generate_report(features_path, horizon, version=None):
     """生成某期限(最新或指定版本)gray SC 的 per-year 报告 md。
     供 train_to_production 入库后自动调用(管线第 ⑩步后), 也可 CLI 单跑。返回报告路径。"""
@@ -134,6 +164,15 @@ def generate_report(features_path, horizon, version=None):
         ks_s = f"{r['ks']:.3f}" if r['ks'] == r['ks'] else '  nan'
         print(f"{r['year']:<6}{au_s:>8}{ks_s:>8}{ic_s:>10}{r['n']:>7}")
 
+    trows, tn, tmean, tmed = tier_distribution(df, horizon, ver, lo, hi)
+    _ret = pd.to_numeric(df[_ret_col(horizon)], errors='coerce')
+    bw, bl = float((_ret > hi).mean()), float((_ret < lo).mean())
+    print(f'\n档位盈利分布(in-sample n={tn}, 基线 胜>{hi}%={bw*100:.1f}% / 输<{lo}%={bl*100:.1f}% / 均{tmean:+.2f}%):')
+    print(f'{"档":>3}{"n":>6}{"概率区间":>16}{"胜率":>8}{"输率":>8}{"均收益":>9}{"中位":>8}')
+    for r in trows:
+        print(f'{r["tier"]:>3}{r["n"]:>6}  [{r["plo"]:.3f},{r["phi"]:.3f})'
+              f'{r["win"]*100:>7.1f}%{r["lose"]*100:>7.1f}%{r["mean"]:>+8.2f}%{r["median"]:>+7.2f}%')
+
     out = os.path.join(ML_ROOT, 'output', f'validation_report_{_tag(horizon)}_gray_sc.md')
     derived = meta.get('dataset_version', '?')
     n_train = meta.get('n_train', '?')
@@ -150,6 +189,15 @@ def generate_report(features_path, horizon, version=None):
         au_s = f"{r['auc']:.3f}" if r['auc'] == r['auc'] else 'nan'
         ks_s = f"{r['ks']:.3f}" if r['ks'] == r['ks'] else 'nan'
         L.append(f"| {r['year']} | {au_s} | {ks_s} | {ic_s} | {r['n']} |")
+    L += [f'\n## 档位盈利概率分布(全样本 in-sample, 按实际{_tag(horizon)}收益)\n',
+          f'基线: n={tn} | 胜率(>{hi}%) {bw*100:.1f}% | 输率(<{lo}%) {bl*100:.1f}% | 均收益 {tmean:+.2f}%\n',
+          '档位 = 训练集预测概率 10 分位(10=top10% 概率)。校准判据: 高档位应胜率更高、输率更低。\n',
+          '| 档 | n | 概率区间 | 胜率% | 输率% | 灰区% | 均收益% | 中位% |',
+          '|---|---|---|---|---|---|---|---|']
+    for r in trows:
+        L.append(f"| {r['tier']} | {r['n']} | [{r['plo']:.3f},{r['phi']:.3f}) | "
+                 f"{r['win']*100:.1f} | {r['lose']*100:.1f} | {r['gray']*100:.1f} | "
+                 f"{r['mean']:+.2f} | {r['median']:+.2f} |")
     L += [f'\n## 入模特征({len(feats)})\n', '`' + '`, `'.join(feats) + '`\n']
     with open(out, 'w', encoding='utf-8') as f:
         f.write('\n'.join(L))
