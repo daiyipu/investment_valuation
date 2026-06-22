@@ -100,7 +100,7 @@ def _eval_fold(dtr, dte, horizon, kind):
     Xte = _prep(Xte_raw, medians=med)[0].reindex(columns=Xtr.columns)
 
     # 标准五步选择(三模型共用)
-    kept, _ = select_features(Xtr, ytr, Xte)
+    kept, _ = select_features(Xtr, ytr, Xte, Xtr_raw=Xtr_raw, Xte_raw=Xte_raw)
     gbm, lr, sc_lr = _train(Xtr[kept], ytr)          # LGB + LR(StandardScaler)
     final = prune_by_lgb_importance(gbm, kept)
     if 5 <= len(final) < len(kept):
@@ -156,7 +156,7 @@ def run(features_path):
         print(f"  {name:<9} gray={gtag:<6} | AUC  LGB {auc_row['lgb']['mean']}±{auc_row['lgb']['std']}  "
               f"LR {auc_row['lr']['mean']}±{auc_row['lr']['std']}  SC {auc_row['sc']['mean']}±{auc_row['sc']['std']}")
 
-    out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'output')
+    out_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'output')
     for m in models:
         pd.DataFrame(res[m]['auc']).to_csv(os.path.join(out_dir, f'loyo_{m}.csv'), index=False)
         pd.DataFrame(res[m]['ks']).to_csv(os.path.join(out_dir, f'loyo_{m}_ks.csv'), index=False)

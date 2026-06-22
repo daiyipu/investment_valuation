@@ -1,7 +1,10 @@
 
-import os, pickle
+import os, pickle, sys
 import pandas as pd
 import numpy as np
+_HERE = os.path.dirname(os.path.abspath(__file__)); _ML = os.path.dirname(_HERE)
+sys.path.insert(0, os.path.join(_ML, 'pipeline'))   # 管线模块已移入 pipeline/
+sys.path.insert(0, _ML); os.chdir(_ML)               # 相对 data/output 路径
 from train_scorecard import calc_iv_all_features
 
 DATA='data/features_derived.parquet'

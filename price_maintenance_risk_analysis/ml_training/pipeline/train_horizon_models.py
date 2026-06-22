@@ -75,7 +75,7 @@ def run(features_path, split_year=2024):
     dtr = raw[raw['_y'] <= split_year].drop(columns=['_y'])
     dte = raw[raw['_y'] >= split_year + 1].drop(columns=['_y'])
 
-    out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'output')
+    out_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'output')
     feat_dir = os.path.join(out_dir, 'per_horizon_features')
     os.makedirs(feat_dir, exist_ok=True)
 
@@ -94,7 +94,7 @@ def run(features_path, split_year=2024):
             Xtr, med = _prep(Xtr_raw)
             Xte = _prep(Xte_raw, medians=med)[0].reindex(columns=Xtr.columns)
             # 标准五步之 1-4: IV→PSI→去相关→VIF (阈值固定在 feature_selection)
-            kept_vif, fdf = select_features(Xtr, ytr, Xte)
+            kept_vif, fdf = select_features(Xtr, ytr, Xte, Xtr_raw=Xtr_raw, Xte_raw=Xte_raw)
             gbm, lr, sc = _train(Xtr[kept_vif], ytr)
             fdf['lgb_imp'] = fdf['feature'].map(
                 dict(zip(kept_vif, gbm.feature_importances_))).fillna(0).astype(int)

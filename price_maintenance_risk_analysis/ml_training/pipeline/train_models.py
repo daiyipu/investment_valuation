@@ -365,7 +365,7 @@ def main():
                         help='使用手工选择特征（64个），默认使用全部数值特征')
     args = parser.parse_args()
 
-    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'output')
+    output_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'output')
     os.makedirs(output_dir, exist_ok=True)
 
     # 加载

@@ -38,6 +38,7 @@ PKG_DIR = os.path.dirname(SCRIPT_DIR)                             # price_mainte
 SCRIPTS_DIR = os.path.join(PKG_DIR, 'scripts')
 BATCH_SCRIPT = os.path.join(SCRIPTS_DIR, 'batch_screen_and_score.py')
 sys.path.insert(0, SCRIPT_DIR)
+sys.path.insert(0, os.path.join(SCRIPT_DIR, 'pipeline'))   # 管线模块已移入 pipeline/
 
 VNPY_PYTHON = os.path.expanduser('~/anaconda3/envs/vnpy/bin/python')
 PYTHON = VNPY_PYTHON if os.path.exists(VNPY_PYTHON) else sys.executable

@@ -67,7 +67,7 @@ def run(features_path, horizon, kind, split_year, set_current, features=None, lo
         sel = f'locked({len(kept)}共识特征, 名单见 features 列)'
         print(f'⚠ 锁定特征(跳过select_features): {kept}')
     else:
-        kept, detail = select_features(Xtr_s, ytr_s, Xte_s)
+        kept, detail = select_features(Xtr_s, ytr_s, Xte_s, Xtr_raw=Xtr_raw, Xte_raw=Xte_raw)
         sel = pipeline_summary(kept, kept, detail)
         print(f'选择漏斗: {sel} → 入模 {len(kept)} 特征: {kept}')
 
@@ -130,6 +130,7 @@ def run(features_path, horizon, kind, split_year, set_current, features=None, lo
                      label_config=cfg_tag, dataset_version='derived_20260616_2334_f35ba6f3_7m')
     cur = '✅ 已设为 current.full(生产)' if set_current else '(set_current=False, 未切生产)'
     print(f'\n入库: {ver} | {cur}')
+    return ver
 
 
 def main():

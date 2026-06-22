@@ -546,29 +546,40 @@ def load_scored_features_from_db(sample_keys):
             r['7个月后价格'] = pe.get('price_7m')
             r['最终结论'] = pe.get('final_conclusion')
 
-        # 年度评分: 从 company_annual_scores 按报价日回溯
+        # 年度评分: 从 company_annual_scores 按报价日 PIT 回溯(最近可得期回退)。
+        # 旧逻辑锚 base_year=报价日年 + report_year==base_year 取 T → 但当年年报要到次年
+        # 4/30 才披露, T 槽几乎全空(实测 盈利能力_T 非空率仅 33.6%)。现按 PIT 法则:
+        # 报价日年=Y, 5月起(Y-1)年报已披露可用, 否则只到(Y-2); T=≤该上限的最近可得年报年,
+        # T-1..T-4 相对 T 顺延(保证 delta 的两年都已披露且存在)。不触碰未披露的当年/次年行→无泄漏。
         code_scores = cas_df[cas_df['stock_code'] == code].sort_values('report_year', ascending=False)
 
-        # 确定基准年份
+        # 报价日 → (基准年, 月份)
+        issue_s = str(issue_date) if issue_date is not None else ''
         base_year = None
-        if issue_date and str(issue_date) not in ('', 'nan', 'None'):
+        if issue_s and issue_s not in ('', 'nan', 'None'):
             try:
-                base_year = int(str(issue_date)[:4])
+                base_year = int(issue_s[:4])
             except (ValueError, TypeError):
-                pass
+                base_year = None
         if base_year is None and not code_scores.empty:
             base_year = int(code_scores.iloc[0]['report_year'])
+        issue_month = int(issue_s[4:6]) if len(issue_s) >= 6 and issue_s[4:6].isdigit() else 12
 
         if base_year and not code_scores.empty:
-            labels = ['T-4', 'T-3', 'T-2', 'T-1', 'T']
-            for i, label in enumerate(labels):
-                year = base_year - 4 + i
-                year_row = code_scores[code_scores['report_year'] == year]
-                if not year_row.empty:
-                    yr = year_row.iloc[0]
-                    for metric, col in [('总分', 'total_score'), ('评级', 'rating'),
-                                        ('盈利能力', 'profitability'), ('成长能力', 'growth')]:
-                        r[f'{metric}_{label}'] = yr.get(col)
+            # PIT 上限: 法定年报披露截止 4/30 → 报价日 5月起上一年报可得, 否则再往前一年
+            pit_max = base_year - 1 if issue_month >= 5 else base_year - 2
+            avail = code_scores[code_scores['report_year'] <= pit_max]
+            if not avail.empty:
+                T_year = int(avail['report_year'].max())   # 最近可得(PIT)年报年
+                labels = ['T-4', 'T-3', 'T-2', 'T-1', 'T']
+                for i, label in enumerate(labels):
+                    year = T_year - 4 + i
+                    year_row = code_scores[code_scores['report_year'] == year]
+                    if not year_row.empty:
+                        yr = year_row.iloc[0]
+                        for metric, col in [('总分', 'total_score'), ('评级', 'rating'),
+                                            ('盈利能力', 'profitability'), ('成长能力', 'growth')]:
+                            r[f'{metric}_{label}'] = yr.get(col)
 
         results.append(r)
 

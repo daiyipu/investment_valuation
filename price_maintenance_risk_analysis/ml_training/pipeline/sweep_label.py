@@ -46,7 +46,7 @@ def _fold(dtr, dte, lo, hi, h):
         return None
     Xtr, med = _prep(Xtr_raw)
     Xte = _prep(Xte_raw, medians=med)[0].reindex(columns=Xtr.columns)
-    kept, _ = select_features(Xtr, ytr, Xte)
+    kept, _ = select_features(Xtr, ytr, Xte, Xtr_raw=Xtr_raw, Xte_raw=Xte_raw)
     if len(kept) < 2:
         kept = list(Xtr.columns[:10])
     gbm, _, _ = _train(Xtr[kept], ytr)

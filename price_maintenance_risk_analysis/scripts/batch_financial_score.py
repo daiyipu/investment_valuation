@@ -61,10 +61,8 @@ def get_company_industry(pro, ts_code: str, max_retries: int = 3) -> dict:
     result = {'l1_name': '', 'l2_name': '', 'l3_name': ''}
     for attempt in range(max_retries):
         try:
-            # 节流：串行化 index_member_all 调用 + 间隔，避免打爆限频
-            with _industry_query_lock:
-                df = pro.index_member_all(ts_code=ts_code)
-                time.sleep(0.35)
+            # index_member_all 官方支持并发(单次≤2000行), 直接调; 退避重试兜底瞬时限频
+            df = pro.index_member_all(ts_code=ts_code)
             if df is not None and not df.empty:
                 row = df.sort_values('in_date', ascending=False).iloc[0]
                 l1 = row.get('l1_name', '')
@@ -168,10 +166,11 @@ def get_industry_thresholds(threshold_calc: IndustryThresholdCalculator, industr
     base_year = target_year if target_year else SCORE_YEARS[-1]
     try_years = [base_year - i for i in range(4)]  # target_year, T-1, T-2, T-3
 
-    # 原始数据缓存：同一行业只取一次数，范围覆盖所有可能的报价日年份
-    # start_date要足够早（最早报价日2020的前5年=2015），end_date用CURRENT_YEAR
-    fetch_start_year = min(base_year - 5, 2010)  # 至少回溯到报价日前5年
-    fetch_end_year = CURRENT_YEAR
+    # 原始数据缓存：窄窗覆盖 try_years[base_year..base_year-3]。
+    # ⚠ 必须【窄窗】(end=base_year): tushare fina_indicator 每次最多100行取最新,
+    # 宽窗(→CURRENT_YEAR)会把早年挤掉 → create_thresholds 找不到 target_year → 退化。
+    fetch_start_year = base_year - 4
+    fetch_end_year = base_year
     df_with_stats = None
     if industry_name in _industry_raw_cache:
         cached_stats, cached_start, cached_end = _industry_raw_cache[industry_name]
@@ -364,8 +363,12 @@ def score_company(fetcher: TushareDataFetcher, threshold_calc: IndustryThreshold
         return {}
 
     # 2. 获取行业阈值：三级 → 二级 → 一级 回退（冷门三级行业样本不足时兜底）
+    # ⚠ target_year=该股报价日年(T): 行业阈值逐年不同, 必须按股的 T 年取; 复用只在
+    # (行业, T年) 相同时命中。原代码不传 target_year → 全部用 SCORE_YEARS[-1](首行年),
+    # 混合年批次会把 2010 阈值套到 2015 股上(年份错配)。
     industry_name = industry_info['l3_name']
-    thresholds = get_industry_thresholds(threshold_calc, industry_name)
+    t_year = int(years_to_score[-1])
+    thresholds = get_industry_thresholds(threshold_calc, industry_name, target_year=t_year)
     if not thresholds:
         for level_name, key, sw_level in (('二级', 'l2_name', 'L2'), ('一级', 'l1_name', 'L1')):
             fb_name = industry_info.get(key, '')
@@ -374,7 +377,7 @@ def score_company(fetcher: TushareDataFetcher, threshold_calc: IndustryThreshold
             fb_codes = _get_industry_stocks_by_level(pro, fb_name, level=sw_level)
             if not fb_codes:
                 continue
-            thresholds = _calc_thresholds_for_codes(threshold_calc, fb_codes, fb_name)
+            thresholds = _calc_thresholds_for_codes(threshold_calc, fb_codes, fb_name, target_year=t_year)
             if thresholds:
                 logger.info(f"{ts_code} 三级行业 '{industry_name}' 阈值样本不足，回退{level_name}行业 '{fb_name}'({len(fb_codes)}只成分股)")
                 industry_name = fb_name
@@ -608,10 +611,13 @@ def main():
             ws.cell(row_idx, col_offset, final)
 
             # ── 落库: 保存年度评分到 company_annual_scores ──
+            # 本地取 ts_code(勿用闭包变量: 主循环里 ts_code 在 _write_results 之后才赋值,
+            # 首个完成的股票会触发 "free variable referenced before assignment" 丢落库)
+            _sc = str(ws.cell(row_idx, code_col).value or '').strip()
             try:
-                _save_annual_scores_to_db(ts_code, results, stock_years)
+                _save_annual_scores_to_db(_sc, results, stock_years)
             except Exception as e:
-                logger.debug(f'{ts_code} 年度评分落库失败(不影响评分): {e}')
+                logger.debug(f'{_sc} 年度评分落库失败(不影响评分): {e}')
 
     # 行级续传：判定待补算行（三级行业为空 或 总分_T 缺失）；全量模式则所有行
     all_rows = list(range(2, ws.max_row + 1))

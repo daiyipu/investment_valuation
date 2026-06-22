@@ -569,7 +569,7 @@ def main():
     parser.add_argument('--iv-min', type=float, default=0.05, help='IV最低阈值，默认0.05')
     args = parser.parse_args()
 
-    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'output')
+    output_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'output')
     os.makedirs(output_dir, exist_ok=True)
 
     # ── 加载数据 ──

@@ -28,6 +28,7 @@ warnings.filterwarnings('ignore')
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
+sys.path.insert(0, os.path.join(SCRIPT_DIR, 'pipeline'))   # 管线模块已移入 pipeline/
 
 
 _INTERVAL_RE = re.compile(r'^[\[(](.*?),\s*(.*?)[\])]$')
@@ -327,17 +328,27 @@ def predict(scored_excel_path):
     # ═══════════════════════════════════════════════
     try:
         from db_model_store import list_model_metas, get_model_meta
+        from model_registry import get_previous
         all_metas = list_model_metas(kind='gray')
         cur_nfeat = len(sc_main['features']) if is_sc else 0
         _cur_h = (get_model_meta(version) or {}).get('horizon')   # current 期限(如 7m)
-        # BLUE = 同期限的另一个 gray SC; 排除 1m/3m 等不同期限模型(否则会误选短期模型当对比)
-        blue_candidates = [m for m in all_metas
-                           if m['version'] != version and not m.get('lgb_model')
-                           and m.get('kind') == 'gray'
-                           and (_cur_h is None or m.get('horizon') == _cur_h)]
-        if blue_candidates:
-            blue_candidates.sort(key=lambda m: abs(m.get('n_features', 0) - cur_nfeat), reverse=True)
-            blue_ver = blue_candidates[0]['version']
+        # 蓝绿 BLUE 优先 = 上一生产版(previous=老生产版本, 做对比+回滚); 不匹配则回退"最不同体量同期限SC"
+        blue_ver = get_previous('full')
+        bm = get_model_meta(blue_ver) if blue_ver else None
+        blue_ok = (bm and blue_ver != version and not bm.get('lgb_model')
+                   and bm.get('kind') == 'gray'
+                   and (_cur_h is None or bm.get('horizon') == _cur_h))
+        if not blue_ok:
+            blue_candidates = [m for m in all_metas
+                               if m['version'] != version and not m.get('lgb_model')
+                               and m.get('kind') == 'gray'
+                               and (_cur_h is None or m.get('horizon') == _cur_h)]
+            if blue_candidates:
+                blue_candidates.sort(key=lambda m: abs(m.get('n_features', 0) - cur_nfeat), reverse=True)
+                blue_ver = blue_candidates[0]['version']
+            else:
+                blue_ver = None
+        if blue_ver:
             blue_bundle_data = load_predict_bundle(blue_ver)
             sc_blue = pickle.loads(blue_bundle_data['lr_bundle'])
             blue_feats = sc_blue['features']

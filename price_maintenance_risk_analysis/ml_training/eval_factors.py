@@ -25,6 +25,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))            # ml_training/
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'pipeline'))  # 管线模块
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # PKG(utils)
 from train_scorecard import calc_iv_all_features   # noqa: E402
 from sklearn.metrics import roc_auc_score          # noqa: E402

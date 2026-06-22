@@ -30,7 +30,7 @@ import sys
 
 import pymysql
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # 包根(找 utils.db_manager)
 from utils.db_manager import ValuationDB   # noqa: E402 (utils 在上级目录)
 
 

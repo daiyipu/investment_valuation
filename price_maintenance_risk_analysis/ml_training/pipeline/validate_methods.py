@@ -32,6 +32,7 @@ warnings.filterwarnings('ignore')
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
+sys.path.insert(0, os.path.dirname(SCRIPT_DIR))   # ml_training/(compare_selection/predict_profitability 在根)
 
 from train_scorecard import (
     calc_iv_all_features, woe_transform, train_scorecard_lr, build_scorecard,
@@ -473,7 +474,7 @@ def main():
         print('\n(未提供 --external, 跳过 Part B)')
 
     # 落 CSV
-    out_dir = os.path.join(SCRIPT_DIR, 'output')
+    out_dir = os.path.join(os.path.dirname(SCRIPT_DIR), 'output')  # ml_training/output
     os.makedirs(out_dir, exist_ok=True)
     if rows_a:
         pd.DataFrame(rows_a).to_csv(

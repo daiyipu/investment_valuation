@@ -18,7 +18,8 @@ import os
 import json
 
 # 与 train_models / train_scorecard 一致的 output 目录
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'output')
+# ml_training/ 在 pipeline/ 上一级(output/ 在那)
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'output')
 REGISTRY_PATH = os.path.join(OUTPUT_DIR, 'model_registry.json')
 
 VALID_TYPES = ('full', 'scorecard')
@@ -103,7 +104,8 @@ def get_current(model_type):
 
 
 def set_current(model_type, version):
-    """切换/回滚某 model_type 的当前版本。版本必须已注册。"""
+    """切换/回滚某 model_type 的当前版本。版本必须已注册。
+    蓝绿: 切换前把旧生产版记入 previous(供 predict 蓝绿对比=BLUE + 回滚)。"""
     if model_type not in VALID_TYPES:
         raise ValueError(f'model_type 必须是 {VALID_TYPES}')
     reg = load_registry()
@@ -111,9 +113,21 @@ def set_current(model_type, version):
                  for v in reg['versions'])
     if not exists:
         raise ValueError(f'版本 {version!r} ({model_type}) 未在 registry 中注册')
+    reg.setdefault('previous', {})
+    old = reg['current'].get(model_type)
+    if old and old != version:
+        reg['previous'][model_type] = old
+        print(f'  🔵 蓝绿: 旧生产 {old} → previous(回滚/BLUE)')
     reg['current'][model_type] = version
     save_registry(reg)
     return version
+
+
+def get_previous(model_type):
+    """蓝绿: 返回上一生产版(BLUE/回滚版); 无则 None。"""
+    if model_type not in VALID_TYPES:
+        raise ValueError(f'model_type 必须是 {VALID_TYPES}')
+    return load_registry().get('previous', {}).get(model_type)
 
 
 def get_version_dir(model_type, version=None):
