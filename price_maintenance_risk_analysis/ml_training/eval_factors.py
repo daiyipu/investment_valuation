@@ -3,11 +3,11 @@
 """因子效力评估(coverage-aware + bar粒度↔target期限对齐)。
 
 核心理念: 因子的 K 线粒度要匹配 target 期限, 否则错配假阴性。
-对齐规则(可在 ALIGN 调):
-  日线(无后缀) → 短标签 标签_短_{1w/2w/4w}_gray(p25/p75 极性)
-  周线 _W     → 中期 标签_极性_灰度剔除_{1m/3m}m(-20/+10)
-  月线 _M     → 长期 标签_极性_灰度剔除_{3m/7m}m(-20/+10)
+对齐规则(可在 ALIGN 调): 全部用生产口径 GRAY_CFG(gray, 各期限 sweep 定阈值)。
+  日线(无后缀) → 1w/2w/1m   周线 _W → 1m/3m   月线 _M → 3m/7m
 coverage-aware: 每个因子只在自身非空样本上评(不 median 填 pooled, 避假阴性)。
+⚠ 2026-06-22: quantile p25/p75 短标签方案已移除(与生产 gray 口径不一致、难操作);
+   1w/2w 改用生产 GRAY_CFG; 4w 无生产模型, 去除。
 
 数据源: placement_evaluation DB(因子列 + return_*m + return_*w); gray 标签内存算。
 复用: train_scorecard.calc_iv_all_features(IV) + sklearn roc_auc_score(AUC)。
@@ -30,15 +30,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
 from train_scorecard import calc_iv_all_features   # noqa: E402
 from sklearn.metrics import roc_auc_score          # noqa: E402
 
-# bar 粒度 → 对齐的 target 期限。'1w'/'2w'/'4w'=短线gray(quantile p25/p75); '1m'/'3m'/'7m'=gray(GRAY_CFG 生产口径: 1m/3m=(0,10), 7m=(-20,10))。
+# bar 粒度 → 对齐的 target 期限。全部生产口径 GRAY_CFG(gray); quantile p25/p75 已移除。
 ALIGN = {
-    'daily': ['1w', '2w', '4w', '1m'],   # 日线: 短标签 + 1m
-    '_W':    ['1m', '3m'],               # 周线: 中期
-    '_M':    ['3m', '7m'],               # 月线: 长期
+    'daily': ['1w', '2w', '1m'],   # 日线: 周 + 1m
+    '_W':    ['1m', '3m'],         # 周线: 中期
+    '_M':    ['3m', '7m'],         # 月线: 长期
 }
-RETURN_COLS = ['return_1m', 'return_3m', 'return_7m', 'return_1w', 'return_2w', 'return_4w']
-SHORT = {'1w': 'return_1w', '2w': 'return_2w', '4w': 'return_4w'}
-MONTH = {'1m': 'return_1m', '3m': 'return_3m', '7m': 'return_7m'}
+RETURN_COLS = ['return_1m', 'return_3m', 'return_7m', 'return_1w', 'return_2w']
+# horizon → (DB return 列, GRAY_CFG 键); 全部生产 gray 口径
+HORIZON_RET = {'1w': 'return_1w', '2w': 'return_2w', '1m': 'return_1m', '3m': 'return_3m', '7m': 'return_7m'}
+HORIZON_GK = {'1w': '1w', '2w': '2w', '1m': 1, '3m': 3, '7m': 7}
 
 
 def granularity(col):
@@ -50,19 +51,13 @@ def granularity(col):
 
 
 def build_labels(df):
-    """内存构 gray 标签列。
+    """内存构 gray 标签列(全部生产口径 GRAY_CFG, 与训练一致)。
 
-    月级(1m/3m/7m)用生产口径 GRAY_CFG(train_horizon_models): 1m/3m=(0,10), 7m=(-20,10)。
-      ⚠ 必须与训练一致, 否则 IV/AUC 评的是错标签(2026-06-20 修: 原硬编码 >10/<-20 只对7m对)。
-    短线(1w/2w/4w)无生产模型, 用 quantile gray(p25/p75)作相对排名代理(与月级不同口径, 勿直接比)。
+    1w/2w/1m/3m/7m 各用 GRAY_CFG sweep 定的阈值。quantile p25/p75 方案已移除(2026-06-22)。
     """
     from train_horizon_models import GRAY_CFG
-    for w, rc in SHORT.items():
-        s = pd.to_numeric(df[rc], errors='coerce')
-        p25, p75 = s.quantile(0.25), s.quantile(0.75)
-        df[f'_lab_{w}'] = np.where(s > p75, 1, np.where(s < p25, 0, np.nan))
-    for h, rc in MONTH.items():
-        lo, hi = GRAY_CFG.get(int(h[0]), (-20, 10))   # 生产口径: 1m/3m=(0,10), 7m=(-20,10)
+    for h, rc in HORIZON_RET.items():
+        lo, hi = GRAY_CFG[HORIZON_GK[h]]
         r = pd.to_numeric(df[rc], errors='coerce')
         df[f'_lab_{h}'] = np.where(r > hi, 1, np.where(r < lo, 0, np.nan))
     return df
@@ -82,20 +77,17 @@ def load(factor_cols):
 
 
 def load_parquet(path):
-    """从 features_derived.parquet 读 derive 因子, 用生产口径 GRAY_CFG 重算月级 gray 标签。
+    """从 features_derived.parquet 读 derive 因子, 全部 horizon 用生产口径 GRAY_CFG 从收益重算 gray。
 
-    ⚠ parquet 里预算的 标签_极性_灰度剔除_{h}m 是 >10/<-20(export_features 硬编码),
-      只对 7m 匹配生产; 1m/3m 生产口径是 (0,10)。故月级标签必须用 GRAY_CFG 从收益重算,
-      不能用 parquet 预算列(否则 1m/3m IV 评错标签)。短线用 parquet 预算的 quantile gray。
+    不用 parquet 预算列(预算列口径可能与生产不一致); 1w/2w/1m/3m/7m 统一从 GRAY_CFG 重算。
     """
     from train_horizon_models import GRAY_CFG
     df = pd.read_parquet(path)
-    for h, rc in (('1m', '1个月涨跌幅'), ('3m', '3个月涨跌幅'), ('7m', '7个月涨跌幅')):
-        lo, hi = GRAY_CFG.get(int(h[0]), (-20, 10))
+    parq_rc = {'1w': '1周涨跌幅', '2w': '2周涨跌幅', '1m': '1个月涨跌幅', '3m': '3个月涨跌幅', '7m': '7个月涨跌幅'}
+    for h, rc in parq_rc.items():
+        lo, hi = GRAY_CFG[HORIZON_GK[h]]
         r = pd.to_numeric(df[rc], errors='coerce') if rc in df.columns else pd.Series(np.nan, index=df.index)
         df[f'_lab_{h}'] = np.where(r > hi, 1, np.where(r < lo, 0, np.nan))
-    for w, src in (('1w', '标签_短_1w_gray'), ('2w', '标签_短_2w_gray'), ('4w', '标签_短_4w_gray')):
-        df[f'_lab_{w}'] = pd.to_numeric(df[src], errors='coerce') if src in df.columns else np.nan
     return df
 
 
@@ -125,7 +117,7 @@ def main():
     ap.add_argument('--prefix', help='评估所有以该前缀开头的因子列(如 smc_)')
     ap.add_argument('--parquet', help='从 features_derived.parquet 读 derive 因子+预计算灰度标签(评 量价/turnover 等)')
     ap.add_argument('--horizons', default='aligned',
-                    help="aligned(默认,按粒度对齐) | all(全期限1w/2w/4w/1m/3m/7m) | 自定义如 1m,3m")
+                    help="aligned(默认,按粒度对齐) | all(全期限1w/2w/1m/3m/7m) | 自定义如 1m,3m")
     args = ap.parse_args()
 
     # 确定因子列 + 载入
@@ -155,7 +147,7 @@ def main():
     if not factors:
         print('❌ 未指定因子(用 位置参数 或 --prefix)'); sys.exit(1)
 
-    all_h = ['1w', '2w', '4w', '1m', '3m', '7m']
+    all_h = ['1w', '2w', '1m', '3m', '7m']
     print(f'因子 {len(factors)} 个 | 样本 {len(df)} | 对齐: {args.horizons}\n')
     for col in factors:
         g = granularity(col)

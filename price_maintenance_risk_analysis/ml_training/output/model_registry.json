@@ -1028,6 +1028,50 @@
       "note": "WOE评分卡 1m_gray_sc",
       "label_config": "1m_gray_sc",
       "dataset_version": "derived_20260616_2334_f35ba6f3_7m"
+    },
+    {
+      "version": "v_sc_20260622_1125_1w_gray_sc_21feat",
+      "model_type": "full",
+      "created_at": "2026-06-22 11:25",
+      "n_features": 21,
+      "threshold": -10,
+      "n_samples": 2236,
+      "positive_rate": 0.5398032200357782,
+      "metrics": {
+        "sc_fit_auc": 0.6585429769392034,
+        "sc_fit_ks": 0.3071278825995807,
+        "sc_loyo_auc": 0.6029187373006611,
+        "sc_loyo_ks": 0.238904475140464
+      },
+      "dir": "v_sc_20260622_1125_1w_gray_sc_21feat",
+      "files": [
+        "(in ml_model_meta DB)"
+      ],
+      "note": "WOE评分卡 1w_gray_sc",
+      "label_config": "1w_gray_sc",
+      "dataset_version": "derived_20260616_2334_f35ba6f3_7m"
+    },
+    {
+      "version": "v_sc_20260622_1141_2w_gray_sc_13feat",
+      "model_type": "full",
+      "created_at": "2026-06-22 11:41",
+      "n_features": 13,
+      "threshold": -10,
+      "n_samples": 2603,
+      "positive_rate": 0.5343834037648867,
+      "metrics": {
+        "sc_fit_auc": 0.6602766798418972,
+        "sc_fit_ks": 0.28833992094861666,
+        "sc_loyo_auc": 0.6274798073566374,
+        "sc_loyo_ks": 0.25762146253699914
+      },
+      "dir": "v_sc_20260622_1141_2w_gray_sc_13feat",
+      "files": [
+        "(in ml_model_meta DB)"
+      ],
+      "note": "WOE评分卡 2w_gray_sc",
+      "label_config": "2w_gray_sc",
+      "dataset_version": "derived_20260616_2334_f35ba6f3_7m"
     }
   ],
   "previous": {

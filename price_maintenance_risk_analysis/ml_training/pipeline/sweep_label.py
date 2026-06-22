@@ -31,11 +31,11 @@ from sklearn.metrics import roc_auc_score
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from validate_methods import make_features, calc_ks
 from feature_selection import select_features
-from train_horizon_models import _prep, _train
+from train_horizon_models import _prep, _train, _ret_col, _tag, _parse_horizon
 
 
 def _fold(dtr, dte, lo, hi, h):
-    ret_col = f'{h}个月涨跌幅'
+    ret_col = _ret_col(h)
     lbl = f'_sw_{lo}'
     for d in (dtr, dte):
         rr = pd.to_numeric(d[ret_col], errors='coerce')
@@ -68,7 +68,7 @@ def _fold(dtr, dte, lo, hi, h):
 def main():
     ap = argparse.ArgumentParser(description='标签下行阈值扫描(双样本空间, 灰度实战)')
     ap.add_argument('features_path')
-    ap.add_argument('--horizon', type=int, default=1)
+    ap.add_argument('--horizon', type=_parse_horizon, default=1)
     ap.add_argument('--win', type=float, default=10, help='win 阈值(默认+10, 生产口径)')
     ap.add_argument('--loses', default='0,-5,-10,-15,-20', help='lose 阈值列表(逗号分隔)')
     args = ap.parse_args()
@@ -77,7 +77,7 @@ def main():
     df = pd.read_parquet(args.features_path).dropna(subset=['报价日']).reset_index(drop=True)
     df['_year'] = (pd.to_numeric(df['报价日'], errors='coerce') // 10000).astype('Int64')
     years = sorted(int(y) for y in df['_year'].dropna().unique())
-    print(f'{h}m 标签扫描(win=+{hi:g}%, lose 横扫) | 双样本空间(非灰AUC/KS + 全样本IC) | {len(years)}折LOYO\n', flush=True)
+    print(f'{_tag(h)} 标签扫描(win=+{hi:g}%, lose 横扫) | 双样本空间(非灰AUC/KS + 全样本IC) | {len(years)}折LOYO\n', flush=True)
     print(f'{"(lose,win)":<12}{"灰度%":>7}{"非灰AUC":>12}{"非灰KS":>8}{"全样本IC":>13}', flush=True)
     print('-' * 56, flush=True)
     for lo in loses:

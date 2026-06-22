@@ -33,25 +33,25 @@ sys.path.insert(0, HERE)
 from db_model_store import load_predict_bundle, get_model_meta, list_model_metas
 from eval_loyo import fit_woe, apply_woe
 from validate_methods import make_features, calc_ks
-from train_horizon_models import build_label, GRAY_CFG, _prep
+from train_horizon_models import build_label, GRAY_CFG, _prep, _parse_horizon
 
 PARQUET = os.path.join(ML_ROOT, 'data', 'features_derived.parquet')
 WOE_FILL = lambda X: X.replace([np.inf, -np.inf], np.nan).fillna(0)
 
 
 def _ret_col(horizon):
-    return f'{horizon}个月涨跌幅'
+    return f'{horizon[:-1]}周涨跌幅' if isinstance(horizon, str) and horizon.endswith('w') else f'{horizon}个月涨跌幅'
 
 
 def _tag(horizon):
-    return f'{horizon}m'
+    return horizon if isinstance(horizon, str) else f'{horizon}m'
 
 
 def latest_gray_sc(horizon):
     """该期限最新 gray SC 版本(无 lgb_model = 纯评分卡)。"""
     metas = [m for m in list_model_metas(kind='gray')
              if not m.get('lgb_model') and m.get('kind') == 'gray'
-             and m.get('horizon') == horizon]
+             and str(m.get('horizon')) == str(horizon)]
     if not metas:
         return None
     metas.sort(key=lambda m: m.get('version', ''))
@@ -160,7 +160,7 @@ def generate_report(features_path, horizon, version=None):
 def main():
     ap = argparse.ArgumentParser(description='gray SC 期限模型 LOYO per-year 报告')
     ap.add_argument('features_path', nargs='?', default=PARQUET, help='features_derived.parquet')
-    ap.add_argument('--horizon', type=int, default=1)
+    ap.add_argument('--horizon', type=_parse_horizon, default=1)
     ap.add_argument('--version', default=None, help='指定版本(默认该期限最新)')
     args = ap.parse_args()
     generate_report(args.features_path, args.horizon, args.version)

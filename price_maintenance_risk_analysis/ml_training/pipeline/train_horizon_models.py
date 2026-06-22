@@ -28,11 +28,29 @@ from feature_selection import (select_features, prune_by_lgb_importance,
                                pipeline_summary, IV_MIN, PSI_MAX, CORR_MAX, VIF_MAX)
 from db_model_store import save_model_meta   # 模型元信息入 DB(替代散落 meta.json)
 
-HORIZONS = [1, 3, 6, 7, 12]
-# 灰度区阈值(lose,win)。1m/3m: 2026-06-20 经 sweep_label 双样本空间扫描定为 (-10,10)
-# —— "下行风险"口径(跌>10%=输/涨>10%=赢), 全样本IC最优(1m~0.04, 3m 0.140);
-# 原 (0,10)"任何跌=输"全样本IC≈0(1m)/0.11(3m) 且埋掉崩盘信号。6/7/12m 沿用 [-20,+10]。
-GRAY_CFG = {1: (-10, 10), 3: (-10, 10), 6: (-20, 10), 7: (-20, 10), 12: (-20, 10)}
+HORIZONS = [1, 3, 6, 7, 12]   # 月期限(批量 eval_loyo.run 用); 周 '1w'/'2w' 走 train_to_production 单期限路径
+# 灰度区阈值(lose,win)。月: 1m/3m sweep 定 (-10,10); 6/7/12m 沿用 [-20,+10]。
+# 周: 2026-06-22 sweep_label 定(全样本IC最优); 周收益波动小于月→阈值更紧(±5/±6)。
+GRAY_CFG = {1: (-10, 10), 3: (-10, 10), 6: (-20, 10), 7: (-20, 10), 12: (-20, 10),
+            '1w': (-5, 5), '2w': (-6, 6)}
+
+
+def _ret_col(horizon):
+    """返回列名: 月用 int(→'{h}个月涨跌幅'), 周用 str 'Nw'(→'N周涨跌幅')。"""
+    if isinstance(horizon, str) and horizon.endswith('w'):
+        return f'{horizon[:-1]}周涨跌幅'
+    return f'{horizon}个月涨跌幅'
+
+
+def _tag(horizon):
+    """版本/标签 tag: 7→'7m', '1w'→'1w'。"""
+    return horizon if isinstance(horizon, str) else f'{horizon}m'
+
+
+def _parse_horizon(s):
+    """CLI --horizon 解析: '7'→7(int月), '1w'→'1w'(str周)。"""
+    s = str(s).strip()
+    return int(s) if s.lstrip('-').isdigit() else s
 
 
 def _prep(X_raw, medians=None):
@@ -57,13 +75,12 @@ def _train(X, y):
     return gbm, lr, sc
 
 
-def build_label(df, horizon, kind):
-    """返回 (label_col, gray_cfg)。gray 实时构造, 列名带「标签」前缀防泄漏。"""
-    if kind == 'thr':
-        return f'标签_盈利_-10_{horizon}m', None
+def build_label(df, horizon, kind='gray'):
+    """返回 (label_col, gray_cfg)。gray 实时构造, 列名带「标签」前缀防泄漏。
+    horizon: int=月(1/3/6/7/12) 或 str='1w'/'2w'(周)。thr 旧二分类已移除(2026-06-22), 仅 gray。"""
     lo, hi = GRAY_CFG[horizon]
-    col = f'标签_极性_灰度自定义_{lo}_{hi}_{horizon}m'
-    ret = pd.to_numeric(df[f'{horizon}个月涨跌幅'], errors='coerce')
+    col = f'标签_极性_灰度自定义_{lo}_{hi}_{_tag(horizon)}'
+    ret = pd.to_numeric(df[_ret_col(horizon)], errors='coerce')
     df[col] = np.where(ret > hi, 1, np.where(ret < lo, 0, np.nan))
     return col, (lo, hi)
 
@@ -83,7 +100,7 @@ def run(features_path, split_year=2024):
     derived_ver = 'derived_20260616_1627_a77c2bb4_7m'   # 当前 features_derived 快照
 
     for h in HORIZONS:
-        for kind in ('thr', 'gray'):
+        for kind in ('gray',):
             lbl, gcfg = build_label(dtr, h, kind)   # 注意: gray 在 dtr 上注入列; dte 需同样注入
             if kind == 'gray':
                 build_label(dte, h, kind)

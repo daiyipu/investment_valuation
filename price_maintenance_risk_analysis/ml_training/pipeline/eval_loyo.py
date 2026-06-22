@@ -33,7 +33,7 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from validate_methods import make_features, eval_metrics
 from feature_selection import select_features, prune_by_lgb_importance
-from train_horizon_models import GRAY_CFG, HORIZONS, build_label, _prep, _train
+from train_horizon_models import GRAY_CFG, HORIZONS, build_label, _prep, _train, _ret_col, _tag, _parse_horizon
 
 
 # ─────────────── 自包含 WOE(防 test 标签泄漏) ───────────────
@@ -91,7 +91,7 @@ def _eval_fold(dtr, dte, horizon, kind):
     lbl, _ = build_label(dtr, horizon, kind)
     if kind == 'gray':
         build_label(dte, horizon, kind)
-    ret = f'{horizon}个月涨跌幅'
+    ret = _ret_col(horizon)
     Xtr_raw, ytr, _ = make_features(dtr, label_col=lbl, ret_col=ret)
     Xte_raw, yte, _ = make_features(dte, label_col=lbl, ret_col=ret)
     if Xtr_raw is None or Xte_raw is None or len(ytr) < 40 or yte.nunique() < 2:
@@ -131,7 +131,7 @@ def run(features_path):
     years = sorted(int(y) for y in df['_year'].dropna().unique())
     print(f'LOYO {len(years)} 折: {years} | 全量 {len(df)} 行 | 三模型(LGB/LR/SC)同标准五步特征\n')
 
-    configs = [(f'{h}m_{k}', h, k) for h in HORIZONS for k in ('thr', 'gray')]
+    configs = [(f'{h}m_{k}', h, k) for h in HORIZONS for k in ('gray',)]
     models = ('lgb', 'lr', 'sc')
     # res[model][metric] = list of rows(cfg, gray, {year:val}, mean, std)
     res = {m: {'auc': [], 'ks': []} for m in models}
@@ -184,7 +184,7 @@ def _eval_fold_fixed(dtr, dte, horizon, kind, features):
     lbl, _ = build_label(dtr, horizon, kind)
     if kind == 'gray':
         build_label(dte, horizon, kind)
-    ret = f'{horizon}个月涨跌幅'
+    ret = _ret_col(horizon)
     Xtr_raw, ytr, _ = make_features(dtr, label_col=lbl, ret_col=ret)
     Xte_raw, yte, _ = make_features(dte, label_col=lbl, ret_col=ret)
     if Xtr_raw is None or Xte_raw is None or yte.nunique() < 2:
@@ -214,7 +214,7 @@ def loyo_fixed(features_path, horizon, kind, features):
     df['_year'] = (pd.to_numeric(df['报价日'], errors='coerce') // 10000).astype('Int64')
     years = sorted(int(y) for y in df['_year'].dropna().unique())
     feats = [f.strip() for f in features.split(',')]
-    print(f'🔒 锁定特征 LOYO [{len(feats)}特征]: {feats}\n  期限 {horizon}m/{kind} | {years}\n')
+    print(f'🔒 锁定特征 LOYO [{len(feats)}特征]: {feats}\n  期限 {_tag(horizon)}/{kind} | {years}\n')
     models = ('lgb', 'lr', 'sc')
     per = {m: [] for m in models}
     per_ks = {m: [] for m in models}
@@ -250,8 +250,8 @@ def main():
     ap.add_argument('features_path', help='features_derived.parquet')
     ap.add_argument('--fixed-features', default=None,
                     help='锁定特征(逗号分隔) → 跑部署对齐 LOYO(跳过每折选特征); 如 "个股PB,盈利能力_delta_1y"')
-    ap.add_argument('--horizon', type=int, default=7)
-    ap.add_argument('--kind', choices=['thr', 'gray'], default='gray')
+    ap.add_argument('--horizon', type=_parse_horizon, default=7)
+    ap.add_argument('--kind', choices=['gray'], default='gray')
     args = ap.parse_args()
     if args.fixed_features:
         loyo_fixed(args.features_path, args.horizon, args.kind, args.fixed_features)

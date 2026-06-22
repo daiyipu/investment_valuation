@@ -25,7 +25,7 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from validate_methods import make_features
 from feature_selection import select_features, CORR_MAX, VIF_MAX
-from train_horizon_models import GRAY_CFG, build_label, _prep, _train
+from train_horizon_models import GRAY_CFG, build_label, _prep, _train, _ret_col, _tag, _parse_horizon
 from train_scorecard import calc_iv_all_features, remove_correlated, filter_by_vif
 from eval_loyo import loyo_fixed, fit_woe, apply_woe
 from db_model_store import save_model_meta
@@ -40,7 +40,7 @@ def derive_consensus(df, horizon, kind, min_folds):
     years = sorted(int(y) for y in df['_y'].dropna().unique())
     from collections import Counter
     freq = Counter()
-    ret = f'{horizon}个月涨跌幅'
+    ret = _ret_col(horizon)
     print(f'推导共识特征: {len(years)} 折各跑 select_features(真实 held-out 年判 PSI)...')
     for Y in years:
         dtr = df[df['_y'] != Y].drop(columns=['_y'])
@@ -77,7 +77,7 @@ def derive_consensus(df, horizon, kind, min_folds):
     import contextlib, io
     df_pool = df.drop(columns=['_y'])
     lbl_pool, _ = build_label(df_pool, horizon, kind)
-    Xpool_raw, ypool, _ = make_features(df_pool, label_col=lbl_pool, ret_col=f'{horizon}个月涨跌幅')
+    Xpool_raw, ypool, _ = make_features(df_pool, label_col=lbl_pool, ret_col=_ret_col(horizon))
     if Xpool_raw is not None and len(consensus) > 1:
         Xpool, _ = _prep(Xpool_raw)
         feats = [f for f in consensus if f in Xpool.columns]
@@ -123,7 +123,7 @@ def loo_refine(features_path, horizon, kind, consensus, candidates, lam=0.5, th=
     # 按 pooled IV 升序删(冗余对里低IV先删、高IV留存代表); 带 10 个下限防过度精简。
     df0 = pd.read_parquet(features_path).dropna(subset=['报价日']).reset_index(drop=True)
     lbl0, _ = build_label(df0, horizon, kind)
-    Xraw0, y0, _ = make_features(df0, label_col=lbl0, ret_col=f'{horizon}个月涨跌幅')
+    Xraw0, y0, _ = make_features(df0, label_col=lbl0, ret_col=_ret_col(horizon))
     iv = calc_iv_all_features(Xraw0, y0).set_index('feature')['iv']
     order = sorted([f for f in consensus if f in iv.index], key=lambda f: iv.get(f, 0))
     for f in order:
@@ -155,7 +155,7 @@ def final_collapse(features_path, horizon, kind, refined, corr_th=0.9):
     import contextlib, io
     df = pd.read_parquet(features_path).dropna(subset=['报价日']).reset_index(drop=True)
     lbl, _ = build_label(df, horizon, kind)
-    Xraw, y, _ = make_features(df, label_col=lbl, ret_col=f'{horizon}个月涨跌幅')
+    Xraw, y, _ = make_features(df, label_col=lbl, ret_col=_ret_col(horizon))
     X, _ = _prep(Xraw)
     feats = [f for f in refined if f in X.columns]
     iv = calc_iv_all_features(Xraw, y)
@@ -173,14 +173,14 @@ def deploy_lgb(features_path, horizon, kind, consensus, split_year, set_current)
     """LGB 部署: 全量训 LGB+LR(共识特征), 入库。"""
     df = pd.read_parquet(features_path).dropna(subset=['报价日']).reset_index(drop=True)
     lbl, gcfg = build_label(df, horizon, kind)
-    Xall_raw, yall, _ = make_features(df, label_col=lbl, ret_col=f'{horizon}个月涨跌幅')
+    Xall_raw, yall, _ = make_features(df, label_col=lbl, ret_col=_ret_col(horizon))
     Xall, med = _prep(Xall_raw)
     feats = [f for f in consensus if f in Xall.columns]
     gbm, lr, sc = _train(Xall[feats], yall)
     # LGB 训练集概率 10 分位边界(部署后 predict 映射固定档位)
     train_proba = gbm.predict_proba(Xall[feats])[:, 1]
     proba_deciles = np.quantile(train_proba, np.linspace(0.1, 0.9, 9)).tolist()
-    ver = f'v_lgb_{pd.Timestamp.now().strftime("%Y%m%d_%H%M")}_{horizon}m_{kind}_{len(feats)}feat'
+    ver = f'v_lgb_{pd.Timestamp.now().strftime("%Y%m%d_%H%M")}_{_tag(horizon)}_{kind}_{len(feats)}feat'
     save_model_meta({'version': ver, 'label_config': f'{horizon}m_{kind}_lgb_consensus',
                      'kind': kind, 'horizon': horizon, 'gray_cfg': gcfg, 'features': feats,
                      'n_features': len(feats), 'medians': {f: float(med[f]) for f in feats},
@@ -192,7 +192,7 @@ def deploy_lgb(features_path, horizon, kind, consensus, split_year, set_current)
     register_version('full', ver, ver, metrics={}, n_features=len(feats), threshold=-10,
                      n_samples=len(yall), positive_rate=float(yall.mean()),
                      files=['(in DB)'], note=f'LGB共识{feats}', set_current=set_current,
-                     label_config=f'{horizon}m_{kind}_lgb_consensus')
+                     label_config=f'{_tag(horizon)}_{kind}_lgb_consensus')
     print(f'\n✅ LGB 入库 {ver} | {"已设生产" if set_current else "未切生产"}')
     return ver
 
@@ -200,8 +200,8 @@ def deploy_lgb(features_path, horizon, kind, consensus, split_year, set_current)
 def main():
     ap = argparse.ArgumentParser(description='共识特征→生产 标准流水线')
     ap.add_argument('features_path')
-    ap.add_argument('--horizon', type=int, default=7)
-    ap.add_argument('--kind', choices=['thr', 'gray'], default='gray')
+    ap.add_argument('--horizon', type=_parse_horizon, default=7)
+    ap.add_argument('--kind', choices=['gray'], default='gray')
     ap.add_argument('--min-folds', type=int, default=3, help='共识阈值: 跨折出现≥此数(默认3/6)')
     ap.add_argument('--model', choices=['sc', 'lgb'], default='sc')
     ap.add_argument('--set-current', action='store_true')

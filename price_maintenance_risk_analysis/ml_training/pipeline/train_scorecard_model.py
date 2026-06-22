@@ -18,7 +18,7 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from validate_methods import make_features, eval_metrics
 from feature_selection import select_features, pipeline_summary, IV_MIN, PSI_MAX, CORR_MAX, VIF_MAX
-from train_horizon_models import GRAY_CFG, build_label, _prep
+from train_horizon_models import GRAY_CFG, build_label, _prep, _ret_col, _tag, _parse_horizon
 from eval_loyo import fit_woe, apply_woe
 from db_model_store import save_model_meta
 from model_registry import register_version
@@ -54,7 +54,7 @@ def run(features_path, horizon, kind, split_year, set_current, features=None, lo
     lbl, gcfg = build_label(dtr_s, horizon, kind)
     if kind == 'gray':
         build_label(dte_s, horizon, kind)
-    ret = f'{horizon}个月涨跌幅'
+    ret = _ret_col(horizon)
 
     # 特征: --features 锁定(共识特征, 跳过选择) 或 标准五步选
     Xtr_raw, ytr_s, _ = make_features(dtr_s, label_col=lbl, ret_col=ret)
@@ -93,7 +93,7 @@ def run(features_path, horizon, kind, split_year, set_current, features=None, lo
     print_scorecard(kept, wbins, lr)
 
     # 入库
-    cfg_tag = f'{horizon}m_{kind}_sc'
+    cfg_tag = f'{_tag(horizon)}_{kind}_sc'
     ver = f'v_sc_{pd.Timestamp.now().strftime("%Y%m%d_%H%M")}_{cfg_tag}_{len(kept)}feat'
     # 训练集概率的 10 分位边界(9 切点): 部署后 predict 用它把新概率映射成固定 1-10 档
     # (训练标定的绝对档位, 跨批次可比; 10=训练集 top10% 概率)
@@ -136,8 +136,8 @@ def run(features_path, horizon, kind, split_year, set_current, features=None, lo
 def main():
     ap = argparse.ArgumentParser(description='训练 WOE 评分卡并入库')
     ap.add_argument('features_path')
-    ap.add_argument('--horizon', type=int, default=7)
-    ap.add_argument('--kind', choices=['thr', 'gray'], default='gray')
+    ap.add_argument('--horizon', type=_parse_horizon, default=7)
+    ap.add_argument('--kind', choices=['gray'], default='gray')
     ap.add_argument('--split-year', type=int, default=2024)
     ap.add_argument('--set-current', action='store_true', help='设为 current.full(生产)')
     ap.add_argument('--features', default=None, help='锁定特征(逗号分隔, 跳过select_features); 如共识特征')
