@@ -55,18 +55,20 @@ def run_compare(features_path, horizon, deploy=False):
         with contextlib.redirect_stdout(io.StringIO()):
             res[name] = loyo_fixed(features_path, horizon, 'gray', ','.join(feats))
 
-    print('=' * 78)
+    print('=' * 86)
     print(f'{_tag(horizon)} 对比: LGB / LR / SC  ×  共识({len(cons)}) vs 全量({len(full)})  (LOYO)')
-    print('=' * 78)
-    print(f'{"模型":<5}{"共识 AUC±std":>17}{"KS":>8}{"全量 AUC±std":>17}{"KS":>8}{"ΔAUC(共−全)":>14}')
-    print('-' * 78)
+    print('=' * 86)
+    print(f'{"模型":<5}{"共识AUC±std":>15}{"KS":>7}{"IC":>9}{"全量AUC±std":>15}{"KS":>7}{"IC":>9}{"ΔAUC":>8}{"ΔIC":>8}')
+    print('-' * 86)
     for m, lab in (('lgb', 'LGB'), ('lr', 'LR'), ('sc', 'SC')):
         c, f = res['共识'][m], res['全量'][m]
         da = (c['auc_mean'] - f['auc_mean']) if c['auc_mean'] and f['auc_mean'] else float('nan')
-        print(f'{lab:<5}{c["auc_mean"]:.3f}±{c["auc_std"]:.3f}{c["ks_mean"]:>8.3f}'
-              f'{f["auc_mean"]:>12.3f}±{f["auc_std"]:.3f}{f["ks_mean"]:>8.3f}{da:>+14.3f}')
-    print('\n读法: ΔAUC>0 = 共识精简优于全量(精简防过拟合); <0 = 全量更强。'
-          'SC 看 ΔAUC 最关键(SC 对冗余最敏感)。')
+        di = (c['ic_mean'] - f['ic_mean']) if c['ic_mean'] is not None and f['ic_mean'] is not None else float('nan')
+        print(f'{lab:<5}{c["auc_mean"]:.3f}±{c["auc_std"]:.3f}{c["ks_mean"]:>7.3f}{c["ic_mean"]:>+8.3f}'
+              f'{f["auc_mean"]:>10.3f}±{f["auc_std"]:.3f}{f["ks_mean"]:>7.3f}{f["ic_mean"]:>+8.3f}'
+              f'{da:>+8.3f}{di:>+8.3f}')
+    print('\n读法: ΔAUC/ΔIC >0 = 共识精简优于全量(防过拟合); <0 = 全量更强。'
+          'SC 对冗余最敏感(看 SC 行)。IC=全样本含灰 Spearman(排序能力)。')
 
     if deploy:
         print(f'\n--- 用共识字段部署 LGB(deploy_lgb, set_current=False) ---')

@@ -178,8 +178,30 @@ def run(features_path):
     print(f'\n写出: {out_dir}/loyo_{{lgb,lr,sc}}.csv (+_ks.csv)')
 
 
+def _ic_full(dte, feats, med, gbm, lr, sc_lr, sc_m, wb, ret_col):
+    """全 dte 样本(含灰) Spearman(预测概率, 收益) per LGB/LR/SC —— IC 口径同 report_horizon。
+    在全行上打分(median 填 → apply_woe), 不限非灰, 量实战排序能力。"""
+    from scipy.stats import spearmanr
+    r = pd.to_numeric(dte[ret_col], errors='coerce') if ret_col in dte.columns else pd.Series(np.nan, index=dte.index)
+    Xf = pd.DataFrame(index=dte.index)
+    for f in feats:
+        Xf[f] = pd.to_numeric(dte[f], errors='coerce') if f in dte.columns else np.nan
+    Xf = Xf.fillna({f: med.get(f, 0) for f in feats}).replace([np.inf, -np.inf], 0)
+    v = np.isfinite(r.values)
+    out = {'lgb': np.nan, 'lr': np.nan, 'sc': np.nan}
+    if v.sum() > 20:
+        rv = r.values[v]
+        preds = {'lgb': gbm.predict_proba(Xf)[:, 1],
+                 'lr': lr.predict_proba(sc_lr.transform(Xf))[:, 1]}
+        Xfw = apply_woe(Xf, feats, wb).replace([np.inf, -np.inf], 0).fillna(0)
+        preds['sc'] = sc_m.predict_proba(Xfw)[:, 1]
+        for name, p in preds.items():          # p 全行, [v] 取有限 ret 子集(与 rv 对齐)
+            out[name] = float(spearmanr(p[v], rv).correlation)
+    return out
+
+
 def _eval_fold_fixed(dtr, dte, horizon, kind, features):
-    """锁定特征的单折评估(跳过 select_features), 返回 lgb/lr/sc auc/ks。
+    """锁定特征的单折评估(跳过 select_features), 返回 lgb/lr/sc auc/ks/ic。
     用于部署模型的"对齐验证"——部署用固定特征集, 验证也用同一套, 避免 选/部 偏离。"""
     lbl, _ = build_label(dtr, horizon, kind)
     if kind == 'gray':
@@ -203,8 +225,10 @@ def _eval_fold_fixed(dtr, dte, horizon, kind, features):
     m.fit(Xtr_w.replace([np.inf, -np.inf], np.nan).fillna(0), ytr)
     asc = eval_metrics(yte.values, m.predict_proba(
         Xte_w.replace([np.inf, -np.inf], np.nan).fillna(0))[:, 1])
+    ic = _ic_full(dte, feats, med, gbm, lr, sc_lr, m, wb, ret)   # 全样本 IC
     return {'lgb_auc': al['auc'], 'lgb_ks': al['ks'], 'lr_auc': ar['auc'],
-            'lr_ks': ar['ks'], 'sc_auc': asc['auc'], 'sc_ks': asc['ks'], 'n_feat': len(feats)}
+            'lr_ks': ar['ks'], 'sc_auc': asc['auc'], 'sc_ks': asc['ks'], 'n_feat': len(feats),
+            'lgb_ic': ic['lgb'], 'lr_ic': ic['lr'], 'sc_ic': ic['sc']}
 
 
 def loyo_fixed(features_path, horizon, kind, features):
@@ -218,6 +242,7 @@ def loyo_fixed(features_path, horizon, kind, features):
     models = ('lgb', 'lr', 'sc')
     per = {m: [] for m in models}
     per_ks = {m: [] for m in models}
+    per_ic = {m: [] for m in models}
     for Y in years:
         dtr = df[df['_year'] != Y].drop(columns=['_year'])
         dte = df[df['_year'] == Y].drop(columns=['_year'])
@@ -225,7 +250,7 @@ def loyo_fixed(features_path, horizon, kind, features):
         if r is None:
             continue
         for m in models:
-            per[m].append(r[f'{m}_auc']); per_ks[m].append(r[f'{m}_ks'])
+            per[m].append(r[f'{m}_auc']); per_ks[m].append(r[f'{m}_ks']); per_ic[m].append(r[f'{m}_ic'])
         print(f"  折{Y}: LGB {r['lgb_auc']:.3f}/{r['lgb_ks']:.3f} | "
               f"LR {r['lr_auc']:.3f}/{r['lr_ks']:.3f} | SC {r['sc_auc']:.3f}/{r['sc_ks']:.3f}")
     print('\n' + '=' * 70)
@@ -234,12 +259,16 @@ def loyo_fixed(features_path, horizon, kind, features):
     for m, label in (('lgb', 'LGB'), ('lr', 'LR'), ('sc', 'SC 评分卡')):
         _a = np.array([x for x in per[m] if x == x], float)      # 丢 nan 折(样本不足/单类)
         _k = np.array([x for x in per_ks[m] if x == x], float)
+        _i = np.array([x for x in per_ic[m] if x == x], float)
         print(f'  {label:<10} AUC {np.mean(_a):.3f}±{np.std(_a):.3f} | '
-              f'KS {np.mean(_k):.3f}±{np.std(_k):.3f} | per-year {[round(a,3) for a in per[m]]}')
+              f'KS {np.mean(_k):.3f}±{np.std(_k):.3f} | IC {np.mean(_i):+.3f}±{np.std(_i):.3f} '
+              f'| per-year AUC {[round(a,3) for a in per[m]]}')
         out[m] = {'auc_mean': float(np.mean(_a)) if len(_a) else None,
                   'auc_std': float(np.std(_a)) if len(_a) else None,
                   'ks_mean': float(np.mean(_k)) if len(_k) else None,
                   'ks_std': float(np.std(_k)) if len(_k) else None,
+                  'ic_mean': float(np.mean(_i)) if len(_i) else None,
+                  'ic_std': float(np.std(_i)) if len(_i) else None,
                   'n_folds': int(len(_a)),
                   'auc_per_year': [None if a != a else round(float(a), 3) for a in per[m]]}
     return out

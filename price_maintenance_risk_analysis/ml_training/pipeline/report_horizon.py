@@ -32,7 +32,7 @@ ML_ROOT = os.path.dirname(HERE)                                    # ml_training
 sys.path.insert(0, HERE)
 from db_model_store import load_predict_bundle, get_model_meta, list_model_metas
 from eval_loyo import fit_woe, apply_woe
-from validate_methods import make_features, calc_ks
+from validate_methods import make_features, calc_ks, eval_metrics
 from train_horizon_models import build_label, GRAY_CFG, _prep, _parse_horizon
 
 PARQUET = os.path.join(ML_ROOT, 'data', 'features_derived.parquet')
@@ -90,14 +90,12 @@ def per_year_loyo(df, horizon, features, lo, hi):
         Xte_w = apply_woe(Xte, feats, wb)
         p = lr.predict_proba(WOE_FILL(Xte_w))[:, 1]
         r = pd.to_numeric(dte[ret_col], errors='coerce')
-        # 非灰 AUC/KS(需两类都有)
+        # 非灰 AUC/KS(eval_metrics 统一口径: n<20 或单类 → nan 自动丢, 与 loyo_fixed 一致)
         ng = (r > hi) | (r < lo)
-        y_ng = (r[ng] > hi).astype(int)
-        if ng.sum() > 0 and y_ng.nunique() == 2:
-            auc = float(roc_auc_score(y_ng.values, p[ng]))
-            ks = float(calc_ks(y_ng.values, p[ng]))
-        else:
-            auc = ks = np.nan
+        y_ng = (r[ng] > hi).astype(int).values
+        _em = eval_metrics(y_ng, p[ng]) if ng.sum() else None
+        auc = _em['auc'] if _em else np.nan
+        ks = _em['ks'] if _em else np.nan
         # 全样本 IC(含灰)
         v = np.isfinite(r.values) & np.isfinite(p)
         ic = float(spearmanr(p[v], r.values[v]).correlation) if v.sum() > 20 else np.nan
