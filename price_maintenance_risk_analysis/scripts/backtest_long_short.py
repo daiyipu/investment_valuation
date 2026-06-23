@@ -77,7 +77,16 @@ def compute_features(codes, date_yyyymmdd, model_feats):
             if c in model_feats:
                 rows[c] = pv[c].values
     except Exception as e:
-        print(f'    derive_alpha_beta_factors 失败: {e}')
+        print(f'    derive_alpha_beta_factors 夻败: {e}')
+    # 1b) 行业估值增长(行业PE/PB_{60,120,250}d增长) — derive_industry_valuation_growth
+    try:
+        from derive_features import derive_industry_valuation_growth
+        iv = derive_industry_valuation_growth(rows.copy())
+        for c in iv.columns:
+            if c in model_feats:
+                rows[c] = iv[c].values
+    except Exception as e:
+        print(f'    derive_industry_valuation_growth 失败: {e}')
     # 2) 财务比率(PIT ann_date≤date)
     try:
         from export_features import load_financial_ratios
@@ -225,7 +234,7 @@ def run(model_ver, sample_n, year_start, year_end, months=7):
     print('=' * 70)
     print('决策门: ICIR>0.3 且 L-S CAGR 明显为正 且 ≥9/12 组夏普为正 → 进全量')
 
-    out = os.path.join(PKG, 'price_maintenance_risk_analysis', 'ml_training', 'output',
+    out = os.path.join(PKG, 'ml_training', 'output',
                        f'backtest_ls_{months}m_{"sample"+str(sample_n) if sample_n else "allA"}.csv')
     df.to_csv(out, index=False)
     print(f'写出: {out}')

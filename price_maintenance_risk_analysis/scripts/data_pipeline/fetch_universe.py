@@ -22,10 +22,10 @@ import random
 
 import pandas as pd
 
-PKG = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PKG = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # price_maintenance_risk_analysis/
 sys.path.insert(0, PKG)
 sys.path.insert(0, os.path.join(PKG, 'ml_training'))
-DATA_DIR = os.path.join(PKG, 'price_maintenance_risk_analysis', 'ml_training', 'data')
+DATA_DIR = os.path.join(PKG, 'ml_training', 'data')
 UNIVERSE_PATH = os.path.join(DATA_DIR, 'universe.parquet')
 NAMECHANGE_PATH = os.path.join(DATA_DIR, 'namechange.parquet')
 
