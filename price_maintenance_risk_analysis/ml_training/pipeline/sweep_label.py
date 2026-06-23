@@ -29,7 +29,7 @@ from scipy.stats import spearmanr
 from sklearn.metrics import roc_auc_score
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from validate_methods import make_features, calc_ks
+from validate_methods import make_features, calc_ks, eval_metrics
 from feature_selection import select_features
 from train_horizon_models import _prep, _train, _ret_col, _tag, _parse_horizon
 
@@ -50,10 +50,10 @@ def _fold(dtr, dte, lo, hi, h):
     if len(kept) < 2:
         kept = list(Xtr.columns[:10])
     gbm, _, _ = _train(Xtr[kept], ytr)
-    # 非灰度 AUC/KS
+    # 非灰度 AUC/KS(eval_metrics: n<20 或单类→nan, nanmean 自动丢退化折, 防 2010 n=2 污染)
     p_ng = gbm.predict_proba(Xte[kept])[:, 1]
-    auc = roc_auc_score(yte, p_ng)
-    ks = calc_ks(yte.values, p_ng)
+    _em = eval_metrics(yte.values, p_ng)
+    auc, ks = _em['auc'], _em['ks']
     # 全样本打分(含灰度) → IC + 灰度%
     Xall = dte.reindex(columns=Xtr.columns).apply(pd.to_numeric, errors='coerce')
     Xall_s = Xall[kept].fillna({f: med.get(f, 0) for f in kept}).replace([np.inf, -np.inf], 0)
