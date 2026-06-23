@@ -33,7 +33,7 @@ sys.path.insert(0, HERE)
 from db_model_store import load_predict_bundle, get_model_meta, list_model_metas
 from eval_loyo import fit_woe, apply_woe
 from validate_methods import make_features, calc_ks, eval_metrics
-from train_horizon_models import build_label, GRAY_CFG, _prep, _parse_horizon
+from train_horizon_models import build_label, GRAY_CFG, _prep, _parse_horizon, _incl_thr
 
 PARQUET = os.path.join(ML_ROOT, 'data', 'features_derived.parquet')
 WOE_FILL = lambda X: X.replace([np.inf, -np.inf], np.nan).fillna(0)
@@ -64,6 +64,7 @@ def per_year_loyo(df, horizon, features, lo, hi):
     训练用非灰样本(make_features 自动丢灰度 NaN 标签), 打分/IC 用当年【全行】(含灰),
     与 7m 报告口径一致: AUC/KS=非灰, IC=全样本 Spearman(概率, 收益)。"""
     ret_col = _ret_col(horizon)
+    incl_thr = _incl_thr(horizon)
     df = df.dropna(subset=['报价日']).reset_index(drop=True)
     df['_y'] = (pd.to_numeric(df['报价日'], errors='coerce') // 10000).astype('Int64')
     years = sorted(int(y) for y in df['_y'].dropna().unique())
@@ -99,7 +100,10 @@ def per_year_loyo(df, horizon, features, lo, hi):
         # 全样本 IC(含灰)
         v = np.isfinite(r.values) & np.isfinite(p)
         ic = float(spearmanr(p[v], r.values[v]).correlation) if v.sum() > 20 else np.nan
-        rows.append({'year': Y, 'auc': auc, 'ks': ks, 'ic': ic, 'n': int(ng.sum())})
+        # 含灰标签(全量单阈值二分 ret>incl_thr=1) AUC/KS —— 不剔灰, 实战口径
+        em_incl = eval_metrics((r.values[v] > incl_thr).astype(int), p[v])
+        rows.append({'year': Y, 'auc': auc, 'ks': ks, 'ic': ic, 'n': int(ng.sum()),
+                     'auc_incl': em_incl['auc'], 'ks_incl': em_incl['ks']})
     return rows
 
 
@@ -137,6 +141,7 @@ def generate_report(features_path, horizon, version=None):
     """生成某期限(最新或指定版本)gray SC 的 per-year 报告 md。
     供 train_to_production 入库后自动调用(管线第 ⑩步后), 也可 CLI 单跑。返回报告路径。"""
     lo, hi = GRAY_CFG[horizon]
+    incl_thr = _incl_thr(horizon)
     ver = version or latest_gray_sc(horizon)
     if not ver:
         print(f'❌ 找不到 {horizon}m gray SC 模型'); return None
@@ -144,23 +149,31 @@ def generate_report(features_path, horizon, version=None):
     feats = meta.get('features') or []
     if not feats:
         feats = pickle.loads(load_predict_bundle(ver)['lr_bundle'])['features']
-    print(f'\n=== 生成报告: {ver} | {_tag(horizon)} gray({lo}/{hi}) | {len(feats)}特征 ===')
+    print(f'\n=== 生成报告: {ver} | {_tag(horizon)} gray({lo}/{hi}) | 含灰阈值{incl_thr} | {len(feats)}特征 ===')
     df = pd.read_parquet(features_path)
     rows = per_year_loyo(df, horizon, feats, lo, hi)
     aucs = [r['auc'] for r in rows if r['auc'] == r['auc']]
     kss = [r['ks'] for r in rows if r['ks'] == r['ks']]
     ics = [r['ic'] for r in rows if r['ic'] == r['ic']]
+    ai = [r['auc_incl'] for r in rows if r['auc_incl'] == r['auc_incl']]
+    ki = [r['ks_incl'] for r in rows if r['ks_incl'] == r['ks_incl']]
     am, asd = float(np.mean(aucs)), float(np.std(aucs))
     km, ksd = float(np.mean(kss)), float(np.std(kss))
     im, isd = float(np.mean(ics)), float(np.std(ics))
+    aim, asdi = float(np.mean(ai)), float(np.std(ai))
+    kim, ksdi = float(np.mean(ki)), float(np.std(ki))
     n_tot = sum(r['n'] for r in rows)
-    print(f'汇总: AUC {am:.3f}±{asd:.3f} | KS {km:.3f}±{ksd:.3f} | IC {im:+.4f}±{isd:.4f} | 非灰样本 {n_tot}')
-    print(f'{"年":<6}{"AUC":>8}{"KS":>8}{"IC":>10}{"n":>7}')
+    print(f'汇总 不含灰(非灰样本 n={n_tot}): AUC {am:.3f}±{asd:.3f} | KS {km:.3f}±{ksd:.3f}')
+    print(f'汇总 含灰(全样本, 阈值{incl_thr}%):    AUC {aim:.3f}±{asdi:.3f} | KS {kim:.3f}±{ksdi:.3f}')
+    print(f'汇总 IC(全样本含灰):  {im:+.4f}±{isd:.4f}')
+    print(f'{"年":<6}{"非灰AUC":>8}{"非灰KS":>8}{"含灰AUC":>9}{"含灰KS":>9}{"IC":>10}{"n":>7}')
     for r in rows:
         ic_s = f"{r['ic']:+.4f}" if r['ic'] == r['ic'] else '   nan'
         au_s = f"{r['auc']:.3f}" if r['auc'] == r['auc'] else '  nan'
         ks_s = f"{r['ks']:.3f}" if r['ks'] == r['ks'] else '  nan'
-        print(f"{r['year']:<6}{au_s:>8}{ks_s:>8}{ic_s:>10}{r['n']:>7}")
+        aiu = f"{r['auc_incl']:.3f}" if r['auc_incl'] == r['auc_incl'] else '  nan'
+        kis = f"{r['ks_incl']:.3f}" if r['ks_incl'] == r['ks_incl'] else '  nan'
+        print(f"{r['year']:<6}{au_s:>8}{ks_s:>8}{aiu:>9}{kis:>9}{ic_s:>10}{r['n']:>7}")
 
     trows, tn, tmean, tmed = tier_distribution(df, horizon, ver, lo, hi)
     _ret = pd.to_numeric(df[_ret_col(horizon)], errors='coerce')
@@ -174,19 +187,27 @@ def generate_report(features_path, horizon, version=None):
     out = os.path.join(ML_ROOT, 'output', f'validation_report_{_tag(horizon)}_gray_sc.md')
     derived = meta.get('dataset_version', '?')
     n_train = meta.get('n_train', '?')
-    L = [f'# {_tag(horizon)} gray SC 验证报告(LOYO per-year AUC/KS/IC)\n',
-         f'版本 {ver} | {len(feats)}特征 | 灰度阈值(输/赢) {lo}/{hi} | 训练样本 {n_train} | 数据 {derived}\n',
+    L = [f'# {_tag(horizon)} gray SC 验证报告(LOYO per-year, 双标签 AUC/KS + IC)\n',
+         f'版本 {ver} | {len(feats)}特征 | 不含灰阈值(输/赢) {lo}/{hi} | 含灰阈值 {incl_thr}% | 训练样本 {n_train} | 数据 {derived}\n',
          f'生成 {pd.Timestamp.now().strftime("%Y-%m-%d")}\n',
-         f'\nIC = 预测概率 vs 实际{_tag(horizon)}涨跌幅 Spearman(当年全样本, 含灰)\n',
-         '\n## 汇总\n', '| 指标 | mean±std |', '|---|---|',
-         f'| AUC | {am:.3f}±{asd:.3f} |', f'| KS | {km:.3f}±{ksd:.3f} |',
-         f'| IC | {im:+.4f}±{isd:.4f} |', '\n## 逐年\n', '| 年 | AUC | KS | IC | n |',
-         '|---|---|---|---|---|']
+         f'\n**两套标签**: ① 不含灰(非灰样本, 赢>{hi}/输<{lo}, 灰区剔除)=区分力在已决样本; '
+         f'② 含灰(全样本, 单阈值 ret>{incl_thr}%=1, 不剔灰)=实战口径(给所有股票打分)。\n'
+         f'IC = 预测概率 vs 实际{_tag(horizon)}涨跌幅 Spearman(全样本含灰), 两套共用(用连续收益, 与标签无关)。\n',
+         '\n## 汇总\n',
+         '| 标签口径 | AUC mean±std | KS mean±std | IC mean±std |',
+         '|---|---|---|---|',
+         f'| 不含灰(非灰样本, n={n_tot}) | {am:.3f}±{asd:.3f} | {km:.3f}±{ksd:.3f} | {im:+.4f}±{isd:.4f} |',
+         f'| 含灰(全样本, 阈值{incl_thr}%) | {aim:.3f}±{asdi:.3f} | {kim:.3f}±{ksdi:.3f} | {im:+.4f}±{isd:.4f} |',
+         '\n## 逐年\n',
+         '| 年 | 非灰AUC | 非灰KS | 含灰AUC | 含灰KS | IC | n |',
+         '|---|---|---|---|---|---|---|']
     for r in rows:
         ic_s = f"{r['ic']:+.4f}" if r['ic'] == r['ic'] else 'nan'
         au_s = f"{r['auc']:.3f}" if r['auc'] == r['auc'] else 'nan'
         ks_s = f"{r['ks']:.3f}" if r['ks'] == r['ks'] else 'nan'
-        L.append(f"| {r['year']} | {au_s} | {ks_s} | {ic_s} | {r['n']} |")
+        aiu = f"{r['auc_incl']:.3f}" if r['auc_incl'] == r['auc_incl'] else 'nan'
+        kis = f"{r['ks_incl']:.3f}" if r['ks_incl'] == r['ks_incl'] else 'nan'
+        L.append(f"| {r['year']} | {au_s} | {ks_s} | {aiu} | {kis} | {ic_s} | {r['n']} |")
     L += [f'\n## 档位盈利概率分布(全样本 in-sample, 按实际{_tag(horizon)}收益)\n',
           f'基线: n={tn} | 胜率(>{hi}%) {bw*100:.1f}% | 输率(<{lo}%) {bl*100:.1f}% | 均收益 {tmean:+.2f}%\n',
           '档位 = 训练集预测概率 10 分位(10=top10% 概率)。校准判据: 高档位应胜率更高、输率更低。\n',

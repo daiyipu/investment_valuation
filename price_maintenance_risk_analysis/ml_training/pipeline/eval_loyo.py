@@ -178,9 +178,9 @@ def run(features_path):
     print(f'\n写出: {out_dir}/loyo_{{lgb,lr,sc}}.csv (+_ks.csv)')
 
 
-def _ic_full(dte, feats, med, gbm, lr, sc_lr, sc_m, wb, ret_col):
-    """全 dte 样本(含灰) Spearman(预测概率, 收益) per LGB/LR/SC —— IC 口径同 report_horizon。
-    在全行上打分(median 填 → apply_woe), 不限非灰, 量实战排序能力。"""
+def _ic_full(dte, feats, med, gbm, lr, sc_lr, sc_m, wb, ret_col, incl_thr):
+    """全 dte 样本(含灰)上, per LGB/LR/SC: IC(Spearman) + 含灰标签 AUC/KS(单阈值二分)。
+    在全行打分(median 填 → apply_woe), 不限非灰; IC/含灰都用全行预测, 对齐 ret。"""
     from scipy.stats import spearmanr
     r = pd.to_numeric(dte[ret_col], errors='coerce') if ret_col in dte.columns else pd.Series(np.nan, index=dte.index)
     Xf = pd.DataFrame(index=dte.index)
@@ -188,15 +188,19 @@ def _ic_full(dte, feats, med, gbm, lr, sc_lr, sc_m, wb, ret_col):
         Xf[f] = pd.to_numeric(dte[f], errors='coerce') if f in dte.columns else np.nan
     Xf = Xf.fillna({f: med.get(f, 0) for f in feats}).replace([np.inf, -np.inf], 0)
     v = np.isfinite(r.values)
-    out = {'lgb': np.nan, 'lr': np.nan, 'sc': np.nan}
+    out = {m: {'ic': np.nan, 'incl_auc': np.nan, 'incl_ks': np.nan} for m in ('lgb', 'lr', 'sc')}
     if v.sum() > 20:
         rv = r.values[v]
-        preds = {'lgb': gbm.predict_proba(Xf)[:, 1],
-                 'lr': lr.predict_proba(sc_lr.transform(Xf))[:, 1]}
         Xfw = apply_woe(Xf, feats, wb).replace([np.inf, -np.inf], 0).fillna(0)
-        preds['sc'] = sc_m.predict_proba(Xfw)[:, 1]
-        for name, p in preds.items():          # p 全行, [v] 取有限 ret 子集(与 rv 对齐)
-            out[name] = float(spearmanr(p[v], rv).correlation)
+        preds = {'lgb': gbm.predict_proba(Xf)[:, 1],
+                 'lr': lr.predict_proba(sc_lr.transform(Xf))[:, 1],
+                 'sc': sc_m.predict_proba(Xfw)[:, 1]}
+        y_incl = (rv > incl_thr).astype(int)
+        for name, p in preds.items():          # p 全行, [v] 取有限 ret 子集(与 rv/y_incl 对齐)
+            out[name]['ic'] = float(spearmanr(p[v], rv).correlation)
+            _em = eval_metrics(y_incl, p[v])
+            out[name]['incl_auc'] = _em['auc']
+            out[name]['incl_ks'] = _em['ks']
     return out
 
 
@@ -225,10 +229,14 @@ def _eval_fold_fixed(dtr, dte, horizon, kind, features):
     m.fit(Xtr_w.replace([np.inf, -np.inf], np.nan).fillna(0), ytr)
     asc = eval_metrics(yte.values, m.predict_proba(
         Xte_w.replace([np.inf, -np.inf], np.nan).fillna(0))[:, 1])
-    ic = _ic_full(dte, feats, med, gbm, lr, sc_lr, m, wb, ret)   # 全样本 IC
+    from train_horizon_models import _incl_thr
+    full = _ic_full(dte, feats, med, gbm, lr, sc_lr, m, wb, ret, _incl_thr(horizon))  # 全行 IC + 含灰 AUC/KS
     return {'lgb_auc': al['auc'], 'lgb_ks': al['ks'], 'lr_auc': ar['auc'],
             'lr_ks': ar['ks'], 'sc_auc': asc['auc'], 'sc_ks': asc['ks'], 'n_feat': len(feats),
-            'lgb_ic': ic['lgb'], 'lr_ic': ic['lr'], 'sc_ic': ic['sc']}
+            'lgb_ic': full['lgb']['ic'], 'lr_ic': full['lr']['ic'], 'sc_ic': full['sc']['ic'],
+            'lgb_auc_incl': full['lgb']['incl_auc'], 'lgb_ks_incl': full['lgb']['incl_ks'],
+            'lr_auc_incl': full['lr']['incl_auc'], 'lr_ks_incl': full['lr']['incl_ks'],
+            'sc_auc_incl': full['sc']['incl_auc'], 'sc_ks_incl': full['sc']['incl_ks']}
 
 
 def loyo_fixed(features_path, horizon, kind, features):
@@ -243,6 +251,8 @@ def loyo_fixed(features_path, horizon, kind, features):
     per = {m: [] for m in models}
     per_ks = {m: [] for m in models}
     per_ic = {m: [] for m in models}
+    per_ai = {m: [] for m in models}   # 含灰 AUC
+    per_ki = {m: [] for m in models}   # 含灰 KS
     for Y in years:
         dtr = df[df['_year'] != Y].drop(columns=['_year'])
         dte = df[df['_year'] == Y].drop(columns=['_year'])
@@ -251,8 +261,10 @@ def loyo_fixed(features_path, horizon, kind, features):
             continue
         for m in models:
             per[m].append(r[f'{m}_auc']); per_ks[m].append(r[f'{m}_ks']); per_ic[m].append(r[f'{m}_ic'])
-        print(f"  折{Y}: LGB {r['lgb_auc']:.3f}/{r['lgb_ks']:.3f} | "
-              f"LR {r['lr_auc']:.3f}/{r['lr_ks']:.3f} | SC {r['sc_auc']:.3f}/{r['sc_ks']:.3f}")
+            per_ai[m].append(r[f'{m}_auc_incl']); per_ki[m].append(r[f'{m}_ks_incl'])
+        print(f"  折{Y}: LGB {r['lgb_auc']:.3f}/{r['lgb_ks']:.3f}(含灰{r['lgb_auc_incl']:.3f}) | "
+              f"LR {r['lr_auc']:.3f}/{r['lr_ks']:.3f}(含灰{r['lr_auc_incl']:.3f}) | "
+              f"SC {r['sc_auc']:.3f}/{r['sc_ks']:.3f}(含灰{r['sc_auc_incl']:.3f})")
     print('\n' + '=' * 70)
     print(f'🔒 锁定特征 LOYO 结果(部署对齐):')
     out = {}
@@ -260,15 +272,21 @@ def loyo_fixed(features_path, horizon, kind, features):
         _a = np.array([x for x in per[m] if x == x], float)      # 丢 nan 折(样本不足/单类)
         _k = np.array([x for x in per_ks[m] if x == x], float)
         _i = np.array([x for x in per_ic[m] if x == x], float)
-        print(f'  {label:<10} AUC {np.mean(_a):.3f}±{np.std(_a):.3f} | '
-              f'KS {np.mean(_k):.3f}±{np.std(_k):.3f} | IC {np.mean(_i):+.3f}±{np.std(_i):.3f} '
-              f'| per-year AUC {[round(a,3) for a in per[m]]}')
+        _ai = np.array([x for x in per_ai[m] if x == x], float)
+        _ki = np.array([x for x in per_ki[m] if x == x], float)
+        print(f'  {label:<10} 不含灰 AUC {np.mean(_a):.3f}±{np.std(_a):.3f} | KS {np.mean(_k):.3f}±{np.std(_k):.3f} '
+              f'| 含灰 AUC {np.mean(_ai):.3f}±{np.std(_ai):.3f} | KS {np.mean(_ki):.3f}±{np.std(_ki):.3f} '
+              f'| IC {np.mean(_i):+.3f}±{np.std(_i):.3f}')
         out[m] = {'auc_mean': float(np.mean(_a)) if len(_a) else None,
                   'auc_std': float(np.std(_a)) if len(_a) else None,
                   'ks_mean': float(np.mean(_k)) if len(_k) else None,
                   'ks_std': float(np.std(_k)) if len(_k) else None,
                   'ic_mean': float(np.mean(_i)) if len(_i) else None,
                   'ic_std': float(np.std(_i)) if len(_i) else None,
+                  'incl_auc_mean': float(np.mean(_ai)) if len(_ai) else None,
+                  'incl_auc_std': float(np.std(_ai)) if len(_ai) else None,
+                  'incl_ks_mean': float(np.mean(_ki)) if len(_ki) else None,
+                  'incl_ks_std': float(np.std(_ki)) if len(_ki) else None,
                   'n_folds': int(len(_a)),
                   'auc_per_year': [None if a != a else round(float(a), 3) for a in per[m]]}
     return out

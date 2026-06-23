@@ -53,6 +53,16 @@ def _parse_horizon(s):
     return int(s) if s.lstrip('-').isdigit() else s
 
 
+# 含灰标签(全量二分)阈值: 强制给所有样本打标(不剔灰区), 验证"无灰度剔除时的区分力"(实战口径)。
+# 7m=-10%(跌>10%=输, 下行风险口径), 其余=0(涨/跌分界)。与不含灰 gray(灰区剔除)互补, 两套同报。
+INCL_THR = {1: 0, 3: 0, 6: 0, 7: -10, 12: 0, '1w': 0, '2w': 0}
+
+
+def _incl_thr(horizon):
+    """含灰标签单阈值: 7m→-10, 其余→0。"""
+    return INCL_THR.get(horizon, 0)
+
+
 def _prep(X_raw, medians=None):
     excl = [c for c in get_excluded_columns(X_raw.columns) if c in X_raw.columns]
     X = X_raw.drop(columns=excl)
