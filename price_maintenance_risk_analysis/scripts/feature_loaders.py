@@ -33,45 +33,80 @@ def _conn():
     return pymysql.connect(**_DB)
 
 
-# ─────────────── 1. FCF_加速 (historical_fcf PIT) ───────────────
+# ─────────────── 全历史预取缓存(FCF/总分, 避免逐股逐日查 DB) ───────────────
+_FCF_CACHE = {}     # code → DataFrame[year, fcf] 全历史(升序)
+_SCORE_CACHE = {}   # code → DataFrame[report_year, total_score] 全历史(升序)
+
+
+def _chunks(lst, n):
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
+
+
+def prefetch_fcf_scores(codes):
+    """一次性批量预取全 universe 的 FCF + 总分全历史(各 N 条 SQL, IN 分块 500),
+    缓存到 _FCF_CACHE/_SCORE_CACHE。后续 load_fcf_accel/load_total_score_delta2y 只做 PIT 内存切片。
+    把"500股×192月×2查询≈19万次"降到"500股×2≈1000次"(预取) + 内存切片(免费)。"""
+    codes = [str(c) for c in codes if c is not None]
+    conn = _conn()
+    for c in [c for c in codes if c not in _FCF_CACHE]:
+        pass   # 触发下面批量
+    new_fcf = [c for c in codes if c not in _FCF_CACHE]
+    new_sc = [c for c in codes if c not in _SCORE_CACHE]
+    if new_fcf:
+        for chunk in _chunks(new_fcf, 500):
+            ph = ','.join([f"'{c}'" for c in chunk])
+            df = pd.read_sql(f"SELECT stock_code, year, fcf FROM historical_fcf "
+                             f"WHERE stock_code IN ({ph}) AND fcf IS NOT NULL", conn)
+            for c, g in df.groupby('stock_code'):
+                _FCF_CACHE[c] = g.sort_values('year').reset_index(drop=True)
+    if new_sc:
+        for chunk in _chunks(new_sc, 500):
+            ph = ','.join([f"'{c}'" for c in chunk])
+            df = pd.read_sql(f"SELECT stock_code, report_year, total_score FROM company_annual_scores "
+                             f"WHERE stock_code IN ({ph}) AND total_score IS NOT NULL", conn)
+            for c, g in df.groupby('stock_code'):
+                _SCORE_CACHE[c] = g.sort_values('report_year').reset_index(drop=True)
+    conn.close()
+    print(f'    预取 FCF({len(_FCF_CACHE)}股) + 总分({len(_SCORE_CACHE)}股) 全历史缓存')
+
+
+# ─────────────── 1. FCF_加速 (historical_fcf PIT 内存切片) ───────────────
 def load_fcf_accel(keys):
-    """keys=[(code,date)]。historical_fcf year≤pit_max 取 T/T1/T2 → FCF YoY 加速度(YoY_T − YoY_T1)。"""
+    """keys=[(code,date)]。用 _FCF_CACHE 全历史, PIT 切 year≤pit_max 取 T/T1/T2 → YoY 加速度。
+    需先 prefetch_fcf_scores 预热(回测 run() 开头调一次)。"""
     if not keys:
         return pd.DataFrame(columns=['FCF_加速'])
-    conn = _conn(); cur = conn.cursor(pymysql.cursors.DictCursor)
-    rows = []
+    out = {}
     for code, date in keys:
-        pmax = _pit_max(date)
-        cur.execute('SELECT fcf FROM historical_fcf WHERE stock_code=%s AND year <= %s '
-                    'AND fcf IS NOT NULL ORDER BY year DESC LIMIT 3', (code, pmax))
-        rs = [r['fcf'] for r in cur.fetchall()]
+        g = _FCF_CACHE.get(code)
+        if g is None or g.empty:
+            out[code] = np.nan; continue
+        sub = g[g['year'] <= _pit_max(date)]
+        rs = sub['fcf'].tail(3).values      # 升序, 末3个 = T/T1/T2(最大年)
         if len(rs) >= 2:
-            yoy_t = (rs[0] - rs[1]) / abs(rs[1]) if rs[1] else np.nan
-            yoy_t1 = (rs[1] - rs[2]) / abs(rs[2]) if len(rs) >= 3 and rs[2] else np.nan
-            rows.append({'code': code, 'FCF_加速': (yoy_t - yoy_t1) if yoy_t1 == yoy_t1 else np.nan})
+            yoy_t = (rs[-1] - rs[-2]) / abs(rs[-2]) if rs[-2] else np.nan
+            yoy_t1 = (rs[-2] - rs[-3]) / abs(rs[-3]) if len(rs) >= 3 and rs[-3] else np.nan
+            out[code] = (yoy_t - yoy_t1) if yoy_t1 == yoy_t1 else np.nan
         else:
-            rows.append({'code': code, 'FCF_加速': np.nan})
-    conn.close()
-    return pd.DataFrame(rows).set_index('code')
+            out[code] = np.nan
+    return pd.DataFrame({'FCF_加速': out})
 
 
-# ─────────────── 2. 总分_delta_2y (company_annual_scores PIT) ───────────────
+# ─────────────── 2. 总分_delta_2y (company_annual_scores PIT 内存切片) ───────────────
 def load_total_score_delta2y(keys):
-    """keys=[(code,date)]。company_annual_scores report_year≤pit_max 取 T/T1/T2 → 总分_T − 总分_{T-2}。"""
+    """keys=[(code,date)]。用 _SCORE_CACHE 全历史, PIT 切 report_year≤pit_max 取 T-(T-2)。"""
     if not keys:
         return pd.DataFrame(columns=['总分_delta_2y'])
-    conn = _conn(); cur = conn.cursor(pymysql.cursors.DictCursor)
-    rows = []
+    out = {}
     for code, date in keys:
-        pmax = _pit_max(date)
-        cur.execute('SELECT total_score FROM company_annual_scores WHERE stock_code=%s '
-                    'AND report_year <= %s AND total_score IS NOT NULL ORDER BY report_year DESC LIMIT 3',
-                    (code, pmax))
-        rs = [r['total_score'] for r in cur.fetchall()]
-        d = (rs[0] - rs[2]) if len(rs) >= 3 else np.nan
-        rows.append({'code': code, '总分_delta_2y': d})
-    conn.close()
-    return pd.DataFrame(rows).set_index('code')
+        g = _SCORE_CACHE.get(code)
+        if g is None or g.empty:
+            out[code] = np.nan; continue
+        sub = g[g['report_year'] <= _pit_max(date)]
+        rs = sub['total_score'].tail(3).values
+        out[code] = (rs[-1] - rs[-3]) if len(rs) >= 3 else np.nan
+    return pd.DataFrame({'总分_delta_2y': out})
 
 
 # ─────────────── 3. nb_hold_ratio (pro.hk_hold ≤ date) ───────────────

@@ -192,7 +192,11 @@ def run(model_ver, sample_n, year_start, year_end, months=7):
         print(f'pilot 分层抽样: {len(stocks)} 只')
 
     dates = month_end_dates(year_start, year_end)
-    print(f'调仓: {len(dates)} 个月末截面 ({dates[0]}~{dates[-1]})\n')
+    print(f'调仓: {len(dates)} 个月末截面 ({dates[0]}~{dates[-1]})')
+    # 预取全 universe FCF+总分 全历史(2 条批量 SQL, 后续 PIT 内存切片, 避免逐股逐日查)
+    from feature_loaders import prefetch_fcf_scores
+    prefetch_fcf_scores(stocks['ts_code'].astype(str).tolist())
+    print()
 
     records = []
     for i, d in enumerate(dates):
