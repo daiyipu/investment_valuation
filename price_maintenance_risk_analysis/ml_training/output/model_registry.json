@@ -1140,6 +1140,28 @@
       "note": "LGB共识13特征",
       "label_config": "2w_gray_lgb_consensus",
       "dataset_version": null
+    },
+    {
+      "version": "v_sc_20260623_1723_3m_gray_sc_11feat",
+      "model_type": "full",
+      "created_at": "2026-06-23 17:23",
+      "n_features": 11,
+      "threshold": -10,
+      "n_samples": 3258,
+      "positive_rate": 0.46838551258440764,
+      "metrics": {
+        "sc_fit_auc": 0.6817937701396347,
+        "sc_fit_ks": 0.3101503759398496,
+        "sc_loyo_auc": 0.6248561031248006,
+        "sc_loyo_ks": 0.2422440387808848
+      },
+      "dir": "v_sc_20260623_1723_3m_gray_sc_11feat",
+      "files": [
+        "(in ml_model_meta DB)"
+      ],
+      "note": "WOE评分卡 3m_gray_sc",
+      "label_config": "3m_gray_sc",
+      "dataset_version": "derived_20260616_2334_f35ba6f3_7m"
     }
   ],
   "previous": {
