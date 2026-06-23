@@ -88,11 +88,16 @@ def compute_features(codes, date_yyyymmdd, model_feats):
                 rows[c] = fr[c].values
     except Exception as e:
         print(f'    load_financial_ratios 失败: {e}')
-    # 3) FCF_加速 / 总分_delta_2y / nb_hold_ratio 独立 PIT loader(略, 待接入)
-    #    TODO: FCF(historical_fcf PIT) / 总分(company_annual_scores PIT) / nb_hold(hk_hold≤date)
-    #    暂缺 → score_sc 会用训练 median 填(标注: 该特征在回测中暂无信号贡献)
-    return rows[model_feats] if all(f in rows.columns for f in model_feats) else \
-        rows.reindex(columns=model_feats)
+    # 3) 5 个特殊特征(独立 PIT loader: FCF/总分/nb_hold/PB_vs同行 PIT; SUE 桩)
+    try:
+        from feature_loaders import load_specials
+        sp = load_specials(codes, date_yyyymmdd)
+        for c in sp.columns:
+            if c in model_feats:
+                rows[c] = sp[c].reindex(rows.index).values
+    except Exception as e:
+        print(f'    load_specials 失败: {e}')
+    return rows.reindex(columns=model_feats)
 
 
 # ─────────────── 前瞻收益(7m, 单截面) ───────────────
