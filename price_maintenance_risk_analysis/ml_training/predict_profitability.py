@@ -34,6 +34,29 @@ sys.path.insert(0, os.path.join(SCRIPT_DIR, 'pipeline'))   # 管线模块已移�
 _INTERVAL_RE = re.compile(r'^[\[(](.*?),\s*(.*?)[\])]$')
 
 
+def score_sc(sc_bundle, X_src_df):
+    """SC 评分卡打分(模块级, 供 backtest 等外部复用): 特征 DataFrame → (概率, 档位1-10)。
+    sc_bundle = pickle.loads(load_predict_bundle(ver)['lr_bundle']) 解包:
+      dict 含 features/medians/woe_bins/lr_model/proba_deciles。
+    X_src_df: 任意股票的特征 DataFrame(列含 sc_bundle['features']), 缺列自动 NaN→median 填。
+    返回 (proba: np.ndarray, tier: np.ndarray[int] 1-10)。"""
+    from eval_loyo import apply_woe as _aw
+    feats = sc_bundle['features']
+    medians = sc_bundle.get('medians', {})
+    X_sc = pd.DataFrame(index=X_src_df.index)
+    for f in feats:
+        X_sc[f] = pd.to_numeric(X_src_df[f], errors='coerce') if f in X_src_df.columns else np.nan
+    X_sc = X_sc.fillna(medians).replace([np.inf, -np.inf], 0)
+    Xw = _aw(X_sc, feats, sc_bundle['woe_bins']).replace([np.inf, -np.inf], 0).fillna(0)
+    proba = sc_bundle['lr_model'].predict_proba(Xw)[:, 1]
+    dec = sc_bundle.get('proba_deciles')
+    if dec:
+        tier = np.clip(np.searchsorted(dec, proba, side='right') + 1, 1, 10)
+    else:
+        tier = np.clip(np.ceil(pd.Series(proba).rank(pct=True) * 10), 1, 10)
+    return proba, tier.astype(int)
+
+
 def _parse_interval(key):
     """解析 pandas 区间字符串 '(0.33, 2.145]' → (0.33, 2.145)。失败返回 None。"""
     m = _INTERVAL_RE.match(str(key).strip())

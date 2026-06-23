@@ -149,9 +149,13 @@ def load_db_features(sample_keys):
             f['行业代码'] = d.get('target_index_code', '')
             f['行业名称'] = d.get('target_industry_l3', '')
 
-        # ── 3. historical_fcf FCF特征 (取最近5年) ──
+        # ── 3. historical_fcf FCF特征 (取最近5年, PIT: year≤pit_year 防未来年报泄漏) ──
+        # PIT 规则同 company_annual_scores: 月≥5 用上年(base-1, 已披露), 否则前年(base-2)
+        _byr = int(str(issue_date)[:4]); _bmo = int(str(issue_date)[4:6])
+        _pit_year = _byr - 1 if _bmo >= 5 else _byr - 2
         cur.execute(
-            'SELECT * FROM historical_fcf WHERE stock_code=%s ORDER BY year DESC LIMIT 5', (code,)
+            'SELECT * FROM historical_fcf WHERE stock_code=%s AND year <= %s ORDER BY year DESC LIMIT 5',
+            (code, _pit_year)
         )
         rows = cur.fetchall()
         for i, r in enumerate(rows):
