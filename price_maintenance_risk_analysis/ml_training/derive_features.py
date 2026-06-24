@@ -193,6 +193,39 @@ def derive_valuation_relative(df):
     return df
 
 
+def derive_pb_vs_industry_pit(df):
+    """PB_vs_同行中位 ← PIT 行业口径(规范, 2026-06 定): 覆盖 derive_valuation_relative 的 peer 中位口径。
+
+    原 peer 口径 = 个股PB / peer_companies 同行中位(非 PIT 快照, 覆盖~53%, 且是潜在 PIT 泄漏)。
+    新口径 = daily_basic PB(≤报价日) / industry_daily sw_index_pb(≤报价日), 与回测 feature_loaders 同源。
+    生产 SC 模型 15 特征含此列 → 重训后 PB WOE 基于此口径, 回测/定增同分布不再错配。
+
+    前置: 定增 universe 的 industry_daily 须全历史重摄(`ingest_raw --universe placement --industry-only`),
+          否则早年 issue_date 的行业 PB 缺失 → 覆盖偏低。
+    """
+    print('\n  D类补: PB_vs_同行中位 ← PIT 行业口径(覆盖 peer 中位)')
+    if '股票代码' not in df.columns or '报价日' not in df.columns:
+        print('    缺 股票代码/报价日, 跳过(保留原 peer 口径)')
+        return df
+    pkg = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if pkg not in sys.path:
+        sys.path.insert(0, pkg)
+    sys.path.insert(0, os.path.join(pkg, 'scripts'))
+    from feature_loaders import load_pb_vs_industry
+
+    pairs = [(str(c), str(d)) for c, d in zip(df['股票代码'], df['报价日']) if pd.notna(d)]
+    pb_map = load_pb_vs_industry(pairs)
+    vals = [pb_map.get((str(c), str(d)), np.nan)
+            for c, d in zip(df['股票代码'], df['报价日'])]
+    df['PB_vs_同行中位'] = vals
+    cov = pd.Series(vals).notna().mean() * 100
+    print(f'    PB_vs_同行中位(PIT 行业口径): 覆盖 {cov:.1f}%')
+    if cov < 50:
+        print('    ⚠️ 覆盖偏低: 多半是 industry_daily 未全历史重摄 → 先跑 '
+              '`ingest_raw --universe placement --industry-only` 再重训')
+    return df
+
+
 # ====== E类: 行情动量与位置 (+7特征) ======
 
 def derive_market_momentum(df):
@@ -319,7 +352,7 @@ def derive_industry_valuation_growth(df):
     for code, group in daily_df.groupby('index_code'):
         g = group.sort_values('trade_date').reset_index(drop=True)
         daily_groups[code] = {
-            'dates': g['trade_date'].values,
+            'dates': pd.to_numeric(g['trade_date'], errors='coerce').fillna(0).astype('int64').values,  # int 比较: trade_date 类型不定(str/int/float), 统一 int64 与报价日数值比
             'pe': g['pe'].values.astype(float),
             'pb': g['pb'].values.astype(float),
         }
@@ -333,20 +366,23 @@ def derive_industry_valuation_growth(df):
     pb_growth = {w: np.full(len(df), np.nan) for w in growth_windows}
 
     matched = 0
-    for idx, row in df.iterrows():
-        code = sample_index_codes.iloc[idx] if idx < len(sample_index_codes) else None
+    for i, (idx, row) in enumerate(df.iterrows()):   # 用位置 i(非索引值 idx): df.index 可能是股票代码(str), iloc/growth 数组须按位置
+        code = sample_index_codes.iloc[i] if i < len(sample_index_codes) else None
         if pd.isna(code) or code not in daily_groups:
             continue
         issue_date_raw = row.get('报价日')
         if pd.isna(issue_date_raw):
             continue
-        issue_str = str(int(float(issue_date_raw))) if isinstance(issue_date_raw, (int, float)) else str(issue_date_raw)
-        if len(issue_str) < 8:
+        try:
+            issue_int = int(float(issue_date_raw))
+        except (ValueError, TypeError):
+            continue
+        if issue_int < 10101:
             continue
 
         dg = daily_groups[code]
-        # 找到 <= issue_str 的最大索引
-        mask = dg['dates'] <= issue_str
+        # 找到 <= issue_int 的最大索引(int 比较, 免 str/int 类型冲突)
+        mask = dg['dates'] <= issue_int
         if not mask.any():
             continue
         pos = mask.sum() - 1  # 最后一个 <= issue_str 的位置
@@ -361,9 +397,9 @@ def derive_industry_valuation_growth(df):
                 pe_prev = dg['pe'][pos - w]
                 pb_prev = dg['pb'][pos - w]
                 if not np.isnan(pe_now) and not np.isnan(pe_prev) and abs(pe_prev) > 1e-8:
-                    pe_growth[w][idx] = pe_now / pe_prev - 1
+                    pe_growth[w][i] = pe_now / pe_prev - 1
                 if not np.isnan(pb_now) and not np.isnan(pb_prev) and abs(pb_prev) > 1e-8:
-                    pb_growth[w][idx] = pb_now / pb_prev - 1
+                    pb_growth[w][i] = pb_now / pb_prev - 1
         matched += 1
 
     print(f'    匹配行业日线: {matched}/{len(df)}')
@@ -1058,6 +1094,12 @@ def main():
             df = derive_market_index_features(df)
         except Exception as e:
             print(f'  ⚠️ DB特征失败: {e}')
+
+        # D类补: PB_vs_同行中位 ← PIT 行业口径(覆盖 Stage1 的 peer 中位; 与回测同源; 需 daily_basic 网络)
+        try:
+            df = derive_pb_vs_industry_pit(df)
+        except Exception as e:
+            print(f'  ⚠️ PB PIT 行业口径失败: {e}(保留原 peer 口径)')
 
         # H/I类: 三浪/抵抗策略信号(需tushare网络, 单独try, 失败不影响F/G)
         try:

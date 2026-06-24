@@ -1162,6 +1162,28 @@
       "note": "WOE评分卡 3m_gray_sc",
       "label_config": "3m_gray_sc",
       "dataset_version": "derived_20260616_2334_f35ba6f3_7m"
+    },
+    {
+      "version": "v_sc_20260624_1452_7m_gray_sc_15feat",
+      "model_type": "full",
+      "created_at": "2026-06-24 14:52",
+      "n_features": 15,
+      "threshold": -10,
+      "n_samples": 3011,
+      "positive_rate": 0.5300564596479574,
+      "metrics": {
+        "sc_fit_auc": 0.5913649498555158,
+        "sc_fit_ks": 0.21842597314295426,
+        "sc_loyo_auc": null,
+        "sc_loyo_ks": null
+      },
+      "dir": "v_sc_20260624_1452_7m_gray_sc_15feat",
+      "files": [
+        "(in ml_model_meta DB)"
+      ],
+      "note": "WOE评分卡 7m_gray_sc",
+      "label_config": "7m_gray_sc",
+      "dataset_version": "derived_20260616_2334_f35ba6f3_7m"
     }
   ],
   "previous": {
