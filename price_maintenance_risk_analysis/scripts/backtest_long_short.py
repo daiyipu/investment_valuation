@@ -169,7 +169,7 @@ def nav_metrics(ls_series):
 
 
 def group_sharpes(records, months=7):
-    """12 日历月分组(同月跨年, 非重叠) → 每组 ls 收益的 mean/std/年化夏普。"""
+    """12 日历月分组(同月跨年, 非重叠) → 每组 ls 收益的 mean/std/年化夏普/年化(非重叠CAGR)。"""
     df = pd.DataFrame(records)
     if df.empty:
         return {}
@@ -182,74 +182,143 @@ def group_sharpes(records, months=7):
         mu, sd = ls.mean(), ls.std(ddof=1)
         # 7m 收益 → 年化夏普: 每年 12/7 个非重叠 7m 期
         sharpe = (mu / sd) * np.sqrt(12 / months) if sd > 0 else 0
-        out[m] = {'n': len(ls), 'mean_ls': float(mu * 100), 'std': float(sd * 100), 'sharpe': float(sharpe)}
+        # 7m 均值收益 → 年化(复利): (1+mu)^(12/months)-1。非重叠口径, 无重叠NAV虚高。
+        ann_ret = (1 + mu) ** (12 / months) - 1
+        out[m] = {'n': len(ls), 'mean_ls': float(mu * 100), 'std': float(sd * 100),
+                  'sharpe': float(sharpe), 'ann_ret': float(ann_ret * 100)}
     return out
 
 
-# ─────────────── 主流程 ───────────────
-def run(model_ver, sample_n, year_start, year_end, months=7):
+def group_leg_returns(records, months=7):
+    """12 日历月分组 → 多头(top10%)和最差组(bottom10%)各自的 7m 收益/年化, 分开看(非重叠)。
+    最差组按"做多这部分会怎样"算(正=赚, 负=亏), 不做空头。"""
+    df = pd.DataFrame(records)
+    if df.empty:
+        return {}, 0.0, 0.0
+    df['month'] = df['date'].astype(str).str[4:6].astype(int)
+    out = {}
+    for m, g in df.groupby('month'):
+        lo = g['long'].values / 100.0      # top10% 多头 7m 收益
+        sh = g['short'].values / 100.0     # bottom10% 最差组 7m 收益(做多口径)
+        if len(lo) < 1:
+            continue
+        ann_lo = (1 + lo.mean()) ** (12 / months) - 1
+        ann_sh = (1 + sh.mean()) ** (12 / months) - 1
+        out[m] = {'n': len(lo),
+                  'long_7m': float(lo.mean() * 100), 'long_ann': float(ann_lo * 100),
+                  'short_7m': float(sh.mean() * 100), 'short_ann': float(ann_sh * 100)}
+    avg_long = np.mean([v['long_ann'] for v in out.values()]) if out else 0
+    avg_short = np.mean([v['short_ann'] for v in out.values()]) if out else 0
+    return out, avg_long, avg_short
+
+
+def group_by_year(records, months=7):
+    """按 issue 年份分组 → 每年 多头/最差组/L-S 各自 7m 均值收益(做多口径, 看年度 regime)。
+    年份分组天然非重叠(同年各月仓位收益取均值); 不做年化复利(单年 7m 收益直接报)。"""
+    df = pd.DataFrame(records)
+    if df.empty:
+        return {}
+    df['year'] = df['date'].astype(str).str[:4]
+    out = {}
+    for y, g in df.groupby('year'):
+        lo = g['long'].values / 100.0
+        sh = g['short'].values / 100.0
+        ls = g['ls'].values / 100.0
+        ic = g['ic'].values
+        out[y] = {'n': len(lo),
+                  'long_7m': float(lo.mean() * 100), 'short_7m': float(sh.mean() * 100),
+                  'ls_7m': float(ls.mean() * 100),
+                  'ic': float(ic.mean()) if len(ic) else 0.0}
+    return out
+
+
+# ─────────────── 主流程(读 panel, 不再运行时算特征) ───────────────
+def run(model_ver, panel_path, horizon, q=0.10):
+    """读 features_backtest.parquet → 逐截面打分 + 多空 + IC。
+    特征/收益已由 build_backtest_panel 预计算入 panel, 此处只 score_sc + 排序。"""
     bundle = pickle.loads(load_predict_bundle(model_ver)['lr_bundle'])
     model_feats = bundle['features']
-    print(f'模型 {model_ver} | {len(model_feats)}特征 | {months}m前瞻 | sample={sample_n or "全A"}')
-
-    stocks = fetch_stock_basic()
-    nc = fetch_namechange()
-    if sample_n:
-        from data_pipeline.fetch_universe import sample_stratified
-        picks = sample_stratified(stocks, sample_n)
-        stocks = stocks[stocks['ts_code'].isin(picks)].reset_index(drop=True)
-        print(f'pilot 分层抽样: {len(stocks)} 只')
-
-    dates = month_end_dates(year_start, year_end)
-    print(f'调仓: {len(dates)} 个月末截面 ({dates[0]}~{dates[-1]})')
-    # 预取全 universe FCF+总分 全历史(2 条批量 SQL, 后续 PIT 内存切片, 避免逐股逐日查)
-    from feature_loaders import prefetch_fcf_scores
-    prefetch_fcf_scores(stocks['ts_code'].astype(str).tolist())
-    print()
+    panel = pd.read_parquet(panel_path)
+    panel['报价日'] = panel['报价日'].astype(str)
+    ret_col = f'return_{horizon}m'
+    print(f'模型 {model_ver} | {len(model_feats)}特征 | {horizon}m | '
+          f'panel {len(panel)}行 {panel["报价日"].nunique()}截面')
 
     records = []
-    for i, d in enumerate(dates):
-        codes = [r['ts_code'] for _, r in stocks.iterrows()
-                 if in_universe_at(r, d, nc, min_list_years=1)]
-        res = eval_cross_section(codes, d, bundle, model_feats, months)
-        if res:
-            records.append(res)
-            print(f"  {d}: n={res['n']:4d} IC={res['ic']:+.3f} L={res['long']:+.2f}% "
-                  f"S={res['short']:+.2f}% L-S={res['ls']:+.2f}%")
+    for d, g in panel.groupby('报价日'):
+        if len(g) < 50:
+            continue
+        proba, _ = score_sc(bundle, g[model_feats].copy())
+        s = g[ret_col]
+        valid = s.notna()
+        if valid.sum() < 50:
+            continue
+        p = pd.Series(proba, index=g.index)[valid]
+        s = s[valid]
+        ic = float(spearmanr(p, s).correlation)
+        k = max(1, int(len(s) * q))
+        order = p.sort_values()
+        short = float(s.loc[order.index[:k]].mean())
+        long = float(s.loc[order.index[-k:]].mean())
+        records.append({'date': d, 'ic': ic, 'long': long, 'short': short,
+                        'ls': long - short, 'n': int(len(s))})
+        print(f"  {d}: n={len(s):4d} IC={ic:+.3f} L={long:+.2f}% "
+              f"S={short:+.2f}% L-S={long-short:+.2f}%")
     if not records:
-        print('❌ 无有效截面'); return
+        print('❌ 无有效截面(n<50)'); return
 
     df = pd.DataFrame(records)
     ic = df['ic'].values
     icir = ic.mean() / ic.std() if ic.std() > 0 else 0
     nav = nav_metrics(df['ls'].values)
-    grp = group_sharpes(records, months)
+    grp = group_sharpes(records, horizon)
     grp_sharpe = np.mean([g['sharpe'] for g in grp.values()]) if grp else 0
     grp_pos = sum(1 for g in grp.values() if g['sharpe'] > 0)
+    grp_ann = np.mean([g['ann_ret'] for g in grp.values()]) if grp else 0   # 非重叠CAGR
 
     print('\n' + '=' * 70)
     print(f'IC/ICIR: IC mean={ic.mean():+.4f} std={ic.std():.4f} → ICIR={icir:+.3f}')
-    print(f'月度 L-S NAV(重叠): CAGR={nav.get("cagr",0)*100:+.2f}% maxDD={nav.get("maxdd",0)*100:+.2f}%')
-    print(f'12 日历月分组(非重叠): 均值夏普={grp_sharpe:+.3f} | {grp_pos}/12 组夏普为正')
+    print(f'月度 L-S NAV(重叠, 偏乐观): CAGR={nav.get("cagr",0)*100:+.2f}% maxDD={nav.get("maxdd",0)*100:+.2f}%')
+    print(f'12 日历月分组(非重叠, 诚实): 均值夏普={grp_sharpe:+.3f} | 均值年化={grp_ann:+.2f}% | {grp_pos}/12 组夏普为正')
+    if grp:
+        print('  每组 L-S(月: n / 7m均值% / 年化% / 夏普):')
+        for m in sorted(grp):
+            g = grp[m]
+            print(f'    {m:2d}月: n={g["n"]} mean7m={g["mean_ls"]:+.2f}% 年化={g["ann_ret"]:+.2f}% 夏普={g["sharpe"]:+.2f}')
+    # 多头/最差组分开(做多口径, 非重叠年化)
+    legs, avg_long, avg_short = group_leg_returns(records, horizon)
+    if legs:
+        print(f'\n多头(top10%) vs 最差组(bottom10%, 做多口径) — 非重叠年化均值:')
+        print(f'  投最好的 → 年化 {avg_long:+.2f}% | 投最差的 → 年化 {avg_short:+.2f}% | 差距 {avg_long-avg_short:+.2f}pp')
+        print('  每组(月: 多头7m% / 多头年化% | 最差组7m% / 最差组年化%):')
+        for m in sorted(legs):
+            lg = legs[m]
+            print(f'    {m:2d}月: 多 {lg["long_7m"]:+.2f}%/{lg["long_ann"]:+.2f}% | 差 {lg["short_7m"]:+.2f}%/{lg["short_ann"]:+.2f}%')
+    # 按 issue 年份分组(看年度 regime: 哪年模型有效 top>>bottom, 哪年失效 bottom≈top)
+    byr = group_by_year(records, horizon)
+    if byr:
+        print(f'\n按 issue 年份分组(7m 持有收益均值, 做多口径) — 看年度 regime:')
+        print('  年份: n截面 | 多头7m% | 最差组7m% | L-S(差)% | IC')
+        for y in sorted(byr):
+            r = byr[y]
+            print(f'  {y}: n={r["n"]:2d} | 多 {r["long_7m"]:+6.2f}% | 差 {r["short_7m"]:+6.2f}% | L-S {r["ls_7m"]:+6.2f}% | IC {r["ic"]:+.3f}')
     print('=' * 70)
-    print('决策门: ICIR>0.3 且 L-S CAGR 明显为正 且 ≥9/12 组夏普为正 → 进全量')
+    print('决策门: ICIR>0.3 且 非重叠年化明显为正 且 ≥9/12 组夏普为正 → 进全量')
 
-    out = os.path.join(PKG, 'ml_training', 'output',
-                       f'backtest_ls_{months}m_{"sample"+str(sample_n) if sample_n else "allA"}.csv')
+    tag = os.path.basename(panel_path).replace('features_', '').replace('.parquet', '')
+    out = os.path.join(PKG, 'ml_training', 'output', f'backtest_ls_{horizon}m_{tag}.csv')
     df.to_csv(out, index=False)
     print(f'写出: {out}')
 
 
 def main():
-    ap = argparse.ArgumentParser(description='全 A 多空组合回测 + IC/ICIR')
-    ap.add_argument('--horizon', default=7, help='模型期限(月), 默认7')
-    ap.add_argument('--sample', type=int, default=500, help='分层抽样数(0=全A)')
-    ap.add_argument('--years', default='2010-2025')
-    ap.add_argument('--months', type=int, default=7, help='前瞻/持仓月数(=解禁期)')
+    ap = argparse.ArgumentParser(description='全 A 多空组合回测 + IC/ICIR(读 panel)')
+    ap.add_argument('--horizon', default='7', help='模型期限(月), 默认7(须与 panel 一致)')
+    ap.add_argument('--panel', default=os.path.join(PKG, 'ml_training', 'data', 'features_backtest.parquet'),
+                    help='回测特征 panel(build_backtest_panel.py 产出)')
     args = ap.parse_args()
-    ys, ye = map(int, args.years.split('-'))
     ver = latest_gray_sc(args.horizon)
-    run(ver, args.sample, ys, ye, args.months)
+    run(ver, args.panel, int(args.horizon))
 
 
 if __name__ == '__main__':
