@@ -1990,6 +1990,51 @@ def update_placement_params_with_fcf(stock_code, ma20, data_dir):
         traceback.print_exc()
 
 
+def ingest_stock_full(stock_code, stock_name=None, issue_date=None, skip_market=False, db=None,
+                      industry_days=4000, skip_fcf=False, skip_industry=False):
+    """单股全量摄入(market_data + 历史FCF + 行业指数含日线PE/PB)→ 落 DB。
+
+    供 --all(定增链) 与 --universe(全A链) 批量复用, 取代 __main__ 里展开的命令式块。
+    回测读 historical_fcf + industry_daily 表(FCF_加速 / 行业估值增长 / PB_vs同行);
+    market_data 回测不读(走 derive_alpha_beta_factors 运行时 pro_bar), skip_market=True 可省。
+    industry_days: 行业日线回溯天数(默认4000→start≈2004, 安全覆盖2010+回测的250d回看;
+        fetch_industry_index_data 用 days*2 日历天, sw_daily 一次取全区间不增调用数, 故宁大勿小)。
+    """
+    from utils.db_manager import ValuationDB
+    db = db or ValuationDB()
+    stock_name = stock_name or stock_code
+    # 1) market_data(qfq 前复权)
+    if not skip_market:
+        try:
+            md = generate_market_data(stock_code, stock_name, issue_date)
+            if md:
+                db.save_market_data(stock_code, md)
+        except Exception as e:
+            print(f'  ⚠️ {stock_code} market_data 失败: {e}')
+    # 2) 历史FCF(回测 FCF_加速 需 ≥3 年; 按 year 取, 与 issue_date 无关)
+    if not skip_fcf:
+        try:
+            fin = TushareFinancialData(stock_code)
+            h = fin.get_historical_fcf_for_dcf(max_years=15)
+            if h and h.get('data'):
+                db.save_historical_fcf(stock_code, h['data'])
+        except Exception as e:
+            print(f'  ⚠️ {stock_code} FCF 失败: {e}')
+    # 3) 行业指数 + 日线 PE/PB(回测 行业估值增长 / PB_vs同行 需要; 全历史覆盖回测期)
+    if not skip_industry:
+        try:
+            ind = generate_industry_data(stock_code, days=industry_days)
+            if ind:
+                db.save_industry_data(stock_code, ind)
+                raw_df = ind.pop('_raw_daily_df', None)
+                raw_code = ind.pop('_used_index_code', None)
+                raw_src = ind.pop('_daily_data_source', 'tushare_sw')
+                if raw_df is not None and raw_code:
+                    db.save_industry_daily(raw_code, raw_df, data_source=raw_src)
+        except Exception as e:
+            print(f'  ⚠️ {stock_code} 行业失败: {e}')
+
+
 if __name__ == '__main__':
     # 解析命令行参数
     parser = argparse.ArgumentParser(description='生成最新市场数据')

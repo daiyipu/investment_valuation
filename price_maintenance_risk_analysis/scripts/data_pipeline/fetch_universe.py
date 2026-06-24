@@ -37,6 +37,55 @@ def _pro():
     return ts.pro_api()
 
 
+# ─────────────── 统一股票清单解析(原始数据摄入脚本 --universe 的后端) ───────────────
+def resolve_universe(spec='placement', data_dir=None):
+    """把一个 universe 规格 解析成 DataFrame[ts_code, name, ...]。
+
+    摄入脚本(update_market_data / backfill_financial_indicators / batch_financial_score)
+    共用此函数,取代各自写死读 placement_evaluation 或 Excel。
+
+    spec:
+      'placement'  → placement_evaluation 去重 stock_code(默认=定增链, 向后兼容)
+      'fullA'      → data/universe.parquet(fetch_universe.py 产的全A ~5000)
+      'sample:N'   → data/universe_sample_N.parquet(pilot 分层抽样 N 只)
+      'file:path'  → 任意 parquet/csv(须含 ts_code 或 stock_code 列)
+
+    返回 DataFrame, 至少含 ts_code + name 列(placement 模式仅这两列;
+    fullA/sample 额外带 list_date/delist_date 供 PIT 过滤)。
+    """
+    import pymysql
+    data_dir = data_dir or DATA_DIR
+    if spec == 'placement':
+        conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', password='',
+                               database='investment_valuation', charset='utf8mb4')
+        df = pd.read_sql(
+            "SELECT pe.stock_code ts_code, MAX(s.stock_name) name "
+            "FROM placement_evaluation pe LEFT JOIN stocks s ON pe.stock_code=s.stock_code "
+            "WHERE pe.issue_date IS NOT NULL AND pe.issue_date<>'' GROUP BY pe.stock_code", conn)
+        conn.close()
+        if 'name' not in df.columns:
+            df['name'] = df['ts_code']
+        return df
+    # 文件类规格
+    if spec.startswith('sample:'):
+        path = os.path.join(data_dir, f'universe_sample_{spec.split(":", 1)[1]}.parquet')
+    elif spec == 'fullA':
+        path = os.path.join(data_dir, 'universe.parquet')
+    elif spec.startswith('file:'):
+        path = spec.split(':', 1)[1]
+    else:
+        raise ValueError(f"未知 universe 规格: {spec}(支持 placement/fullA/sample:N/file:path)")
+    if not os.path.exists(path):
+        raise FileNotFoundError(f'universe 文件不存在: {path}（先跑 fetch_universe.py 生成）')
+    df = pd.read_csv(path) if path.endswith('.csv') else pd.read_parquet(path)
+    if 'ts_code' not in df.columns and 'stock_code' in df.columns:
+        df = df.rename(columns={'stock_code': 'ts_code'})
+    if 'name' not in df.columns:
+        df['name'] = df['ts_code']
+    keep = ['ts_code', 'name'] + [c for c in ['list_date', 'delist_date'] if c in df.columns]
+    return df[keep]
+
+
 def fetch_stock_basic():
     """全 A 股(上市+退市+暂停), 含 list_date/delist_date/name。"""
     pro = _pro()

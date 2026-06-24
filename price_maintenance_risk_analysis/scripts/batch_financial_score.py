@@ -453,7 +453,11 @@ def main():
     parser = argparse.ArgumentParser(description='批量财务评分（支持行级增量续跑）')
     parser.add_argument('excel_path', help='输入Excel（screening结果）；若对应 _scored 已存在则续传补算')
     parser.add_argument('--force', action='store_true', help='强制全量重算（忽略已有 _scored，从头评分）')
+    parser.add_argument('--years-wide', type=int, default=5,
+                        help='评分年份窗口宽度(默认5=报价年及前4年, 与既有表头一致); '
+                             '回测全历史用 16(报价年及前15年, 2010~2025)——宽窗强制从原 Excel 重建, 不复用 5 年 _scored')
     args = parser.parse_args()
+    years_wide = args.years_wide
 
     excel_path = args.excel_path
     if not os.path.exists(excel_path):
@@ -463,6 +467,11 @@ def main():
     # 续传模式：若 _scored 已存在且非 --force，则读它（保留已评分行，只补失败行）
     output_path = excel_path.replace('.xlsx', '_scored.xlsx')
     resume_mode = (not args.force) and os.path.exists(output_path)
+    # 宽窗(回测全历史)强制从原 Excel 重建: 既有 _scored 是 5 年表头(T-4..T),
+    # 与 16 年窗口列数不符, 续写会错位 → 必须重建。
+    if years_wide != 5 and resume_mode:
+        resume_mode = False
+        logger.info(f"--years-wide {years_wide}: 从原 Excel 重建(忽略既有 5 年 _scored 表头)")
     src_path = output_path if resume_mode else excel_path
     logger.info(f"读取 Excel: {src_path}" + ("（行级续传：仅补算评分失败的行）" if resume_mode else "（全量评分）"))
 
@@ -496,8 +505,8 @@ def main():
                     break
                 except ValueError:
                     pass
-    score_years = list(range(base_year - 4, base_year + 1))  # 报价年及前4年
-    logger.info(f"评分年份: {score_years}")
+    score_years = list(range(base_year - (years_wide - 1), base_year + 1))  # 报价年及前 (years_wide-1) 年
+    logger.info(f"评分年份: {score_years} (宽度 {years_wide})")
     # 更新全局SCORE_YEARS，使所有函数(get_industry_thresholds/score_company)同步使用
     global SCORE_YEARS
     SCORE_YEARS = score_years
@@ -521,7 +530,10 @@ def main():
         ws.cell(1, start_col + 2, '三级行业')
         data_start_col = start_col + 3
 
-        headers = [f'{field}_{label}' for field in fields for label in RELATIVE_YEAR_LABELS]
+        rel_labels = ([f'T-{years_wide - 1 - i}' for i in range(years_wide)])
+        if rel_labels:
+            rel_labels[-1] = 'T'  # 末位 = 报价年(宽度5时退化为 ['T-4','T-3','T-2','T-1','T'])
+        headers = [f'{field}_{label}' for field in fields for label in rel_labels]
         for i, h in enumerate(headers):
             ws.cell(1, data_start_col + i, h)
 
@@ -559,7 +571,7 @@ def main():
             if qd and str(qd).strip() and len(str(qd).strip()) >= 4:
                 try:
                     base_year = int(str(qd).strip()[:4])
-                    stock_years = list(range(base_year - 4, base_year + 1))
+                    stock_years = list(range(base_year - (years_wide - 1), base_year + 1))
                 except ValueError:
                     pass
         results = score_company(fetcher, threshold_calc, ts_code, company_name, score_years=stock_years)

@@ -9,6 +9,7 @@ cash_to_liqdebt_withinterest/rd_exp_ratio)为 NULL 的股票做完整重算。
 
 用法:
     python backfill_financial_indicators.py <scored_excel> [--token T] [--years 5]
+    python backfill_financial_indicators.py backtest_universe.xlsx --force --start-year 2009 --end-year 2025 --years 16  # 回测全A全历史
 """
 import argparse
 import os
@@ -77,19 +78,28 @@ def main():
     ap.add_argument('--years', type=int, default=5)
     ap.add_argument('--start-year', type=int, default=2016)  # 多取几年供平均值(当年+上年)
     ap.add_argument('--end-year', type=int, default=2025)
+    ap.add_argument('--force', action='store_true',
+                    help='全量重算 Excel 每只(新股建行 + 既有行 DELETE+INSERT 覆盖); '
+                         '不加则只补"既有行里 5 报表字段缺失"的股(回测全A新股原本无行, null-filter 会漏掉, 必加)')
     args = ap.parse_args()
 
     ex = pd.read_excel(args.excel, sheet_name='Sheet1')
     codes = [str(c) for c in ex['股票代码'].dropna().unique()]
     conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', password='',
                            database='investment_valuation', charset='utf8mb4')
-    # 待回填 = 询转里 5 个报表字段任一为空的(即只被 fina_indicator 快捷覆盖、缺这 5 个)
-    cs = ','.join([f"'{c}'" for c in codes])
-    null_sql = (f"SELECT DISTINCT stock_code FROM financial_indicators "
-                f"WHERE stock_code IN ({cs}) AND (inv_turn IS NULL OR rd_exp_ratio IS NULL)")
-    null_codes = set(pd.read_sql(null_sql, conn)['stock_code'])
-    missing = [c for c in codes if c in null_codes]
-    print(f'Excel {len(codes)} 只; 缺 5 报表字段待重算: {len(missing)}')
+    if args.force:
+        # 全量: Excel 每只都重算(下方 INSERT 前先 DELETE, 幂等覆盖)。回测全A必走此路——
+        # 新股原本无 financial_indicators 行, 默认 null-filter 只查"既有行缺字段"会整批漏掉。
+        missing = codes
+        print(f'--force 全量重算: Excel {len(codes)} 只(新股建行 + 既有行覆盖)')
+    else:
+        # 默认: 只补"既有行里 5 报表字段缺失"的(即只被 fina_indicator 快捷覆盖、缺 inv_turn/rd_exp_ratio)
+        cs = ','.join([f"'{c}'" for c in codes])
+        null_sql = (f"SELECT DISTINCT stock_code FROM financial_indicators "
+                    f"WHERE stock_code IN ({cs}) AND (inv_turn IS NULL OR rd_exp_ratio IS NULL)")
+        null_codes = set(pd.read_sql(null_sql, conn)['stock_code'])
+        missing = [c for c in codes if c in null_codes]
+        print(f'Excel {len(codes)} 只; 缺 5 报表字段待重算: {len(missing)}(回测全A新股请加 --force)')
 
     pro = ts.pro_api(args.token or os.environ['TUSHARE_TOKEN'])
     cur = conn.cursor()
