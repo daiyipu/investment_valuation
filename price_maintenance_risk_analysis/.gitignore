@@ -10,6 +10,20 @@ ml_training/data/features.parquet
 ml_training/data/features_derived.csv
 ml_training/data/features_derived.parquet
 
+# 回测产物(panel/universe/样本清单, 大文件, 由脚本重建)
+ml_training/data/backtest_samples.parquet
+ml_training/data/backtest_universe*.xlsx
+ml_training/data/features_backtest.parquet
+ml_training/data/universe*.parquet
+ml_training/data/namechange.parquet
+ml_training/data/*.bak_pre_pit*
+
+# 回测输出 csv
+ml_training/output/backtest_ls_*.csv
+
+# 包根 output/(backfill_early/logs 临时产物)
+/output/
+
 # Python缓存
 __pycache__/
 *.py[cod]
