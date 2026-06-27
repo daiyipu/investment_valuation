@@ -1,224 +1,219 @@
 # ml_training — 定增盈利预测模型(训练/评估/预测)
 
 基于历史定增(2010–2026, ~6400 样本,东方财富源)训练评分卡/LightGBM 模型,预测锁定期后盈利概率。
-**真相源**:`placement_evaluation` MySQL 表(标签 + 原始因子);特征由 `export_features` 统一发射。
+**真相源**:`placement_evaluation` MySQL 表(标签 + 原始因子)+ `ml_train_wide`(**模型训练宽表**,训练/验证样本空间唯一来源)。
 **当前生产**:7m 灰度评分卡(`current.full`,共识特征,LOYO AUC ~0.62–0.73);附 1m/3m 灰度 SC 辅助列。
 
 > ⚠️ 评估一律用 **LOYO(留一年出)**,不用 shuffle 5折CV(同股近邻日自相关致虚高 +0.1~0.25)。
 
 ---
 
-## 三层数据架构
+## 三层数据架构(★三层一入口铁律)
 
 ```
-L1 取数 → scripts/data_pipeline/        (fetch_factors/compute_labels/...  → placement_evaluation DB)
-L2 发射 → ml_training/export_features.py (DB → data/features.parquet, 统一发射全族+标签)
-L3 衍生 → ml_training/derive_features.py (features.parquet → features_derived.parquet)
-   训练 → train_to_production / train_scorecard_model (→ DB ml_model_meta + model_registry.json)
-   预测 → predict_profitability.py (scored Excel → 7m SC + BLUE + 1m/3m 辅助列)
+L0 取数 → ml_training/data/         (ingest_raw/fetch_factors/labels/industry/financial/market → DB 时序表)
+L1 装配 → ml_training/features/     (build_features(code,date) = 唯一特征装配入口; 定增/回测/predict 三产线共用)
+L2 训练 → ml_training/train/        (train_to_production / train_scorecard_model → DB ml_model_meta)
+L3 验证 → ml_training/validate/     (backtest_long_short / eval_loyo → DB ml_validation*)
+L4 部署 → ml_training/deploy/       (predict_profitability / score_one_stock / batch_*)
 ```
-一键全链路:`python scripts/data_pipeline/update_all_data.py`(12 步, `--from N` 续跑)。
+**数据源**:训练/验证样本从 `ml_train_wide`(DB 宽表)`load_panel(tag)` 直读 DataFrame(无 parquet 文件)。
+一键取数:`python ml_training/data/update_all_data.py`。
 
 ---
 
-## 目录结构(按职责分组)
+## ★ ml_train_wide — 模型训练宽表(DB 样本空间唯一来源)
 
-### 特征层(L2/L3)
-| 文件 | 职责 |
-|---|---|
-| `export_features.py` | **L2 发射器**:`SELECT * placement_evaluation` → `features.parquet`。统一发射所有族(行情/估值/FCF/定增结构/chip/资金流 mf·北向 nb/SMC smc_*/标签 盈利·极性·超·短)。gray 标签(超额 p75/p25)在此算。 |
-| `derive_features.py` | **L3 衍生器**:`features.parquet` → `features_derived.parquet`。FCF增长率/交叉/评分delta/估值相对/行情动量/行业·大盘/策略信号(波二·抵抗)/因子引擎(Beta+Alpha158+SMC,需tushare)。每族 try/except 独立失败不影响其余。 |
-| `factor_engine.py` | OHLCV → 因子库:K线/技术/量价/动量/Beta + 多周期(W/M) + **SMC 聪明钱**(`smc_factors` 日线 + `smc_factors_multiperiod` 周月线)。predict 端自动调(`derive_alpha_beta_factors`)。 |
-| `feature_exclusions.py` | **剔除清单单一源**:`LEAKAGE_PATTERNS`(报价日/涨跌幅/周涨跌幅/excess_/标签 等)+ `BUSINESS_DROP`(绝对水平/常量)。`get_excluded_columns()` 全项目共用。 |
+全特征+全标签的宽表,训练/验证的基础。train/val/test 子集都从此切分(内存按年份/随机/分层),不另建零散样本表。新字段/新标签统一维护其上。
 
-### 选择 + 评估
-| 文件 | 职责 |
-|---|---|
-| `feature_selection.py` | **canonical 五步固定**:`IV>0.01 → PSI≤0.25 → |r|≤0.7 → VIF<5 → LGBM剪`。阈值常量在顶部(改阈值只改此处)。`select_features()`+`prune_by_lgb_importance()`。 |
-| `eval_loyo.py` | **LOYO 验证**(去偏):`fit_woe`/`apply_woe`/`loyo_fixed`(锁定特征跨折 mean±std)。评分卡标准评估。 |
-| `eval_factors.py` | **单因子效力**(`python eval_factors.py <因子> [--prefix X_]`):coverage-aware + **粒度自动对齐**(日→短标签1w/2w/4w, 周→1m/3m, 月→3m/7m)。挖新因子先用它评。 |
-| `validate_methods.py` | AUC/KS/IV 指标 + `run_part_a` OOT 切分(train≤Y/test>Y)。 |
-| `validate_model.py` | 外部测试集验证(旧, 低覆盖参考)。 |
+| tag | 内容 | 用途 |
+|---|---|---|
+| `placement_train_20260627` | 定增 5739 样本 × 305 列(含定增标签+最终结论) | **SC 模型训练源** |
+| `fullA_5labels_20260627` | 全A 5600股 × 414特征 + 5标签 × 192月截面(563073行) | **回测/验证源** |
 
-### 训练
-| 文件 | 职责 |
-|---|---|
-| `train_to_production.py` | **生产标准入口**:LOYO 共识特征(跨折频次≥N)→ 锁定特征 LOYO → 部署 SC/LGB(`--set-current`)。7m 生产模型由此产出。 |
-| `train_scorecard_model.py` | WOE 评分卡训练 → DB(`run()`, 含 LOYO 去偏自评 + meta 存 `sc_loyo_auc` 真值)。 |
-| `train_models.py` | LGB+LR 双模型训练(`--label`/`--split-year`/`--no-set-current`)。 |
-| `train_scorecard.py` | WOE/IV 底层(`calc_iv_all_features`/`fit_woe` 等,被各处复用)。 |
-| `train_horizon_models.py` | 各期限独立特征集模型(全 set_current=False, 扫描用)。 |
-| `compare_selection.py` | 特征选择方法对比。 |
+**入口**(`ml_training/validate/save_validation_db.py`):
+- `load_panel(tag)` / `load_features(src)` — DB BLOB → DataFrame 直读(训练/LOYO 用,无文件)。
+- `register_panel(path, tag)` — panel 入库(sha256 去重,入库后删源文件)。
+- `restore_panel(tag, out_path)` — DB→parquet 文件(仅外部工具需文件时)。
+- `list_panels()` — 列所有样本空间。
 
-### 模型管理
-| 文件 | 职责 |
-|---|---|
-| `db_model_store.py` | 模型**元信息+权重存 DB**(`ml_model_meta` 表)。`load_predict_bundle`/`save_model_meta`/`list_model_metas`。predict 从 DB 读权重。 |
-| `model_registry.py` | **版本指针**(`output/model_registry.json`):`current.full`/`current.scorecard` 指向生产版本。`get_current`/`set_current`。 |
-| `manage_models.py` | CLI:`list`/`set <type> <version>`(切生产)/`current`。 |
-| `db_dataset_store.py` | 数据集快照(`ml_dataset_snapshot` 表, parquet BLOB, 按 sha256 去重)。防 qfq 漂移致不可复现。 |
-| `manage_snapshots.py` | CLI:`list`/`restore <version>`/`show`。 |
+前置:MySQL `max_allowed_packet=1G`(`/usr/local/etc/my.cnf` + `brew services restart mysql`)。
 
-### 预测 + 解释 + 诊断
-| 文件 | 职责 |
-|---|---|
-| `predict_profitability.py` | **预测主入口**:`predict(scored_excel)`。输出 7m 评分卡(主)+ BLUE(同期对比)+ 1m/3m 辅助列。predict 端实时算 SMC(derive_alpha_beta_factors→factor_engine)。 |
-| `explain_scorecard.py` | 评分卡概率**拆解**(只读):每特征 logit 贡献, 找扣分项。 |
-| `diagnose_bin_drift.py` / `diagnose_strategy_scorecard.py` | 诊断(分箱漂移/策略评分卡)。 |
+---
 
-### 数据
-| 路径 | 内容 |
+## 目录结构(按 7 段分,重构后)
+
+### samples/ — 样本脊柱(代码,回溯日期)
+| 脚本 | 职责 |
 |---|---|
-| `data/features.parquet` | L2 基础特征(DB 发射, ~290 列)。gitignore, 可重建。 |
-| `data/features_derived.parquet` | L3 衍生后(~390 列, 含 SMC/策略/多周期)。训练输入。gitignore。 |
-| `data/features_schema.md` | 字段说明(跟踪)。 |
-| `output/` | 训练产物(model_registry.json 跟踪; v_*/pkl/lgb 等 gitignore, 存 DB)。 |
+| `fetch_universe.py` | 全A universe 构建(多空回测用),PIT 在市过滤。 |
+| `fetch_placements.py` | 抓近10年A股定增名单+日期(东方财富 datacenter)。 |
+| `gen_backtest_samples.py` | 生成回测样本清单:(股票,月末报价日)×universe×月,PIT 过滤。 |
+| `build_pilot_samples.py` | 建 pilot universe:N股×192月末。 |
+
+### data/ — 取数落库(L0)
+| 脚本 | 职责 |
+|---|---|
+| `ingest_raw.py` | **统一 L0 摄入入口**:逐股 ingest_stock_full(market+FCF+行业)→ DB 时序表。 |
+| `update_all_data.py` | **一键全链路编排**(指数→行情→定增→标签→因子→特征→衍生,`--from N` 续跑)。 |
+| `labels.py` | 标签计算(合并 compute_labels+recompute_label_qfq+backfill_evaluations);子命令 `labels\|qfq\|evaluations`。 |
+| `industry.py` | 行业取数(合并 refresh_industry_daily+mapping+fetch_em_industry_stocks);`refresh\|mapping\|em`。 |
+| `financial.py` | 财务取数(合并 batch_financial_score+backfill_financial_indicators+bulk_backfill_early_scores+backfill_ann_date);`score\|indicators\|early\|ann_date`。 |
+| `update_market_data.py` | **个股行情/FCF/行业全量摄入**(核心, `ingest_stock_full`)。 |
+| `backfill_market_data.py` | 行情表缺口补全(qfq/daily_basic/monthly 到≥99%)。 |
+| `update_indices_data.py` | 市场指数数据(沪深300等 + locked_date 指数统计)。 |
+| `fetch_factors.py` | 统一因子摄入 → placement_evaluation DB(chip/mf/smc/nb/sue)。 |
+
+> data/ 也放 parquet 数据文件(features_backtest_*/samples_*/sue_timelines 等,gitignored,可重建)。panel 复制品已删,canonical 在 ml_train_wide。
+
+### features/ — 特征工程(★一处维护全特征)
+| 脚本 | 职责 |
+|---|---|
+| `build_backtest_panel.py` | **★ build_features(samples) 唯一装配入口**(三层一入口·组装层):prefetch→基列(FCF/评分/比率)→run_derivation→specials。定增/回测/predict 三产线共用。 |
+| `derive_features.py` | **派生核心**(`run_derivation` + 11 个 derive_*):FCF增长/交叉/评分delta/估值相对/行情动量/行业·大盘/策略信号/alpha_beta因子/idx_factor。PIT ≤报价日。 |
+| `export_features.py` | 定增特征导出(placement):load_scored + build_features → 训练 panel;PIT loaders(load_fcf_bulk/load_financial_ratios/load_specials/load_pb_vs_industry 等)。 |
+| `factor_engine.py` | 因子引擎(声明式算子库):K线/技术/量价/动量/Beta+Alpha158+多周期(W/M)。 |
+| `feature_selection.py` | **canonical 五步特征选择唯一入口**:IV→PSI→corr→VIF→LGBM。 |
+| `feature_exclusions.py` | 特征剔除清单(LEAKAGE/BUSINESS)+ `assert_panel_superset` 护栏。 |
+
+### train/ — 训练(LOYO)
+| 脚本 | 职责 |
+|---|---|
+| `train_to_production.py` | **生产标准入口**:LOYO共识特征→锁定特征LOYO→部署SC/LGB(`--set-current`)。7m主模型由此产出。 |
+| `train_scorecard_model.py` | WOE评分卡训练→DB(`run()`,含LOYO去偏自评+meta存sc_loyo_auc)。 |
+| `train_scorecard.py` | WOE/IV底层(`calc_iv_all_features`/`woe_transform`,被各处复用)。 |
+| `train_horizon_models.py` | 各期限独立特征集模型(全 set_current=False,扫描用)。 |
+| `train_models.py` | LGB+LR 双模型训练(旧版基线)。 |
+| `sweep_label.py` | 标签阈值扫描(双样本空间:非灰AUC/KS+全样本IC+灰度%)。 |
+
+### validate/ — 验证
+| 脚本 | 职责 |
+|---|---|
+| `backtest_long_short.py` | **全A多空回测+IC/ICIR**(量化核心验证);`fwd_returns`/`eval_cross_section`。 |
+| `save_validation_db.py` | **验证/报告入库唯一入口**:`save_validation_run`→ml_validation*;`save_model_report`→ml_model_report;`load_panel`/`register_panel`/`restore_panel`/`list_panels`(ml_train_wide)。 |
+| `validate_5h.py` | 5期限验证(补return_3m/1m/1w/2w标签+IC/ICIR/L-S)。 |
+| `eval_factors.py` | 单因子效力(coverage-aware+粒度对齐)。 |
+| `validate_model.py` | 外部测试集验证(旧,低覆盖参考)。 |
+
+### report/ — 报告
+| 脚本 | 职责 |
+|---|---|
+| `report_horizon.py` | 任意期限gray SC模型LOYO per-year报告(AUC/KS/IC)。 |
+| `audit_scorecard.py` | 评分卡审计(上线前人审:每特征业务解释/IV/系数/分箱/分值)。 |
+| `explain_scorecard.py` | 评分卡概率拆解(单股为何得分高/低,只读)。 |
+| `compare_lgb_sc.py` | LGB vs SC × 共识/全量字段对比。 |
+| `compare_selection.py` | 特征选择方法对比(IV vs Lasso vs 逐步回归)。 |
+| `feature_glossary.py` | 特征业务解释词典(审计/核查基础)。 |
+
+### deploy/ — 部署
+| 脚本 | 职责 |
+|---|---|
+| `predict_profitability.py` | **预测主入口**:`score_sc`(模块级生产打分)+`predict`(7m SC+BLUE+1m/3m辅助列)。 |
+| `score_one_stock.py` | 单股定增评分(终端表格输出)。 |
+| `batch_screen_and_score.py` | 批量定增筛选+财务评分一体化。 |
+| `batch_screener.py` | 批量筛选器。 |
+| `db_model_store.py` | 模型元信息+权重存DB(`ml_model_meta`):`load_predict_bundle`/`save_model_meta`。 |
+| `db_dataset_store.py` | 数据集快照(`ml_dataset_snapshot`,parquet BLOB,sha256去重)。 |
+| `model_registry.py` | 版本指针(`model_registry.json`):`current.full`/`current.scorecard`。 |
+| `manage_models.py` | CLI:`list`/`current`/`set`(切生产)/`info`。 |
+| `manage_snapshots.py` | CLI:`list`/`show`/`restore`。 |
+
+### pipeline/ — 评估底层(LOYO/WOE 引擎)
+| 脚本 | 职责 |
+|---|---|
+| `eval_loyo.py` | **LOYO 标准评估**:`fit_woe`/`apply_woe`(CV 拟合-应用)/`run`(逐年留一)。项目唯一评估口径。 |
+| `validate_methods.py` | AUC/KS/IV 指标 + `apply_woe_score`(打分应用WOE)+`make_features`。 |
+
+### diagnostics/ — 诊断
+| 脚本 | 职责 |
+|---|---|
+| `diagnose_bin_drift.py` | 分箱漂移诊断。 |
+| `diagnose_strategy_scorecard.py` | 策略评分卡诊断。 |
+
+> WOE 三处(train_scorecard.woe_transform 训练 / eval_loyo.fit_woe+apply_woe CV / validate_methods.apply_woe_score 打分)是**模型训练不同阶段的同一算法**,输出格式按阶段不同,非冗余,勿统一。
 
 ---
 
 ## 常用操作
 
-### 新因子 → 生产 标准流程(固化, 每次开发新指标按此走, 勿各搞一套)
-
-> 教训(2026-06-20): 跳过验证报告 / A/B 不对真生产 / 不出审计, 凭单因子 IV 就部署 → 74feat 过拟合评分卡、假 +AUC、KS 丢失。下述 7 步**必走**, 顺序不可省。
-
-**Step 0 计算** — 按数据源三选一:
-- OHLCV 派生(量价/技术/动量/Beta)→ `factor_engine.py` 加函数 + 注册 `_FACTOR_NAMES_OF`; 经 `derive_alpha_beta_factors` 自动进 features_derived(免发射)。
-- tushare 取数(基本面/事件/资金)→ `scripts/data_pipeline/fetch_factors.py` 加 `ingest_X`+`COLS`+`SOURCES` → 写 `placement_evaluation` DB。
-- 衍生算术 → `derive_features.py` 加 `derive_X` 族。
-- 约定: token 走 `resolve_tushare_token()`; 每股1次全历史调用 + 3重试 + 股间 sleep; **单位注意**(如 forecast 净利万元×1e4); 命名避开 `feature_exclusions` 子串; 发比率/z-score 不发绝对元。
-
-**Step 1 发射**(仅 DB 源需要): `export_features.py` 加前缀循环(仿 `smc_*`/`sue_*`)或 `pe.get`; derive 源免改。
-
-**Step 2 因子验证报告(必做, 发给审核)** — `eval_factors.py`:
-```bash
-python ml_training/eval_factors.py 新因子 --horizons all                                        # DB 源
-python ml_training/eval_factors.py 新因子 --parquet data/features_derived.parquet --horizons all # derive 源
+### 训练/验证从 DB 样本空间读(★新工作流,无 parquet 文件)
+```python
+from validate.save_validation_db import load_features
+df = load_features('placement_train_20260627')   # 传 tag → DB 直读 DataFrame
+df = load_features('/path/to/file.parquet')       # 传路径 → 兼容旧文件
 ```
-看 IV/AUC/KS × 全期限 + 覆盖 + 方向。**关键判断**: 信号在哪个期限? 7m 弱 → 路由 1m/3m 辅助模型, 不强塞 7m 主模型。单因子 IV(尤其错期限)≠评分卡价值。
+训练脚本(train_scorecard_model/eval_loyo/train_to_production)已全接 `load_features`,`--features_path` 传 tag 即从 DB 取。
 
-**Step 3 重建特征**: `export_features.py`→features.parquet; `derive_features.py`→features_derived.parquet。
+### 新因子 → 生产 标准流程(7 步固化,勿各搞一套)
+1. **计算**:OHLCV派生→`features/factor_engine.py`加函数;tushare取数→`data/fetch_factors.py`加`ingest_X`;衍生→`features/derive_features.py`加`derive_*`族。
+2. **因子验证**(必做):`validate/eval_factors.py <因子> --horizons all` 看 IV/AUC/KS×全期限+覆盖+方向。
+3. **重建特征**:`features/export_features.py`→panel;`register_panel` 入 ml_train_wide。
+4. **选择+训练**:`train/train_to_production.py --features_path <tag> --horizon 7 --kind gray --model sc --min-folds 12`(canonical五步自动选;**不加`--set-current`**先验证)。
+5. **A/B 对真实生产**(必做,AUC+KS同报):候选共识 vs 当前生产,同 tag 同口径 LOYO;ΔAUC**和**ΔKS都报,差值才有效。
+6. **评分卡审计**(上线前必做):`report/audit_scorecard.py` 导出每特征业务解释/IV/系数/分箱/分值,人审过才部署。
+7. **部署**(A/B正+审计过才切):加`--set-current`;`deploy/score_one_stock.py`冒烟;`deploy/manage_models.py current`确认。回滚:`manage_models.py set full <旧版>`。
 
-**Step 4 选择 + 训练(精简评分卡)** — `train_to_production.py`:
-```bash
-python ml_training/train_to_production.py ml_training/data/features_derived.parquet \
-       --horizon 7 --kind gray --model sc --min-folds 12
-```
-- canonical 五步自动选(`feature_selection.py`: **IV>0.02 且 top50** → PSI≤0.25 → |r|≤0.7 → VIF<5 → LGBM)。
-- **`--min-folds 12`** 保共识 10–15feat(默认 3 会膨胀到几十→过拟合; 评分卡要精简可解释)。
-- `loyo_fixed` 出真 LOYO AUC+KS(LOYO 不用 shuffle CV)。**不加 `--set-current`**(先验证再切)。
-
-**Step 5 A/B 对真实生产(必做, AUC+KS 同报)**: 候选共识 vs 当前生产(锁定特征集), 同 parquet 同口径 LOYO。
-- ΔAUC **和** ΔKS 都报; 须超噪声底(~+0.5pp)且 KS 不降才考虑上。
-- 绝对 AUC 不可比(一次性选择不稳), **差值才有效**。
-
-**Step 6 评分卡审计(上线前人审, 必做)** — `audit_scorecard.py`:
-```bash
-python ml_training/audit_scorecard.py            # 导出 current.full 评分卡审计
-```
-每特征: 业务解释+IV+LR系数+贡献度+分箱+各箱WOE+分值 → `output/audit_<ver>/scorecard_audit.{csv,md}`。审核逐箱核, 不只看 AUC。业务解释维护在 `feature_glossary.py`(`feature_glossary.explain()`, 新特征补 EXPLICIT)。
-
-**Step 7 部署(A/B 正 + 审计过 才切)**:
-```bash
-python ml_training/train_to_production.py ml_training/data/features_derived.parquet \
-       --horizon 7 --kind gray --model sc --min-folds 12 --set-current
-python scripts/score_one_stock.py 300604.SZ 长川科技 20260618   # 冒烟确认端到端
-python ml_training/manage_models.py current                     # 确认新版本已切
-```
-回滚: `manage_models.py set full <旧版本>`。
-
-> ⚠️ **主 vs 辅助模型 — `--set-current` 只给 7m 主模型用!**
-> registry 只有 `current.full`/`current.scorecard` 两个指针(无按期限分)。`--set-current` 写 `current.full` → **仅 7m 主模型**用。
-> **1m/3m 辅助模型禁用 `--set-current`**(会冲掉 7m 主)! 辅助训练:
-> ```bash
-> python ml_training/train_to_production.py ml_training/data/features_derived.parquet \
->        --horizon 1 --kind gray --model sc --min-folds 12     # 不加 --set-current
-> # 同理 --horizon 3。predict 按 label_config('1m_gray_sc'/'3m_gray_sc') 取最新版自动生效。
-> ```
-> predict 多期限补充列(`predict_profitability.py` 9c 段)按 label_config 取最新 SC, 与 current.full 无关 → 辅助"部署"=训练即生效(成最新版), 无需 set。
-
-### 评估因子效力(Step 2 工具)
-```bash
-python ml_training/eval_factors.py smc_premium_discount chip_concentration   # DB 指定
-python ml_training/eval_factors.py --prefix smc_                              # DB 全 smc_*
-python ml_training/eval_factors.py <因子> --parquet data/features_derived.parquet --horizons all  # derive 因子
-```
+> ⚠️ **`--set-current` 只给 7m 主模型!** 1m/3m 辅助模型禁用(会冲掉 7m 主);辅助"部署"=训练即生效(predict 按 label_config 取最新)。
 
 ### 预测 / 解释
 ```bash
-python scripts/score_one_stock.py 300604.SZ 长川科技 20260618      # 单股终端表格
-python scripts/batch_screen_and_score.py --input <名单.xlsx> --sheet 0  # 批量(评分+ML)
-python ml_training/explain_scorecard.py 300604.SZ 长川科技 20260618      # 评分卡拆解
+python ml_training/deploy/score_one_stock.py 300604.SZ 长川科技 20260618      # 单股终端表格
+python ml_training/deploy/batch_screen_and_score.py --input <名单.xlsx>       # 批量
+python ml_training/report/explain_scorecard.py 300604.SZ 长川科技 20260618    # 评分卡拆解
 ```
 
 ### 切换 / 查看生产模型
 ```bash
-python ml_training/manage_models.py current
-python ml_training/manage_models.py list
-python ml_training/manage_models.py set full <version>   # 回滚生产
+python ml_training/deploy/manage_models.py current
+python ml_training/deploy/manage_models.py list
+python ml_training/deploy/manage_models.py set full <version>   # 回滚生产
 ```
 
 ---
 
 ## 关键约定(必读)
 
-1. **评估用 LOYO,不用 shuffle CV** — shuffle 把同股近邻日混入 train/test 致虚高。`eval_loyo.loyo_fixed` / `validate_methods.run_part_a` 是去偏标准。
-2. **coverage-aware 评估** — 历史有限因子(chip 2018+/北向 2016+/moneyflow 2013+)只在自身非空样本评,不 median 填 pooled(否则假阴性)。`eval_factors.py` 已内置。
-3. **粒度对齐** — 因子 bar 粒度匹配 target 期限(日→短标签 1w/2w/4w, 周→1m/3m, 月→3m/7m)。错配=假阴性。
-4. **canonical 特征选择唯一** — `feature_selection.py` 五步固定(**IV>0.02 且 top50** → PSI≤0.25 → |r|≤0.7 → VIF<5 → LGBM),不再各脚本各搞一套。改阈值只改此处常量。
-5. **标签防泄漏** — `feature_exclusions` 拦截 涨跌幅/周涨跌幅/excess_/标签/报价日 等。新增目标变量列务必加进排除清单。
-6. **token 不硬编码** — 走 `tushare_token.resolve_tushare_token()`(旧 literal 已泄漏需轮换)。
-7. **模型权重在 DB**(`ml_model_meta`),版本指针在 `model_registry.json`(`current.full`)。
-8. **set_current=False 扫描** — 多期限/实验模型一律不切生产,避免静默切换 regime;生产提升经 `manage_models.py set` 人工确认。
-9. **评分卡要精简(10–15feat)** — `train_to_production --min-folds 12`(默认 3 会共识膨胀到几十→过拟合; 2026-06-20 教训: 74feat 评分卡比 11feat 生产差)。
-10. **A/B 必对真实生产, AUC+KS 同报** — 候选 vs 当前生产锁定特征集, 同 parquet 同口径 LOYO; ΔAUC **和** ΔKS 都报, 差值才有效(绝对 AUC 不可比)。只报 AUC 丢 KS = 失职。
-11. **上线前必出评分卡审计** — `audit_scorecard.py` 导出每特征业务解释/IV/贡献度/分箱/分值(CSV+MD), 人审过才部署; 不只看 AUC。
-12. **单因子 IV ≠ 评分卡价值(期限匹配)** — 选特征按目标期限(7m)IV; 信号在 1m/3m 的因子路由辅助模型, 不强塞 7m 主模型(会挤掉动量反变差)。
+1. **评估用 LOYO,不用 shuffle CV** — shuffle 同股近邻日混入 train/test 致虚高。`eval_loyo.run` 是去偏标准。
+2. **DB 样本空间唯一** — 训练/验证从 `ml_train_wide` 读(`load_panel`/`load_features`),不依赖本地 parquet;新 panel `register_panel` 入库。
+3. **报告全入库** — 验证→`ml_validation*`(`save_validation_run`);模型报告→`ml_model_report`(`save_model_report`);**项目内不留裸 csv**。
+4. **canonical 特征选择唯一** — `features/feature_selection.py` 五步固定(IV→PSI→corr→VIF→LGBM),改阈值只改此处。
+5. **三层一入口铁律** — 取数=`data/`;装配=`features/build_features`;新特征只往现有入口加函数,不新开脚本。
+6. **标签防泄漏** — `features/feature_exclusions` 拦截涨跌幅/excess_/标签/报价日等;新目标列务必加排除清单。
+7. **token 不硬编码** — 走 `tushare_token.resolve_tushare_token()`。
+8. **模型权重在 DB**(`ml_model_meta`),版本指针在 `model_registry.json`(`current.full`)。
+9. **set_current=False 扫描** — 多期限/实验模型不切生产;生产提升经 `manage_models.py set` 人工确认。
+10. **评分卡精简(10–15feat)** — `train_to_production --min-folds 12`(默认3会共识膨胀→过拟合)。
+11. **A/B 必对真实生产, AUC+KS 同报** — 差值才有效(绝对 AUC 不可比)。
+12. **上线前必出评分卡审计** — `audit_scorecard.py` 人审,不只看 AUC。
 
 ---
 
-## 关键发现与边界(2026-06 因子挖掘结论)
+## 标签设计方法论(双样本空间)
 
-- **模型本质 = regime/动量(beta),非选股 α**。超额收益标签(剥 regime)实测 AUC 反降 → 现有动量特征赚的就是 regime 的钱。
-- **AUC 天花板 ~0.65–0.73**(LOYO)。定增专属特征多已定价;非公开筹码类(chip)有信号但受历史覆盖陷阱。
-- **期限可预测性**:月级 0.63–0.67(中),**周级 ~0.55(近噪声)**。短期收益=噪声主导。
-- **聪明钱(SMC)**:仅 `premium_discount`(区间位置, 反向均值回归)微弱有效(IV 0.035–0.054);ote/bos/fvg/displacement/sweep ≈0。周/月线 bar 配月标签是关键(日线配月标签错配)。
-- **有信号的因子**:`chip_concentration`(2018+ 子集 +2.5pp, 覆盖陷阱)、`smc_premium_discount`、技术/动量族。
-- **无效因子**:定增结构条款(公开已定价)、SMC 多数变体、moneyflow(94%覆盖仍~0)、超额收益标签。
+**定 lose/win 阈值用 `train/sweep_label.py` 扫描(可迁移任意期限)**。核心:训练只在非灰度样本,生产灰度筛不掉 → 必须同时评两套样本空间。
+
+| 指标 | 样本空间 | 用途 |
+|---|---|---|
+| 非灰 AUC/KS | 仅清晰赢/输 | 参考;**极端阈值会虚高** |
+| 灰度% | 全体 | 实战筛不掉占比 |
+| **全样本 IC** | 含灰度全体 | **选阈值依据**(Spearman 概率,收益) |
+
+**选阈值看全样本 IC,不看非灰 AUC**(极端阈值非灰 AUC 是海市蜃楼)。量纲:AUC 0.7可用/KS 0.3可用/IC月 0.02–0.05弱可用。生产口径见 `train_horizon_models.GRAY_CFG`。
 
 ---
 
-## 标签设计方法论(双样本空间, 2026-06-20 固化)
+## 关键发现与边界
 
-**定标签 lose/win 阈值不靠拍脑袋, 用 `sweep_label.py` 扫描; 可迁移任意期限(1/3/6/7/12m)。**
-
-核心:**训练只在非灰度样本上(灰度被丢), 但生产时灰度筛不掉 → 必须同时评两套样本空间**, 否则会被极端阈值的"高 AUC"误导。
-
-```bash
-python ml_training/sweep_label.py ml_training/data/features_derived.parquet --horizon 3
-# 固定 win(+10, 生产口径), 扫 lose [0,-5,-10,-15,-20], LOYO 报:
-```
-
-| 指标 | 样本空间 | 含义 | 用途 |
-|---|---|---|---|
-| **非灰 AUC/KS** | 仅清晰赢/输 | 训练口径区分度 | 参考; **极端 lose 阈值会虚高**(只留极值) |
-| **灰度%** | 全体 | 实战筛不掉的灰度占比 | 越高→有效样本越少 |
-| **全样本 IC** | 含灰度全体 | Spearman(预测概率, 实际收益) 实战排序 | **选阈值的依据** |
-
-**选阈值看【全样本 IC】, 不看非灰 AUC。** 教训(1m):
-- `(−20,10)` 非灰 AUC 0.61 看着最强, 但灰度 75%、全样本 IC≈0 → **海市蜃楼**(尾部区分不等于全人群排序)。
-- 真实甜点 `(−5,10)/(−10,10)`:全样本 IC 最高(~0.039), 灰度 45–61%。
-
-**指标量纲**(选阈值/判好坏用):
-- **AUC**(全阈值排序):0.5 随机 / 0.7 可用 / 0.8 强。
-- **KS**(最佳单阈值 TPR−FPR 差):0.2 中 / 0.3 可用 / 0.4 强。AUC 低+KS 中 = 有一个切分点但整体排序弱(尾部型)。
-- **IC**(rank corr, 月级):<0.02 噪声 / 0.02–0.05 弱但可用 / 0.05–0.10 中 / >0.10 强。
-- 生产口径见 `train_horizon_models.GRAY_CFG`(改阈值 = 改此处 + 重跑本扫描确认)。
+- **模型本质 = regime/动量(beta),非选股 α**。超额收益标签(剥 regime)AUC 反降。
+- **AUC 天花板 ~0.65–0.73**(LOYO);定增专属特征多已定价。
+- **期限可预测性**:月级 0.63–0.67(中),周级 ~0.55(近噪声)。
+- **有信号因子**:`chip_concentration`(2018+子集)、`smc_premium_discount`、技术/动量族。
+- **无效因子**:定增结构条款、SMC 多数变体、moneyflow、超额收益标签。
 
 ---
 
 ## 依赖
 
-- Python ≥ 3.10(用 vnpy 环境:`~/anaconda3/envs/vnpy/bin/python`, 非 base py3.7)
+- Python ≥ 3.10(用 vnpy 环境:`~/anaconda3/envs/vnpy/bin/python`)
 - lightgbm, scikit-learn, pandas, numpy, pymysql, openpyxl, tushare
-- MySQL(investment_valuation 库:placement_evaluation/market_data/relative_valuation/historical_fcf/industry_daily/industry_data/issue_date_locked/ml_model_meta/ml_dataset_snapshot 等)
+- MySQL(investment_valuation 库;`max_allowed_packet=1G` 供 ml_train_wide 大 panel BLOB)
