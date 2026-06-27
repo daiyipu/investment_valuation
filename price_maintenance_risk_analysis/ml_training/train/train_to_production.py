@@ -25,6 +25,7 @@ import pandas as pd
 PKG = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # train/→ml_training/→PKG
 for _p in (PKG, os.path.join(PKG,'ml_training'), os.path.join(PKG,'ml_training','pipeline'), os.path.join(PKG,'scripts')):
     if _p not in sys.path: sys.path.insert(0, _p)
+from validate.save_validation_db import load_features  # noqa: E402  (DB样本空间直读)
 from validate_methods import make_features
 from features.feature_selection import select_features, CORR_MAX, VIF_MAX
 from train.train_horizon_models import GRAY_CFG, build_label, _prep, _train, _ret_col, _tag, _parse_horizon
@@ -123,7 +124,7 @@ def loo_refine(features_path, horizon, kind, consensus, candidates, lam=0.5, th=
           f'score={_score(base):.4f}')
     # 后向: 删有害+删中性(删了 score 不明显降 = 冗余/死重), 只留明确有贡献的。
     # 按 pooled IV 升序删(冗余对里低IV先删、高IV留存代表); 带 10 个下限防过度精简。
-    df0 = pd.read_parquet(features_path).dropna(subset=['报价日']).reset_index(drop=True)
+    df0 = load_features(features_path).dropna(subset=['报价日']).reset_index(drop=True)
     lbl0, _ = build_label(df0, horizon, kind)
     Xraw0, y0, _ = make_features(df0, label_col=lbl0, ret_col=_ret_col(horizon))
     iv = calc_iv_all_features(Xraw0, y0).set_index('feature')['iv']
@@ -155,7 +156,7 @@ def final_collapse(features_path, horizon, kind, refined, corr_th=0.9):
     """最终 corr 复核: 塌掉 LOO 重新引入的近重复(|r|>corr_th)。
     用严格阈值 0.9(只塌近重复), 避免 VIF(>0.7)那种激进误删 LOO 救回的有用特征。"""
     import contextlib, io
-    df = pd.read_parquet(features_path).dropna(subset=['报价日']).reset_index(drop=True)
+    df = load_features(features_path).dropna(subset=['报价日']).reset_index(drop=True)
     lbl, _ = build_label(df, horizon, kind)
     Xraw, y, _ = make_features(df, label_col=lbl, ret_col=_ret_col(horizon))
     X, _ = _prep(Xraw)
@@ -173,7 +174,7 @@ def final_collapse(features_path, horizon, kind, refined, corr_th=0.9):
 
 def deploy_lgb(features_path, horizon, kind, consensus, split_year, set_current):
     """LGB 部署: 全量训 LGB+LR(共识特征), 入库。"""
-    df = pd.read_parquet(features_path).dropna(subset=['报价日']).reset_index(drop=True)
+    df = load_features(features_path).dropna(subset=['报价日']).reset_index(drop=True)
     lbl, gcfg = build_label(df, horizon, kind)
     Xall_raw, yall, _ = make_features(df, label_col=lbl, ret_col=_ret_col(horizon))
     Xall, med = _prep(Xall_raw)
@@ -209,7 +210,7 @@ def main():
     ap.add_argument('--set-current', action='store_true')
     args = ap.parse_args()
 
-    df = pd.read_parquet(args.features_path)
+    df = load_features(args.features_path)
     consensus, candidates = derive_consensus(df, args.horizon, args.kind, args.min_folds)
     # LOO 精修 + 最终 corr 复核(标准 ⑦VIF之后、⑧LR之前的封装式精修)
     refined = loo_refine(args.features_path, args.horizon, args.kind, consensus, candidates)

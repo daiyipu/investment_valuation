@@ -31,6 +31,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from validate.save_validation_db import load_features  # noqa: E402  (DB样本空间直读)
 from validate_methods import make_features, eval_metrics
 from features.feature_selection import select_features, prune_by_lgb_importance
 from train.train_horizon_models import GRAY_CFG, HORIZONS, build_label, _prep, _train, _ret_col, _tag, _parse_horizon
@@ -126,7 +127,7 @@ def _eval_fold(dtr, dte, horizon, kind):
 
 
 def run(features_path):
-    df = pd.read_parquet(features_path).dropna(subset=['报价日']).reset_index(drop=True)
+    df = load_features(features_path).dropna(subset=['报价日']).reset_index(drop=True)
     df['_year'] = (pd.to_numeric(df['报价日'], errors='coerce') // 10000).astype('Int64')
     years = sorted(int(y) for y in df['_year'].dropna().unique())
     print(f'LOYO {len(years)} 折: {years} | 全量 {len(df)} 行 | 三模型(LGB/LR/SC)同标准五步特征\n')
@@ -242,7 +243,7 @@ def _eval_fold_fixed(dtr, dte, horizon, kind, features):
 def loyo_fixed(features_path, horizon, kind, features):
     """锁定特征 LOYO(部署对齐验证): 6 折每折用同一套固定特征训 LGB/LR/SC, 报 mean±std。
     用法: python eval_loyo.py <parquet> --fixed-features "f1,f2,..." --horizon 7 --kind gray"""
-    df = pd.read_parquet(features_path).dropna(subset=['报价日']).reset_index(drop=True)
+    df = load_features(features_path).dropna(subset=['报价日']).reset_index(drop=True)
     df['_year'] = (pd.to_numeric(df['报价日'], errors='coerce') // 10000).astype('Int64')
     years = sorted(int(y) for y in df['_year'].dropna().unique())
     feats = [f.strip() for f in features.split(',')]

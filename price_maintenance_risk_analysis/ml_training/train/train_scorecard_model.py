@@ -18,6 +18,7 @@ import pandas as pd
 PKG = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # train/→ml_training/→PKG
 for _p in (PKG, os.path.join(PKG,'ml_training'), os.path.join(PKG,'ml_training','pipeline'), os.path.join(PKG,'scripts')):
     if _p not in sys.path: sys.path.insert(0, _p)
+from validate.save_validation_db import load_features  # noqa: E402  (DB样本空间直读)
 from validate_methods import make_features, eval_metrics
 from features.feature_selection import select_features, pipeline_summary, IV_MIN, PSI_MAX, CORR_MAX, VIF_MAX
 from train.train_horizon_models import GRAY_CFG, build_label, _prep, _ret_col, _tag, _parse_horizon
@@ -49,7 +50,7 @@ def print_scorecard(features, woe_bins, lr):
 
 
 def run(features_path, horizon, kind, split_year, set_current, features=None, loyo_stats=None):
-    df = pd.read_parquet(features_path).dropna(subset=['报价日']).reset_index(drop=True)
+    df = load_features(features_path).dropna(subset=['报价日']).reset_index(drop=True)
     df['_y'] = (pd.to_numeric(df['报价日'], errors='coerce') // 10000).astype('Int64')
     dtr_s = df[df['_y'] <= split_year].drop(columns=['_y'])      # 选特征用(算 PSI)
     dte_s = df[df['_y'] >= split_year + 1].drop(columns=['_y'])
