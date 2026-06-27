@@ -167,7 +167,7 @@ def save_validation_run(df, model_ver, sample_type, horizon=7, panel='', notes='
 
 
 def register_panel(path, tag, note='', label_config=''):
-    """特征 panel 以 BLOB(LONGBLOB)正经落库专用表 ml_panel。sha256 去重, 入库后删裸文件。
+    """特征 panel 以 BLOB(LONGBLOB)正经落库专用表 ml_train_wide。sha256 去重, 入库后删裸文件。
     ⚠️ **前置**: 需先 bump MySQL `max_allowed_packet` ≥ panel大小+余量(当前 64MB < 大 panel 241MB,
     会超包报错), 并重启 MySQL。配置前**不调用**(panel 暂留 ml_training/data, 落库延后)。
     配置后: `SET GLOBAL max_allowed_packet=536870912` + 重启, 再批量调本函数 backfill。返回 sha256。"""
@@ -190,24 +190,24 @@ def register_panel(path, tag, note='', label_config=''):
     if size_mb * 1024 * 1024 >= packet - 1_048_576:
         conn.close()
         raise RuntimeError(f"panel {size_mb}MB ≥ max_allowed_packet {packet//1024//1024}MB; 先 bump+重启 MySQL 再调用(见 docstring)")
-    cur.execute("""CREATE TABLE IF NOT EXISTS ml_panel (
+    cur.execute("""CREATE TABLE IF NOT EXISTS ml_train_wide (  -- æ¨¡åè®­ç»å®½è¡¨(
         tag VARCHAR(128) PRIMARY KEY, kind VARCHAR(32) DEFAULT 'backtest',
         label_config VARCHAR(64), n_rows INT, n_cols INT, size_mb INT,
         sha256 CHAR(64) UNIQUE, parquet LONGBLOB, note VARCHAR(256),
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
-    cur.execute("SELECT tag FROM ml_panel WHERE sha256=%s", (sha,))
+    cur.execute("SELECT tag FROM ml_train_wide WHERE sha256=%s", (sha,))
     if cur.fetchone():
         conn.close(); print(f"⏭️ panel sha={sha[:12]} 已入库; 删裸文件", flush=True)
         os.remove(path); return sha
     with open(path, 'rb') as f:
         blob = f.read()
-    cur.execute("""INSERT INTO ml_panel (tag,kind,label_config,n_rows,n_cols,size_mb,sha256,parquet,note)
+    cur.execute("""INSERT INTO ml_train_wide (tag,kind,label_config,n_rows,n_cols,size_mb,sha256,parquet,note)
         VALUES (%s,'backtest',%s,%s,%s,%s,%s,%s,%s)
         ON DUPLICATE KEY UPDATE n_rows=VALUES(n_rows),n_cols=VALUES(n_cols),size_mb=VALUES(size_mb),
         sha256=VALUES(sha256),parquet=VALUES(parquet),note=VALUES(note)""",
         (tag, label_config, n_rows, n_cols, size_mb, sha, blob, note))
     conn.commit(); conn.close(); os.remove(path)
-    print(f"✅ panel {tag} 入库 ml_panel(BLOB): {n_rows}×{n_cols} {size_mb}MB sha={sha[:12]}; 裸文件已删", flush=True)
+    print(f"✅ panel {tag} 入库 ml_train_wide(BLOB): {n_rows}×{n_cols} {size_mb}MB sha={sha[:12]}; 裸文件已删", flush=True)
     return sha
 
 
