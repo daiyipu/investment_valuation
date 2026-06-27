@@ -63,7 +63,7 @@ def _warm_close_cache(stocks):
     """从 DB stock_qfq_daily 批量读 close → 预热 bls._CLOSE_CACHE(免逐股 pro_bar 限频)。
     同 build_backtest_panel 的 _qfq_bulk_read 取数方式, chunk 800/批。"""
     import pymysql
-    from data.compute_labels import build_series
+    from data.labels import build_series
     conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', password='',
                            database='investment_valuation', charset='utf8mb4')
     stocks = sorted(set(stocks))
