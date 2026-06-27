@@ -26,14 +26,14 @@ import time
 
 import pandas as pd
 
-PKG = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))           # price_maintenance_risk_analysis/
+PKG = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # data/→ml_training/→PKG
 sys.path.insert(0, PKG)
 sys.path.insert(0, os.path.join(PKG, 'scripts'))
-sys.path.insert(0, os.path.join(PKG, 'scripts', 'data_pipeline'))
+sys.path.insert(0, os.path.join(PKG, 'ml_training'))  # data 兄弟(from data.X)
 
 from tushare_token import resolve_tushare_token  # noqa: E402
 os.environ.setdefault('TUSHARE_TOKEN', resolve_tushare_token())
-from update_market_data import ingest_stock_full  # noqa: E402  (复用单股 L0, 不改 update_market_data)
+from data.update_market_data import ingest_stock_full  # noqa: E402  (复用单股 L0, 不改 update_market_data)
 from utils.db_manager import ValuationDB  # noqa: E402
 from samples.fetch_universe import resolve_universe  # noqa: E402
 

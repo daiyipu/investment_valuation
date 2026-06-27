@@ -4195,7 +4195,7 @@ def generate_report(stock_code='300735.SZ', output_file='定增风险分析报�
     historical_incomes = None
 
     try:
-        from data_pipeline.update_market_data import TushareFinancialData
+        from data.update_market_data import TushareFinancialData
 
         ts_token = os.environ.get('TUSHARE_TOKEN', '')
         if ts_token:

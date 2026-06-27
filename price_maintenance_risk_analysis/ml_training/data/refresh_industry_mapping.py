@@ -23,10 +23,10 @@ from datetime import datetime
 import pandas as pd
 import pymysql
 
-PKG = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))           # price_maintenance_risk_analysis/
+PKG = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # data/→ml_training/→PKG
 sys.path.insert(0, PKG)
 sys.path.insert(0, os.path.join(PKG, 'scripts'))
-sys.path.insert(0, os.path.join(PKG, 'scripts', 'data_pipeline'))
+sys.path.insert(0, os.path.join(PKG, 'ml_training'))  # samples/data 兄弟
 
 from tushare_token import resolve_tushare_token  # noqa: E402
 os.environ.setdefault('TUSHARE_TOKEN', resolve_tushare_token())

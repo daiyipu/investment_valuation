@@ -1239,7 +1239,7 @@ def prefetch_sue_timelines(codes, refresh=False):
 
     历史披露是 PIT 固定的 → 落盘 _SUE_PARQ 后, 回测重建 panel 不再重取(省 ~3 API/股)。
     refresh=True: 忽略磁盘, 全量重取并覆盖(增量新披露用)。"""
-    from data_pipeline.fetch_factors import _build_disclosure_timeline
+    from data.fetch_factors import _build_disclosure_timeline
     # 1) 先载入磁盘缓存(除非 refresh)
     if refresh:
         _SUE_CACHE.clear()
@@ -1449,7 +1449,7 @@ def load_sue_beat(keys):
     sue_recency_d + sue_yoy_acc + sue_yoy_mean3 + sue_yoy + sue_up_trend。PIT: ann_date≤date 最近披露。
     复用 fetch_factors._sue_for_sample(已算全变体); 需先 prefetch_sue_timelines, 否则惰性逐股建(慢)。
     keys 单截面用(codes, 同一 date)→ 输出 index=code。原特征名, 现有 1w/2w 模型直接消费。"""
-    from data_pipeline.fetch_factors import _sue_for_sample, _build_disclosure_timeline
+    from data.fetch_factors import _sue_for_sample, _build_disclosure_timeline
     SUE_COLS = ['sue_beat', 'sue_zscore', 'sue_pos_streak', 'sue_recency_d',
                 'sue_yoy_acc', 'sue_yoy_mean3', 'sue_yoy', 'sue_up_trend']
     if not keys:

@@ -146,7 +146,7 @@ def generate_chapter(context):
     income = {}  # 初始化利润表数据（用于后续获取营收）
 
     try:
-        from data_pipeline.update_market_data import TushareFinancialData
+        from data.update_market_data import TushareFinancialData
 
         ts_token = os.environ.get('TUSHARE_TOKEN', '')
         if ts_token:
