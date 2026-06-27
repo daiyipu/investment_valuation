@@ -25,6 +25,10 @@ warnings.filterwarnings('ignore', category=FutureWarning)
 
 _EFAES_ROOT = os.path.expanduser('~/github/EFAES')
 sys.path.insert(0, _EFAES_ROOT)
+# PKG 根(price_maintenance_risk_analysis/): utils.db_manager 所在, 供 bulk_load_* 复用
+_PKG_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _PKG_ROOT not in sys.path:
+    sys.path.insert(0, _PKG_ROOT)
 
 from src.web.config import DB_CONFIG, TUSHARE_TOKEN
 from src.core.tushare_data_fetcher import TushareDataFetcher
@@ -50,6 +54,129 @@ _industry_query_lock = threading.Lock()
 
 # 二/一级行业回退阈值缓存：冷门三级行业样本不足时回退到二级/一级，同行业只算一次
 _fallback_thresholds_cache = {}  # {(industry_name, year): thresholds}
+
+# ──────────────────────────────────────────────────────────────────
+# ③-d 加速: 比率 + 行业映射 改读本地已落库表(替逐股 tushare); 阈值加持久缓存。
+# 字节级等同原路径:
+#   - financial_indicators 由 backfill_financial_indicators(③-c) 用【同一 calculate_financial_ratios】落库
+#   - industry_data 是 ③-a 的申万映射(同 SW 口径)
+#   - 阈值仍走原 EFAES 算法(tushare fina_indicator 快捷值分布, 与评分源一致), 仅加持久缓存免重启重算
+# ──────────────────────────────────────────────────────────────────
+_FI_RATIO_COLS = [
+    'current_ratio', 'quick_ratio', 'inv_turn', 'ar_turn', 'ca_turn', 'assets_turn',
+    'roa', 'npta', 'roe', 'roe_dt', 'netprofit_margin', 'grossprofit_margin',
+    'debt_to_assets', 'int_to_talcap', 'debt_to_eqt', 'ebit_to_interest',
+    'cash_to_liqdebt', 'cash_to_liqdebt_withinterest', 'rd_exp_ratio',
+    'op_yoy', 'ebt_yoy', 'netprofit_yoy', 'dt_netprofit_yoy', 'roe_yoy',
+    'tr_yoy', 'or_yoy', 'equity_yoy',
+]
+_RATIOS_CACHE = {}     # {(ts_code, year): {ratio: val}}   批量预取一次, 评分线程只读
+_INDUSTRY_CACHE = {}   # {ts_code: {l1_name,l2_name,l3_name}}  本地 industry_data 预取
+_FI_DF = pd.DataFrame()        # financial_indicators 全表(阈值分位用): stock_code+report_year+27比率
+_INDUSTRY_MEMBERS = {}         # {l3/l2/l1_name: [stock_codes]}  本地反查, 替 get_industry_stocks
+
+_THRESHOLD_CACHE_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    'ml_training', 'data', 'threshold_cache.json')
+_persistent_threshold_cache = {}   # {f"{industry}|{year}": thresholds}   跨进程持久
+_threshold_save_lock = threading.Lock()
+
+
+def bulk_load_ratios(stock_codes):
+    """一次性把全 universe 的 (stock,year)→27比率 读进内存。
+    financial_indicators 由 ③-c 用同一 calculate_financial_ratios 落库 → 读它字节级等同原取数。"""
+    import pymysql
+    from utils.db_manager import ValuationDB
+    _RATIOS_CACHE.clear()
+    codes = [str(c) for c in stock_codes if c]
+    cfg = ValuationDB.MYSQL_CONFIG
+    conn = pymysql.connect(host=cfg['host'], port=cfg['port'], user=cfg['user'],
+                           password=cfg['password'], database=cfg['database'], charset=cfg['charset'])
+    cols = ','.join(_FI_RATIO_COLS)
+    BATCH = 500
+    frames = []
+    try:
+        for i in range(0, len(codes), BATCH):
+            b = codes[i:i + BATCH]
+            ph = ','.join(['%s'] * len(b))
+            frames.append(pd.read_sql(
+                f"SELECT stock_code,report_year,{cols} FROM financial_indicators WHERE stock_code IN ({ph})",
+                conn, params=b))
+    finally:
+        conn.close()
+    df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    global _FI_DF
+    _FI_DF = df.copy()   # 阈值分位用(全表, stock_code+report_year+27比率)
+    hit_stocks = set()
+    for _, row in df.iterrows():
+        _RATIOS_CACHE[(str(row['stock_code']), int(row['report_year']))] = {
+            c: (row[c] if pd.notna(row[c]) else None) for c in _FI_RATIO_COLS}
+        hit_stocks.add(str(row['stock_code']))
+    logger.info(f"比率缓存(financial_indicators): {len(_RATIOS_CACHE)} 条, {len(hit_stocks)}/{len(codes)} 股命中")
+
+
+def bulk_load_industry():
+    """从本地 industry_data(③-a 申万映射) 预取 ts_code→l1/l2/l3_name, 替 5302 次 index_member_all。
+    每股取最新 analysis_date; 无 l3 的不存(评分按缺 l3 回退逐股查, 同原逻辑)。"""
+    import pymysql
+    from utils.db_manager import ValuationDB
+    _INDUSTRY_CACHE.clear()
+    cfg = ValuationDB.MYSQL_CONFIG
+    conn = pymysql.connect(host=cfg['host'], port=cfg['port'], user=cfg['user'],
+                           password=cfg['password'], database=cfg['database'], charset=cfg['charset'])
+    try:
+        df = pd.read_sql(
+            "SELECT stock_code,sw_l1_name,sw_l2_name,sw_l3_name,analysis_date "
+            "FROM industry_data WHERE sw_l3_name IS NOT NULL AND sw_l3_name<>''",
+            conn)
+    finally:
+        conn.close()
+    if df.empty:
+        logger.warning("industry_data 为空(l3), 行业查询回退逐股 index_member_all")
+        return
+    df = df.sort_values('analysis_date', ascending=False).drop_duplicates(subset=['stock_code'], keep='first')
+    for _, row in df.iterrows():
+        _INDUSTRY_CACHE[str(row['stock_code'])] = {
+            'l1_name': row.get('sw_l1_name') or '',
+            'l2_name': row.get('sw_l2_name') or '',
+            'l3_name': row.get('sw_l3_name') or '',
+        }
+    # 反查 {l3/l2/l1_name: [codes]} 供本地阈值(替 get_industry_stocks 的 tushare 调用)
+    global _INDUSTRY_MEMBERS
+    _INDUSTRY_MEMBERS = {}
+    for lvl in ['sw_l3_name', 'sw_l2_name', 'sw_l1_name']:
+        for name, g in df.dropna(subset=[lvl]).groupby(lvl):
+            _INDUSTRY_MEMBERS.setdefault(str(name), []).extend(g['stock_code'].astype(str).tolist())
+    n_l3 = df['sw_l3_name'].dropna().nunique() if 'sw_l3_name' in df.columns else 0
+    logger.info(f"行业缓存(industry_data 本地): {len(_INDUSTRY_CACHE)} 股; 成员反查 {len(_INDUSTRY_MEMBERS)} 桶(L3={n_l3})")
+
+
+def _load_persistent_thresholds():
+    """幂等载入持久阈值缓存(跨进程/重启复用)。"""
+    global _persistent_threshold_cache
+    if _persistent_threshold_cache:
+        return
+    if os.path.exists(_THRESHOLD_CACHE_FILE):
+        try:
+            import json
+            with open(_THRESHOLD_CACHE_FILE, 'r') as f:
+                _persistent_threshold_cache = json.load(f)
+            logger.info(f"持久阈值缓存: 载入 {len(_persistent_threshold_cache)} 条")
+        except Exception as e:
+            logger.warning(f"载入持久阈值缓存失败: {e}")
+
+
+def _save_persistent_threshold(key, thresholds):
+    """阈值算好后落盘(算法不变, 仅缓存; 线程安全)。"""
+    _persistent_threshold_cache[key] = thresholds
+    try:
+        import json
+        with _threshold_save_lock:
+            os.makedirs(os.path.dirname(_THRESHOLD_CACHE_FILE), exist_ok=True)
+            with open(_THRESHOLD_CACHE_FILE, 'w') as f:
+                json.dump(_persistent_threshold_cache, f)
+    except Exception as e:
+        logger.debug(f"写持久阈值缓存失败: {e}")
 
 
 def get_company_industry(pro, ts_code: str, max_retries: int = 3) -> dict:
@@ -162,6 +289,16 @@ def get_industry_thresholds(threshold_calc: IndustryThresholdCalculator, industr
         logger.info(f"使用缓存的 '{industry_name}' {target_year}年 行业阈值")
         return _industry_thresholds_cache[cache_key]
 
+    # 持久缓存(跨进程复用, 算法不变): 命中则回放, 免 tushare 重算
+    _load_persistent_thresholds()
+    pkey = f"{industry_name}|{target_year}"
+    if pkey in _persistent_threshold_cache:
+        cached = _persistent_threshold_cache[pkey]
+        if cached:
+            _industry_thresholds_cache[cache_key] = cached
+            logger.info(f"复用持久缓存 '{industry_name}' {target_year}年 行业阈值")
+            return cached
+
     # 确定尝试的年份：从target_year往前找（最多回退3年）
     base_year = target_year if target_year else SCORE_YEARS[-1]
     try_years = [base_year - i for i in range(4)]  # target_year, T-1, T-2, T-3
@@ -180,31 +317,29 @@ def get_industry_thresholds(threshold_calc: IndustryThresholdCalculator, industr
             logger.info(f"复用 '{industry_name}' 已缓存的原始数据（{cached_start}~{cached_end}年）")
 
     if df_with_stats is None:
-        start_date = f'{fetch_start_year}0101'
-        end_date = f'{fetch_end_year}1231'
+        # ── 本地阈值路径(替 tushare 逐成员 fina_indicator, 限频卡死):
+        # 从 financial_indicators(③-c, 同 calculate_financial_ratios 年报口径)取行业成员比率,
+        # add_industry_statistics 注入分位行, create_thresholds_from_dataframe 原算法不变。
+        # 成员从 industry_data(③-a 本地)反查; 年报口径 ≈ 快捷值年报。零 tushare。 ──
+        members = _INDUSTRY_MEMBERS.get(industry_name, [])
+        if not members:
+            logger.warning(f"行业 '{industry_name}' 本地无成分股(industry_data), 跳过")
+            _industry_thresholds_cache[cache_key] = {}
+            return {}
+        sub = _FI_DF[_FI_DF['stock_code'].isin(members)].copy()
+        if sub.empty:
+            logger.warning(f"行业 '{industry_name}' 成员在 financial_indicators 无数据, 跳过")
+            _industry_thresholds_cache[cache_key] = {}
+            return {}
+        sub = sub.rename(columns={'stock_code': 'ts_code', 'report_year': 'year'})
+        sub['company_name'] = sub['ts_code'].astype(str)
         try:
-            logger.info(f"获取 '{industry_name}' 行业原始数据（{start_date}~{end_date}）...")
-            ts_codes = threshold_calc.get_industry_stocks(industry_name)
-            if not ts_codes:
-                logger.error(f"行业 '{industry_name}' 无成分股")
-                _industry_thresholds_cache[cache_key] = {}
-                return {}
-
-            # 同时传入start_date和end_date，确保覆盖所有年份
-            df_fina = threshold_calc.fetch_financial_data(ts_codes, start_date=start_date, end_date=end_date)
-            if df_fina.empty:
-                logger.error(f"行业 '{industry_name}' 财务数据为空")
-                _industry_thresholds_cache[cache_key] = {}
-                return {}
-
-            df_income = threshold_calc.fetch_rd_expense_data(ts_codes, end_date=end_date)
-            df_processed = threshold_calc.process_financial_data(df_fina, df_income)
             from src.core.tushare_tools import add_industry_statistics
-            df_with_stats = add_industry_statistics(df_processed)
-            _industry_raw_cache[industry_name] = (df_with_stats, fetch_start_year, fetch_end_year)
-            logger.info(f"✅ '{industry_name}' 原始数据已缓存（{len(df_with_stats)}条, {fetch_start_year}~{fetch_end_year}），后续年份复用")
+            df_with_stats = add_industry_statistics(sub)
+            _industry_raw_cache[industry_name] = (df_with_stats, 2006, 2026)   # 本地表覆盖全年份
+            logger.info(f"✅ '{industry_name}' 本地阈值数据({len(members)}成员×{len(sub)}行)")
         except Exception as e:
-            logger.error(f"获取 '{industry_name}' 原始数据失败: {e}")
+            logger.error(f"行业 '{industry_name}' 本地阈值构建失败: {e}")
             _industry_thresholds_cache[cache_key] = {}
             return {}
 
@@ -231,6 +366,7 @@ def get_industry_thresholds(threshold_calc: IndustryThresholdCalculator, industr
 
     clean_thresholds = {k: v for k, v in thresholds.items() if v is not None}
     _industry_thresholds_cache[cache_key] = clean_thresholds
+    _save_persistent_threshold(f"{industry_name}|{target_year}", clean_thresholds)
     return clean_thresholds
 
 
@@ -356,8 +492,8 @@ def score_company(fetcher: TushareDataFetcher, threshold_calc: IndustryThreshold
     logger.info(f"开始处理: {ts_code} {company_name}")
     logger.info(f"{'='*60}")
 
-    # 1. 获取行业
-    industry_info = get_company_industry(pro, ts_code)
+    # 1. 获取行业: 优先本地预取(industry_data, ③-a 同 SW 口径), 缺则回退逐股 index_member_all
+    industry_info = _INDUSTRY_CACHE.get(ts_code) or get_company_industry(pro, ts_code)
     if not industry_info.get('l3_name'):
         logger.error(f"无法确定 {ts_code} 的三级行业，跳过")
         return {}
@@ -390,36 +526,46 @@ def score_company(fetcher: TushareDataFetcher, threshold_calc: IndustryThreshold
     valid_count = sum(1 for v in thresholds.values() if v is not None)
     logger.info(f"有效阈值: {valid_count}/{len(thresholds)}")
 
-    # 3. 获取财务数据（按各自报价日年份范围查询）
-    bs, inc, cf = fetch_financial_data(fetcher, ts_code, score_years=years_to_score)
-    if bs.empty or inc.empty:
-        logger.error(f"{ts_code} 财务数据为空，跳过")
+    # 3. 财务比率: 优先读 financial_indicators 内存缓存(③-c 同 calculate_financial_ratios 落库, 字节级等同),
+    #    缺失年份才回退 tushare 取三表现算(覆盖4缺股/年份gap), 算完补落库
+    ratios_by_year = {}
+    missing_years = []
+    for y in years_to_score:
+        r = _RATIOS_CACHE.get((ts_code, y))
+        if r:
+            ratios_by_year[y] = r
+        else:
+            missing_years.append(y)
+    if missing_years:
+        bs, inc, cf = fetch_financial_data(fetcher, ts_code, score_years=missing_years)
+        if not (bs.empty or inc.empty):
+            for year in missing_years:
+                bs_year = bs[bs['report_year'] == year]
+                inc_year = inc[inc['report_year'] == year]
+                if bs_year.empty or inc_year.empty:
+                    continue
+                r = calculate_financial_ratios(bs, inc, cf, year)
+                if r:
+                    ratios_by_year[year] = r
+                    try:
+                        _save_financial_indicators(ts_code, year, r)
+                    except Exception as e:
+                        logger.debug(f"{ts_code} {year}年 指标落库失败(不影响评分): {e}")
+    if not ratios_by_year:
+        logger.error(f"{ts_code} 无可用财务比率(DB+tushare均空)，跳过")
         return {}
 
-    # 4. 逐年计算评分
+    # 4. 逐年评分
     results = {}
     scorer = FinancialScoringCard(DB_CONFIG)
     scorer.set_industry_thresholds(thresholds)
 
     for year in years_to_score:
         try:
-            bs_year = bs[bs['report_year'] == year]
-            inc_year = inc[inc['report_year'] == year]
-
-            if bs_year.empty or inc_year.empty:
-                logger.warning(f"{ts_code} {year}年 报表数据缺失，跳过")
-                continue
-
-            ratios = calculate_financial_ratios(bs, inc, cf, year)
+            ratios = ratios_by_year.get(year)
             if not ratios:
-                logger.warning(f"{ts_code} {year}年 指标计算失败，跳过")
+                logger.warning(f"{ts_code} {year}年 比率缺失，跳过")
                 continue
-
-            # 落库: 保存财务指标到 investment_valuation.financial_indicators
-            try:
-                _save_financial_indicators(ts_code, year, ratios)
-            except Exception as e:
-                logger.debug(f"{ts_code} {year}年 指标落库失败(不影响评分): {e}")
 
             scorer.load_company_data(ratios, company_name)
             score_result = scorer.calculate_score()
@@ -656,7 +802,22 @@ def main():
         return
 
     _total = len(row_indices)
-    MAX_WORKERS_SCORE = min(5, len(row_indices))
+
+    # ── ③-d 加速: 批量预取比率(financial_indicators) + 行业(industry_data) + 持久阈值 ──
+    # 替逐股 tushare 取数, 字节级等同原路径; 持久阈值跨重启复用。
+    all_codes = []
+    for r in row_indices:
+        c = ws.cell(r, code_col).value
+        if c:
+            all_codes.append(str(c).strip())
+    bulk_load_ratios(all_codes)
+    bulk_load_industry()
+    _load_persistent_thresholds()
+    fi_cov = len({k[0] for k in _RATIOS_CACHE})
+    logger.info(f"预取完成: 比率覆盖 {fi_cov}/{len(all_codes)} 股, 行业缓存 {len(_INDUSTRY_CACHE)} 股, "
+                f"持久阈值 {len(_persistent_threshold_cache)} 条")
+
+    MAX_WORKERS_SCORE = min(12, len(row_indices))
     logger.info(f"并发评分：{MAX_WORKERS_SCORE}线程并行")
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS_SCORE) as executor:

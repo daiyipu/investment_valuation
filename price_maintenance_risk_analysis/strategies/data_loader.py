@@ -151,6 +151,26 @@ def _align_three(sdf, idf, mdf, maxlen=300):
     return sr[-n:], kr[-n:], mr[-n:]
 
 
+def _align_three_full(sdf, idf, mdf):
+    """全量对齐(不截尾), 返回 (align_dates, stock_r, sector_r, market_r)。
+    align_dates 与三收益等长(收益[i] 结算于 align_dates[i+1] 那根 bar)。
+    供 derive_alpha_beta_factors SERIES 版按股对齐一次、按报价日 ≤D 截断取末 N。"""
+    if sdf.empty or idf.empty or mdf.empty:
+        return np.array([]), np.array([]), np.array([]), np.array([])
+    m = (sdf.rename(columns={'close': 's'})
+         .merge(idf.rename(columns={'close': 'i'}), on='trade_date', how='inner')
+         .merge(mdf.rename(columns={'close': 'm'}), on='trade_date', how='inner')
+         .sort_values('trade_date').reset_index(drop=True))
+    sr = m['s'].pct_change().to_numpy(dtype=float)
+    kr = m['i'].pct_change().to_numpy(dtype=float)
+    mr = m['m'].pct_change().to_numpy(dtype=float)
+    n = min(len(sr), len(kr), len(mr))
+    sr, kr, mr = sr[-n:], kr[-n:], mr[-n:]
+    dates = m['trade_date'].astype(str).to_numpy()[-n:]
+    # 收益[i] 对应 dates[i] 的 bar( pct_change at i 用 i-1→i ); 末值即"截至 dates[i]"
+    return dates, sr, kr, mr
+
+
 def aligned_returns(stock_code, date, maxlen=300, index_code=_MARKET_INDEX):
     """返回 (stock_r, sector_r, market_r) 三个等长 numpy 日收益数组。
 

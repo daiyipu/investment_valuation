@@ -62,3 +62,52 @@ def get_excluded_columns(columns):
             seen.add(c)
             out.append(c)
     return out
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 特征护栏(防"管线分叉静默丢特征"—— 2026-06-26 加, 见 memory fulla-panel-* )
+# panel 列必须是历史模型特征并集的超集; 缺失即报告(不再静默)。
+# ══════════════════════════════════════════════════════════════════════
+_KNOWN_FEATURES = None   # 缓存: 全模型版本 features 并集
+
+
+def _load_known_features():
+    """从 ml_model_meta 取全版本 features 并集(模块级缓存, 首次查 DB)。"""
+    global _KNOWN_FEATURES
+    if _KNOWN_FEATURES is not None:
+        return _KNOWN_FEATURES
+    try:
+        import pymysql, json
+        conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', password='',
+                               database='investment_valuation', charset='utf8mb4')
+        cur = conn.cursor()
+        cur.execute("SELECT features FROM ml_model_meta WHERE features IS NOT NULL")
+        s = set()
+        for (fs,) in cur.fetchall():
+            try:
+                s.update(json.loads(fs))
+            except Exception:
+                pass
+        conn.close()
+        _KNOWN_FEATURES = s
+    except Exception:
+        _KNOWN_FEATURES = set()
+    return _KNOWN_FEATURES
+
+
+def assert_panel_superset(df, source='panel', strict=False):
+    """护栏: 核对 panel 是否含全部历史模型特征(KNOWN_FEATURES 并集)。缺失即报告。
+    恢复期 strict=False(咨询, 仅打印缺失数+样本); 恢复完成后可改 strict=True 强制阻断。"""
+    known = _load_known_features()
+    if not known:
+        return
+    have = set(str(c) for c in df.columns)
+    missing = sorted(known - have)
+    if not missing:
+        print(f'  [特征护栏/{source}] ✅ panel 含全部 {len(known)} 个历史模型特征')
+        return
+    msg = (f'[特征护栏/{source}] panel 缺 {len(missing)}/{len(known)} 个历史模型特征: '
+           f'{missing[:12]}{"..." if len(missing) > 12 else ""}')
+    if strict:
+        raise RuntimeError(msg)
+    print('  ⚠️ ' + msg)

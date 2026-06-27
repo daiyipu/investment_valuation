@@ -50,6 +50,81 @@ def _calc_features_from_series(prices, windows=[20, 60, 120, 250]):
     return f
 
 
+FCF_COL_MAP = {'revenue': '营收', 'operate_profit': '营业利润', 'net_income': '净利润_fcf',
+               'nopat': 'NOPAT', 'depreciation': '折旧', 'capex': '资本支出',
+               'wc_change': '营运资金变动', 'fcf': 'FCF'}
+
+
+def _pit_year(issue_date):
+    """PIT 年: 月≥5 用上年(已披露), 否则前年(同 company_annual_scores 规则)。FCF/评分共用。"""
+    s = str(issue_date)
+    byr = int(s[:4]); bmo = int(s[4:6]) if len(s) >= 6 else 13
+    return byr - 1 if bmo >= 5 else byr - 2
+
+
+def _load_fcf_cache(codes):
+    """批量取 historical_fcf(一条 IN 查询) → groupby 成 {code: df_sorted_by_year_desc}。"""
+    codes = [str(c) for c in codes]
+    if not codes:
+        return {}
+    conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', password='',
+                           database='investment_valuation', charset='utf8mb4')
+    ph = ','.join(['%s'] * len(codes))
+    eng = list(FCF_COL_MAP.keys())
+    df = pd.read_sql(f"SELECT stock_code,year,{','.join(eng)} FROM historical_fcf "
+                     f"WHERE stock_code IN ({ph})", conn, params=codes)
+    conn.close()
+    return {str(c): g.sort_values('year', ascending=False) for c, g in df.groupby('stock_code')}
+
+
+_FCF_PIT_MEMO = {}   # {(code, pit_year): out_dict}  534400 key → ~85k 唯一组合
+
+
+def _fcf_pit_cols(code, issue_date, fcf_cache):
+    """一个样本的 FCF 基列(T/T1-4 + FCF年份 + 3年斜率), PIT year≤pit_year。
+
+    忠实复刻原 load_db_features 段3 逻辑(保证定增输出不变), placement(load_db_features 内部)
+    与回测(load_fcf_bulk)共用此函数 = FCF 装载单源。
+    按 (code, pit_year) memoize + 向量化(arr 代替 iterrows): 全A 534400 key 从 8min+ → ~1min。
+    """
+    py = _pit_year(issue_date)
+    mkey = (str(code), py)
+    cached = _FCF_PIT_MEMO.get(mkey)
+    if cached is not None:
+        return cached
+    grp = fcf_cache.get(str(code))
+    out = {}
+    if grp is not None and not grp.empty:
+        pit = grp[grp['year'] <= py].head(5)
+        n = len(pit)
+        if n:
+            arr = {c: pit[c].values for c in ['year'] + list(FCF_COL_MAP.keys())}
+            for i in range(n):
+                s = '_T' if i == 0 else f'_T{i}'
+                for eng, cn in FCF_COL_MAP.items():
+                    out[f'{cn}{s}'] = arr[eng][i]
+                out[f'FCF年份{s}'] = arr['year'][i]
+            if n >= 3:
+                for col, nm in [('fcf', 'FCF'), ('revenue', '营收'), ('nopat', 'NOPAT')]:
+                    vals = [arr[col][j] for j in range(3)]
+                    vals = [v for v in vals if pd.notna(v)]
+                    if len(vals) >= 2:
+                        out[f'{nm}_3年斜率'] = np.polyfit(range(len(vals)), vals, 1)[0]
+    _FCF_PIT_MEMO[mkey] = out
+    return out
+
+
+def load_fcf_bulk(sample_keys):
+    """批量 FCF 基列(public): 一条 IN 查询 + 逐样本 PIT 选择(_fcf_pit_cols)。
+
+    **FCF 装载单源**: placement(load_db_features 段3 内部调 _fcf_pit_cols) 与回测(build_backtest_panel)
+    共用同一套 PIT 逻辑, 不再各编。
+    """
+    _FCF_PIT_MEMO.clear()   # 每次装入前清 memo(免跨 run 旧值)
+    cache = _load_fcf_cache({str(c) for c, _ in sample_keys})
+    return pd.DataFrame([_fcf_pit_cols(str(c), d, cache) for c, d in sample_keys])
+
+
 def load_db_features(sample_keys):
     """从 investment_valuation MySQL 加载全部可关联特征
 
@@ -62,6 +137,9 @@ def load_db_features(sample_keys):
     cur = conn.cursor()
 
     mismatch_count = 0
+
+    # 批量预取 FCF(groupby cache; 段3 复用 _fcf_pit_cols, 与回测 load_fcf_bulk 单源)
+    fcf_cache = _load_fcf_cache({str(c) for c, _ in sample_keys})
 
     features = []
     for code, issue_date in sample_keys:
@@ -149,42 +227,8 @@ def load_db_features(sample_keys):
             f['行业代码'] = d.get('target_index_code', '')
             f['行业名称'] = d.get('target_industry_l3', '')
 
-        # ── 3. historical_fcf FCF特征 (取最近5年, PIT: year≤pit_year 防未来年报泄漏) ──
-        # PIT 规则同 company_annual_scores: 月≥5 用上年(base-1, 已披露), 否则前年(base-2)
-        _byr = int(str(issue_date)[:4]); _bmo = int(str(issue_date)[4:6])
-        _pit_year = _byr - 1 if _bmo >= 5 else _byr - 2
-        cur.execute(
-            'SELECT * FROM historical_fcf WHERE stock_code=%s AND year <= %s ORDER BY year DESC LIMIT 5',
-            (code, _pit_year)
-        )
-        rows = cur.fetchall()
-        for i, r in enumerate(rows):
-            d = dict(r)
-            suffix = f'_T{i}' if i > 0 else '_T'
-            f[f'营收{suffix}'] = d.get('revenue')
-            f[f'营业利润{suffix}'] = d.get('operate_profit')
-            f[f'净利润_fcf{suffix}'] = d.get('net_income')
-            f[f'NOPAT{suffix}'] = d.get('nopat')
-            f[f'折旧{suffix}'] = d.get('depreciation')
-            f[f'资本支出{suffix}'] = d.get('capex')
-            f[f'营运资金变动{suffix}'] = d.get('wc_change')
-            f[f'FCF{suffix}'] = d.get('fcf')
-            f[f'FCF年份{suffix}'] = d.get('year')
-
-        # FCF趋势计算(最近3年斜率)
-        if len(rows) >= 3:
-            fcf_vals = [dict(r).get('fcf') for r in rows[:3]]
-            fcf_vals = [v for v in fcf_vals if v is not None]
-            if len(fcf_vals) >= 2:
-                f['FCF_3年斜率'] = np.polyfit(range(len(fcf_vals)), fcf_vals, 1)[0]
-            rev_vals = [dict(r).get('revenue') for r in rows[:3]]
-            rev_vals = [v for v in rev_vals if v is not None]
-            if len(rev_vals) >= 2:
-                f['营收_3年斜率'] = np.polyfit(range(len(rev_vals)), rev_vals, 1)[0]
-            nopat_vals = [dict(r).get('nopat') for r in rows[:3]]
-            nopat_vals = [v for v in nopat_vals if v is not None]
-            if len(nopat_vals) >= 2:
-                f['NOPAT_3年斜率'] = np.polyfit(range(len(nopat_vals)), nopat_vals, 1)[0]
+        # ── 3. historical_fcf FCF特征 (PIT year≤pit_year) ── 复用 _fcf_pit_cols(与回测单源)
+        f.update(_fcf_pit_cols(code, issue_date, fcf_cache))
 
         # ── 4. issue_date_locked 锁定价 (按 报价日 精确匹配) ──
         cur.execute(
@@ -651,6 +695,12 @@ def load_financial_ratios(sample_keys):
         print(f'  财务比率 PIT: 不可用({e})')
         return pd.DataFrame(columns=cn_cols)
 
+    # 预按 stock_code 分组 + 每股排序/数组化一次(免逐键 sort_values/astype/Series索引; 53万样本必需)
+    grouped_prep = {}
+    for c, g in df_all.groupby('stock_code'):
+        gs = g.sort_values('ann_date', ascending=False, na_position='last')
+        grouped_prep[str(c)] = (gs['ann_date'].astype(str).values, gs['report_year'].values,
+                                {f: gs[f].values for f in fields})
     rows, n_hit = [], 0
     for code, issue_date in sample_keys:
         code = str(code)
@@ -659,19 +709,21 @@ def load_financial_ratios(sample_keys):
             id8, yr = ids[:8], int(ids[:4])
         else:
             id8, yr = '99999999', 9999  # 报价日缺失 → 取最新(无 PIT 约束)
-        sub = df_all[df_all['stock_code'] == code]
-        if sub.empty:
+        prep = grouped_prep.get(code)
+        if prep is None:
             rows.append({}); continue
-        ad = sub['ann_date']
-        ad_str = ad.astype(str)
-        pit = sub[ad.notna() & (ad_str <= id8)]
-        if pit.empty:  # 退化: ann_date 为空旧行, report_year<=报价日年
-            pit = sub[(ad.isna()) & (sub['report_year'] <= yr)]
-        if pit.empty:
-            rows.append({}); continue
-        row = pit.sort_values('ann_date', ascending=False, na_position='last').iloc[0]
+        ad_arr, ry_arr, vals = prep
+        # ann_date 非空且 ≤报价日: ad_arr 排序 desc('nan'排末尾且 'nan'>id8 自动排除) → 首个True=最新有效
+        m1 = ad_arr <= id8
+        if m1.any():
+            idx = int(np.argmax(m1))
+        else:
+            m2 = (ad_arr == 'nan') & (ry_arr <= yr)   # 退化: ann_date空 且 report_year≤报价日年
+            if not m2.any():
+                rows.append({}); continue
+            idx = int(np.argmax(m2))
         n_hit += 1
-        rows.append({ratio_cols[f]: row[f] for f in fields if f in row.index and pd.notna(row[f])})
+        rows.append({ratio_cols[f]: vals[f][idx] for f in fields if pd.notna(vals[f][idx])})
 
     out = pd.DataFrame(rows)
     for cn in cn_cols:
@@ -1068,3 +1120,382 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+# ═══════════════════════════════════════════════════════════════════════
+# PIT 特征 loader(原 scripts/feature_loaders.py, 2026-06-26 并入: 唯一特征引擎, 消除双线分叉)
+# 5 特殊特征(FCF_加速/总分_delta_2y/nb_hold_ratio/PB_vs_同行中位/sue_beat)PIT loader,
+# 接受(codes,date)/(code,date)keys, PIT ≤date, 不 join placement_evaluation。定增/回测/未来共用。
+# ═══════════════════════════════════════════════════════════════════════
+_PKG_FL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _PKG_FL not in sys.path: sys.path.insert(0, _PKG_FL)
+if os.path.join(_PKG_FL, 'scripts') not in sys.path: sys.path.insert(0, os.path.join(_PKG_FL, 'scripts'))
+
+_DB = dict(host='127.0.0.1', port=3306, user='root', password='',
+           database='investment_valuation', charset='utf8mb4')
+
+
+def _pit_max(date_yyyymmdd):
+    """年报 PIT 年份: 月≥5 用上年(已披露), 否则前年。"""
+    s = str(date_yyyymmdd)
+    by, mo = int(s[:4]), int(s[4:6])
+    return by - 1 if mo >= 5 else by - 2
+
+
+def _conn():
+    return pymysql.connect(**_DB)
+
+
+def _pro():
+    """共享 tushare pro_api(token 走 resolve_tushare_token, 不硬编码)。"""
+    import tushare as ts
+    from tushare_token import resolve_tushare_token
+    os.environ.setdefault('TUSHARE_TOKEN', resolve_tushare_token())
+    return ts.pro_api()
+
+
+# ─────────────── 全历史预取缓存(FCF/总分/SUE, 避免逐股逐日查) ───────────────
+_FCF_CACHE = {}     # code → DataFrame[year, fcf] 全历史(升序)
+_SCORE_CACHE = {}   # code → DataFrame[report_year, total_score] 全历史(升序)
+_SUE_CACHE = {}     # code → 披露时间线 DataFrame(forecast/express/income 合并, ann_date 升序) 或 None
+# SUE 时间线落盘缓存: 历史披露是 PIT 固定的(永不改变), 落盘后回测重建 panel 免重取(500股≈15min→秒级)。
+# 增量(未来新披露)用 refresh=True 重取覆盖; 否则只补磁盘+内存都没有的股。
+_SUE_PARQ = os.path.join(_PKG_FL, 'ml_training', 'data', 'sue_timelines.parquet')
+
+
+def _chunks(lst, n):
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
+
+
+def prefetch_fcf_scores(codes):
+    """一次性批量预取全 universe 的 FCF + 总分全历史(各 N 条 SQL, IN 分块 500),
+    缓存到 _FCF_CACHE/_SCORE_CACHE。后续 load_fcf_accel/load_total_score_delta2y 只做 PIT 内存切片。
+    把"500股×192月×2查询≈19万次"降到"500股×2≈1000次"(预取) + 内存切片(免费)。"""
+    codes = [str(c) for c in codes if c is not None]
+    conn = _conn()
+    for c in [c for c in codes if c not in _FCF_CACHE]:
+        pass   # 触发下面批量
+    new_fcf = [c for c in codes if c not in _FCF_CACHE]
+    new_sc = [c for c in codes if c not in _SCORE_CACHE]
+    if new_fcf:
+        for chunk in _chunks(new_fcf, 500):
+            ph = ','.join([f"'{c}'" for c in chunk])
+            df = pd.read_sql(f"SELECT stock_code, year, fcf FROM historical_fcf "
+                             f"WHERE stock_code IN ({ph}) AND fcf IS NOT NULL", conn)
+            for c, g in df.groupby('stock_code'):
+                _FCF_CACHE[c] = g.sort_values('year').reset_index(drop=True)
+    if new_sc:
+        for chunk in _chunks(new_sc, 500):
+            ph = ','.join([f"'{c}'" for c in chunk])
+            df = pd.read_sql(f"SELECT stock_code, report_year, total_score FROM company_annual_scores "
+                             f"WHERE stock_code IN ({ph}) AND total_score IS NOT NULL", conn)
+            for c, g in df.groupby('stock_code'):
+                _SCORE_CACHE[c] = g.sort_values('report_year').reset_index(drop=True)
+    conn.close()
+    print(f'    预取 FCF({len(_FCF_CACHE)}股) + 总分({len(_SCORE_CACHE)}股) 全历史缓存')
+
+
+def _load_sue_disk():
+    """从 _SUE_PARQ 载入已预取的 SUE 时间线 → {code: DataFrame 或 None}。
+    空时间线存为 _has_data=0 占位行 → 载回 None(避免每轮重取空股的 3 次 API)。
+    无文件返回 {}。"""
+    if not os.path.exists(_SUE_PARQ):
+        return {}
+    try:
+        df = pd.read_parquet(_SUE_PARQ)
+    except Exception:
+        return {}
+    if df is None or df.empty or 'stock_code' not in df.columns:
+        return {}
+    out = {}
+    for c, g in df.groupby('stock_code'):
+        c = str(c)
+        if int(g['_has_data'].iloc[0]) == 0:
+            out[c] = None
+        else:
+            out[c] = (g[g['_has_data'] == 1]
+                      .drop(columns=['stock_code', '_has_data'], errors='ignore')
+                      .reset_index(drop=True))
+    return out
+
+
+def _save_sue_disk():
+    """把 _SUE_CACHE 落盘 parquet(增量合并: 保留磁盘已有股, 本次新取的同股覆盖)。
+    空时间线写 1 行 _has_data=0 占位; 有效时间线每披露 1 行 _has_data=1。"""
+    frames = []
+    for c, g in _SUE_CACHE.items():
+        c = str(c)
+        if g is None or (hasattr(g, 'empty') and g.empty):
+            frames.append(pd.DataFrame({'stock_code': [c], '_has_data': [0]}))
+            continue
+        gg = g.copy()
+        gg['stock_code'] = c
+        gg['_has_data'] = 1
+        frames.append(gg)
+    if not frames:
+        return
+    new_df = pd.concat(frames, ignore_index=True)
+    new_codes = set(new_df['stock_code'])
+    if os.path.exists(_SUE_PARQ):
+        try:
+            old = pd.read_parquet(_SUE_PARQ)
+            old = old[~old['stock_code'].astype(str).isin(new_codes)]
+            new_df = pd.concat([old, new_df], ignore_index=True)
+        except Exception:
+            pass
+    new_df.to_parquet(_SUE_PARQ, index=False)
+
+
+def prefetch_sue_timelines(codes, refresh=False):
+    """预取 forecast/express/income 披露时间线(每股 3 次 tushare API), 缓存供 load_sue_beat PIT 切片。
+    复用 fetch_factors._build_disclosure_timeline; 无 DB 依赖(纯 API), 任意股可取。
+
+    历史披露是 PIT 固定的 → 落盘 _SUE_PARQ 后, 回测重建 panel 不再重取(省 ~3 API/股)。
+    refresh=True: 忽略磁盘, 全量重取并覆盖(增量新披露用)。"""
+    from data_pipeline.fetch_factors import _build_disclosure_timeline
+    # 1) 先载入磁盘缓存(除非 refresh)
+    if refresh:
+        _SUE_CACHE.clear()
+    elif not _SUE_CACHE:
+        _SUE_CACHE.update(_load_sue_disk())
+        if _SUE_CACHE:
+            ok0 = sum(1 for v in _SUE_CACHE.values() if v is not None)
+            print(f'    载入磁盘 SUE 时间线: {len(_SUE_CACHE)} 股({ok0} 有数据)')
+    # 2) 只对磁盘+内存都没有的逐股取 API
+    new = [str(c) for c in codes if str(c) not in _SUE_CACHE]
+    if new:
+        pro = _pro()
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import time
+        print(f'    并发取 SUE 时间线 {len(new)} 股(每股 3 API, max_workers=12, 限流重试)...')
+        def _work(c):
+            for attempt in range(3):
+                try:
+                    return c, _build_disclosure_timeline(pro, c)
+                except Exception:
+                    time.sleep(1.0 * (attempt + 1))   # 限流/网络 → 退避重试
+            return c, None
+        fetched = 0
+        with ThreadPoolExecutor(max_workers=12) as ex:
+            futs = [ex.submit(_work, c) for c in new]
+            for n, fut in enumerate(as_completed(futs), 1):
+                c, tl = fut.result()
+                _SUE_CACHE[c] = tl            # GIL 下不同 key 并发写安全
+                if tl is not None:
+                    fetched += 1
+                if n % 100 == 0:
+                    print(f'    SUE {n}/{len(new)} (有数据 {fetched})')
+        if fetched:
+            _save_sue_disk()
+            print(f'    落盘 {fetched} 条新 SUE 时间线 → {os.path.basename(_SUE_PARQ)}')
+    ok = sum(1 for v in _SUE_CACHE.values() if v is not None)
+    print(f'    预取 SUE 披露时间线: {ok}/{len(_SUE_CACHE)} 股有数据'
+          + ('(本次重取)' if refresh else f'(磁盘缓存 {sum(1 for v in _load_sue_disk().values() if v is not None)} 有效)'))
+
+
+# ─────────────── 1. FCF_加速 (historical_fcf PIT 内存切片) ───────────────
+def load_fcf_accel(keys):
+    """keys=[(code,date)]。用 _FCF_CACHE 全历史, PIT 切 year≤pit_max 取 T/T1/T2 → YoY 加速度。
+    需先 prefetch_fcf_scores 预热(回测 run() 开头调一次)。"""
+    if not keys:
+        return pd.DataFrame(columns=['FCF_加速'])
+    out = {}
+    for code, date in keys:
+        g = _FCF_CACHE.get(code)
+        if g is None or g.empty:
+            out[code] = np.nan; continue
+        sub = g[g['year'] <= _pit_max(date)]
+        rs = sub['fcf'].tail(3).values      # 升序, 末3个 = T/T1/T2(最大年)
+        if len(rs) >= 2:
+            yoy_t = (rs[-1] - rs[-2]) / abs(rs[-2]) if rs[-2] else np.nan
+            yoy_t1 = (rs[-2] - rs[-3]) / abs(rs[-3]) if len(rs) >= 3 and rs[-3] else np.nan
+            out[code] = (yoy_t - yoy_t1) if yoy_t1 == yoy_t1 else np.nan
+        else:
+            out[code] = np.nan
+    return pd.DataFrame({'FCF_加速': out})
+
+
+# ─────────────── 2. 总分_delta_2y (company_annual_scores PIT 内存切片) ───────────────
+def load_total_score_delta2y(keys):
+    """keys=[(code,date)]。用 _SCORE_CACHE 全历史, PIT 切 report_year≤pit_max 取 T-(T-2)。"""
+    if not keys:
+        return pd.DataFrame(columns=['总分_delta_2y'])
+    out = {}
+    for code, date in keys:
+        g = _SCORE_CACHE.get(code)
+        if g is None or g.empty:
+            out[code] = np.nan; continue
+        sub = g[g['report_year'] <= _pit_max(date)]
+        rs = sub['total_score'].tail(3).values
+        out[code] = (rs[-1] - rs[-3]) if len(rs) >= 3 else np.nan
+    return pd.DataFrame({'总分_delta_2y': out})
+
+
+# ─────────────── 3. nb_hold_ratio (pro.hk_hold ≤ date) ───────────────
+_HK_CACHE = {}
+
+
+def load_nb_hold(codes, date_yyyymmdd):
+    """pro.hk_hold 全量缓存/股, 截 trade_date≤date: nb_hold_ratio(最新) + nb_hold_chg_20d/60d
+    (与 20/60 交易日前 ratio 之差, PIT)。恢复历史 1w 模型用的 nb_hold_chg_20d/60d(原特征名)。"""
+    import tushare as ts
+    from tushare_token import resolve_tushare_token
+    os.environ.setdefault('TUSHARE_TOKEN', resolve_tushare_token())
+    pro = ts.pro_api()
+    d = int(str(date_yyyymmdd))
+    ratio_out = {}; chg20 = {}; chg60 = {}
+    for c in codes:
+        if c not in _HK_CACHE:
+            try:
+                df = pro.hk_hold(ts_code=c, fields='trade_date,ratio')
+                _HK_CACHE[c] = df
+            except Exception:
+                _HK_CACHE[c] = pd.DataFrame()
+        df = _HK_CACHE[c]
+        if df is None or df.empty:
+            ratio_out[c] = chg20[c] = chg60[c] = np.nan; continue
+        sub = df[pd.to_numeric(df['trade_date'], errors='coerce') <= d]
+        if sub.empty:
+            ratio_out[c] = chg20[c] = chg60[c] = np.nan; continue
+        r = float(sub['ratio'].iloc[-1]); ratio_out[c] = r
+        vals = sub['ratio'].astype(float).to_numpy()
+        chg20[c] = float(r - vals[-21]) if len(vals) >= 21 else np.nan   # 20 交易日前
+        chg60[c] = float(r - vals[-61]) if len(vals) >= 61 else np.nan   # 60 交易日前
+    return pd.DataFrame({'nb_hold_ratio': pd.Series(ratio_out),
+                         'nb_hold_chg_20d': pd.Series(chg20),
+                         'nb_hold_chg_60d': pd.Series(chg60)})
+
+
+# ─────────────── 4. PB_vs同行中位 (industry_daily + daily_basic PIT, 规范口径) ───────────────
+_PB_STOCK_CACHE = {}    # code → daily_basic[trade_date, pb] 全量(跨截面复用, 每股只取 1 次 API)
+_INDPB_CACHE = None     # (s2i 映射, industry_daily 全量 DataFrame) 一次查, 内存切片
+
+
+def load_pb_vs_industry(keys):
+    """keys=[(code, date)]。个股 daily_basic PB / 行业 industry_daily sw_index_pb, 都 PIT ≤date 取最近。
+    返回 {(str(code), str(date)): 个股PB/行业PB}。
+
+    **规范口径**(2026-06 定): 生产 SC 模型 PB_vs_同行中位 统一采此 PIT 行业口径, 与回测同源。
+    个股 daily_basic 每股全量缓存(定增/回测跨多截面时每股只 1 次 API); industry_daily 全量一次查。
+
+    **向量化 PIT**(2026-06-26): 缓存预算每股/每行业的 (td_int 排序, pb) 数组, 按 searchsorted 取 ≤date 最新;
+    旧实现逐 key 调 pd.to_numeric(全量 trade_date) + 逐日期全量 filter 1.1M 行 → 全A 563k 对卡 46min。语义不变。"""
+    if not keys:
+        return {}
+    pro = _pro()
+    global _INDPB_CACHE
+    if _INDPB_CACHE is None:
+        conn = _conn()
+        idmap = pd.read_sql('SELECT stock_code, index_code FROM industry_data', conn)
+        idf = pd.read_sql("SELECT index_code, trade_date, pb FROM industry_daily", conn)
+        conn.close()
+        idf['td_int'] = pd.to_numeric(idf['trade_date'], errors='coerce')
+        idf = idf.dropna(subset=['td_int', 'pb'])             # 行业 .last() skipna 语义: 弃 NaN pb 行
+        idf = idf.sort_values(['index_code', 'td_int'])
+        ind_arrays = {str(ic): (g['td_int'].to_numpy(np.int64), g['pb'].to_numpy(float))
+                      for ic, g in idf.groupby('index_code')}   # 每 index: (排序 td_int, pb)
+        _INDPB_CACHE = (dict(zip(idmap['stock_code'].astype(str), idmap['index_code'].astype(str))), ind_arrays)
+    s2i, ind_arrays = _INDPB_CACHE
+
+    # 本地优先: 批量读 stock_daily_basic.pb 填 _PB_STOCK_CACHE(存每股 (td_int 排序, pb) 数组)
+    # 分块读(全A 6M 行一次性 read_sql 峰值~1.5GB; 每块800股, 峰值内存有界)
+    need = [str(c) for c, _ in keys if str(c) not in _PB_STOCK_CACHE]
+    if need:
+        try:
+            import pymysql
+            from utils.db_manager import ValuationDB
+            _cfg = ValuationDB.MYSQL_CONFIG
+            _cn = pymysql.connect(host=_cfg['host'], port=_cfg['port'], user=_cfg['user'],
+                                  password=_cfg['password'], database=_cfg['database'], charset=_cfg['charset'])
+            try:
+                for _i in range(0, len(need), 800):
+                    _blk = need[_i:_i + 800]
+                    _ph = ','.join(['%s'] * len(_blk))
+                    _dfb = pd.read_sql(f"SELECT stock_code,trade_date,pb FROM stock_daily_basic WHERE stock_code IN ({_ph})",
+                                       _cn, params=_blk)
+                    for _c, _g in _dfb.groupby('stock_code'):
+                        _g = _g.copy(); _g['td_int'] = pd.to_numeric(_g['trade_date'], errors='coerce')
+                        _g = _g.dropna(subset=['td_int']).sort_values('td_int')
+                        _PB_STOCK_CACHE[str(_c)] = (_g['td_int'].to_numpy(np.int64), _g['pb'].to_numpy(float))
+            finally:
+                _cn.close()
+        except Exception:
+            pass
+
+    out = {}
+    for code, date in keys:
+        code, d = str(code), str(date)
+        try:
+            d_int = int(float(d))
+        except ValueError:
+            d_int = 0
+        # 个股 PB: searchsorted ≤ d_int 最新(等价旧 sdf[td≤d].iloc[-1])
+        if code not in _PB_STOCK_CACHE:
+            try:
+                _d = pro.daily_basic(ts_code=code, fields='trade_date,pb')
+                _d['td_int'] = pd.to_numeric(_d['trade_date'], errors='coerce')
+                _d = _d.dropna(subset=['td_int']).sort_values('td_int')
+                _PB_STOCK_CACHE[code] = (_d['td_int'].to_numpy(np.int64), _d['pb'].to_numpy(float))
+            except Exception:
+                _PB_STOCK_CACHE[code] = (np.array([], np.int64), np.array([], float))
+        td_arr, pb_arr = _PB_STOCK_CACHE[code]
+        stock_pb = np.nan
+        if len(td_arr):
+            pos = int(np.searchsorted(td_arr, d_int, 'right')) - 1
+            if pos >= 0:
+                stock_pb = float(pb_arr[pos])
+        # 行业 PB: searchsorted ≤ d_int 最新(等价旧 groupby.last(skipna))
+        ic = s2i.get(code); ipb = np.nan
+        if ic and d_int and ic in ind_arrays:
+            itd, ipb_arr = ind_arrays[ic]
+            if len(itd):
+                ipos = int(np.searchsorted(itd, d_int, 'right')) - 1
+                if ipos >= 0:
+                    ipb = float(ipb_arr[ipos])
+        out[(code, d)] = (stock_pb / ipb) if stock_pb == stock_pb and ipb == ipb and ipb else np.nan
+    return out
+
+
+# ─────────────── 5. sue_beat (forecast/express/income 披露 PIT) ───────────────
+def load_sue_beat(keys):
+    """SUE 全系列(2026-06-26 扩展, 原只出 sue_beat): 输出 sue_beat + sue_zscore + sue_pos_streak +
+    sue_recency_d + sue_yoy_acc + sue_yoy_mean3 + sue_yoy + sue_up_trend。PIT: ann_date≤date 最近披露。
+    复用 fetch_factors._sue_for_sample(已算全变体); 需先 prefetch_sue_timelines, 否则惰性逐股建(慢)。
+    keys 单截面用(codes, 同一 date)→ 输出 index=code。原特征名, 现有 1w/2w 模型直接消费。"""
+    from data_pipeline.fetch_factors import _sue_for_sample, _build_disclosure_timeline
+    SUE_COLS = ['sue_beat', 'sue_zscore', 'sue_pos_streak', 'sue_recency_d',
+                'sue_yoy_acc', 'sue_yoy_mean3', 'sue_yoy', 'sue_up_trend']
+    if not keys:
+        return pd.DataFrame(columns=SUE_COLS)
+    pro = None
+    rows = {}
+    for code, date in keys:
+        c = str(code)
+        if c not in _SUE_CACHE:                  # 未预取 → 惰性建(逐股 3 API; 批量请先 prefetch)
+            pro = pro or _pro()
+            try:
+                _SUE_CACHE[c] = _build_disclosure_timeline(pro, c)
+            except Exception:
+                _SUE_CACHE[c] = None
+        tl = _SUE_CACHE[c]
+        d = _sue_for_sample(tl, str(date)) if tl is not None else {}
+        rows[c] = {col: d.get(col, np.nan) for col in SUE_COLS}
+    return pd.DataFrame.from_dict(rows, orient='index', columns=SUE_COLS)
+
+
+def load_specials(codes, date_yyyymmdd):
+    """一次性加载 5 个特殊特征, 返回 DataFrame(index=codes)。"""
+    d = str(date_yyyymmdd)
+    keys = [(c, d) for c in codes]
+    pb_map = load_pb_vs_industry(keys)   # {(code, date): ratio}
+    pb_series = pd.Series({c: pb_map.get((c, d), np.nan) for c in codes}, name='PB_vs_同行中位')
+    frames = [
+        load_fcf_accel(keys),
+        load_total_score_delta2y(keys),
+        load_nb_hold(codes, date_yyyymmdd),
+        pd.DataFrame({'PB_vs_同行中位': pb_series}),
+        load_sue_beat(keys),
+    ]
+    df = pd.concat(frames, axis=1)
+    df.index.name = 'code'
+    return df

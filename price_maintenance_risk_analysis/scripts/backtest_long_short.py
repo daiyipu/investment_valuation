@@ -37,7 +37,7 @@ from db_model_store import load_predict_bundle, get_model_meta
 from report_horizon import latest_gray_sc
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from data_pipeline.fetch_universe import fetch_stock_basic, fetch_namechange, in_universe_at
-from data_pipeline.compute_labels import add_months, bench_return, build_series
+from data_pipeline.compute_labels import add_months, bench_return, build_series, _nearest
 
 
 # ─────────────── 月末交易日序列 ───────────────
@@ -99,7 +99,7 @@ def compute_features(codes, date_yyyymmdd, model_feats):
         print(f'    load_financial_ratios 失败: {e}')
     # 3) 5 个特殊特征(独立 PIT loader: FCF/总分/nb_hold/PB_vs同行 PIT; SUE 桩)
     try:
-        from feature_loaders import load_specials
+        from export_features import load_specials
         sp = load_specials(codes, date_yyyymmdd)
         for c in sp.columns:
             if c in model_feats:
@@ -115,20 +115,49 @@ _CLOSE_CACHE = {}
 
 def fwd_returns(codes, date_yyyymmdd, months=7):
     """每只 code 从 date 起 months 月的前瞻收益(%)。复用 compute_labels.bench_return。
-    全量预取 close_map 缓存, 避免逐股 API。"""
+    优先读 derive_features._OHLCV_CACHE(run_derivation 已全量预取 qfq), 免逐股二次 pro_bar。
+    **持有期内退市/长期停牌**(找不到 D+months 价)→ 按退市前最后收盘计亏(PIT 诚实, 不 NaN 丢弃),
+    否则生存偏差漏到收益层(差生被清场 → 收益虚高)。"""
     import tushare as ts
     from tushare_token import resolve_tushare_token
     os.environ.setdefault('TUSHARE_TOKEN', resolve_tushare_token())
+    try:
+        from derive_features import _OHLCV_CACHE as _OHC   # 同一 dict 对象(引用共享)
+    except Exception:
+        _OHC = {}
     out = {}
     for c in codes:
         if c not in _CLOSE_CACHE:
-            try:
-                df = ts.pro_bar(ts_code=c, adj='qfq', fields='trade_date,close')
-                _CLOSE_CACHE[c] = build_series(dict(zip(df['trade_date'], df['close']))) if df is not None else []
-            except Exception:
-                _CLOSE_CACHE[c] = []
-        out[c] = bench_return(_CLOSE_CACHE[c], date_yyyymmdd, months)
+            cached = _OHC.get(c)
+            if cached and cached[1] is not None:
+                dates, ohlcv = cached
+                _CLOSE_CACHE[c] = build_series(dict(zip(dates.tolist(), ohlcv['close'].tolist())))
+            else:
+                try:
+                    df = ts.pro_bar(ts_code=c, adj='qfq', fields='trade_date,close')
+                    _CLOSE_CACHE[c] = build_series(dict(zip(df['trade_date'], df['close']))) if df is not None else []
+                except Exception:
+                    _CLOSE_CACHE[c] = []
+        out[c] = _bench_with_delist(_CLOSE_CACHE[c], date_yyyymmdd, months)
     return out   # {code: 收益%}
+
+
+def _bench_with_delist(series, date_yyyymmdd, months):
+    """bench_return 找不到 D+months 价(持有期退市/长期停牌)→ 按退市前最后收盘计亏。"""
+    r = bench_return(series, date_yyyymmdd, months)
+    if r is not None or not series:
+        return r
+    try:
+        t0 = datetime.strptime(date_yyyymmdd, '%Y%m%d').toordinal()
+    except ValueError:
+        return None
+    c0 = _nearest(series, t0)
+    if not c0 or c0[1] == 0:
+        return None
+    last = series[-1]                       # 全局最后交易日(退市股=退市整理期最后价)
+    if last[0] <= t0:                       # t0 之后无交易 → 仍 NaN
+        return None
+    return (last[1] / c0[1] - 1) * 100
 
 
 # ─────────────── 单截面: 打分 + 排序 + 多空 + IC ───────────────

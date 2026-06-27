@@ -17,6 +17,12 @@ ml_training/data/features_backtest.parquet
 ml_training/data/universe*.parquet
 ml_training/data/namechange.parquet
 ml_training/data/*.bak_pre_pit*
+# 毯式: ml_training/data 下所有 parquet 都是生成产物(DB+脚本可重建), 不入 git
+# 含 features_backtest_{1500,4103,fullA}*、pilot_*、samples_*、sue_timelines 等
+ml_training/data/*.parquet
+# panel BLOB 落库前的受管目录(若启用) + 阈值缓存
+ml_training/data/.panels/
+ml_training/data/threshold_cache.json
 
 # 回测输出 csv
 ml_training/output/backtest_ls_*.csv

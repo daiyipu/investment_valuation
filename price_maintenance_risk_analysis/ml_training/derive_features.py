@@ -147,10 +147,97 @@ def derive_financial_score_deltas(df):
                 v_old = pd.to_numeric(df[col_old], errors='coerce')
                 new_cols[f'{m}_{suffix}'] = v_new - v_old
 
+    # 评分斜率(polyfit T..T-4 vs year; 恢复历史 总分_斜率/盈利能力_斜率/成长能力_斜率, 1w 模型用)
+    _years = np.array([-4, -3, -2, -1, 0]); _yc = _years - _years.mean()
+    _suf = ['_T-4', '_T-3', '_T-2', '_T-1', '_T']
+    for m in SCORE_METRICS:
+        cols_m = [f'{m}{s}' for s in _suf]
+        if not all(c in df.columns for c in cols_m):
+            continue
+        vals = np.column_stack([pd.to_numeric(df[c], errors='coerce').to_numpy() for c in cols_m])  # (n,5)
+        slope = np.full(len(df), np.nan)
+        full = ~np.isnan(vals).any(axis=1)
+        if full.any():
+            slope[full] = (vals[full] * _yc).sum(axis=1) / (_yc @ _yc)   # 向量化: slope=Σ(yc·y)/Σ(yc²)
+        partial = (~full) & (~np.isnan(vals).all(axis=1))
+        for i in np.where(partial)[0]:
+            row = vals[i]; mask = ~np.isnan(row)
+            if mask.sum() >= 2:
+                slope[i] = np.polyfit(_years[mask], row[mask], 1)[0]
+        new_cols[f'{m}_斜率'] = pd.Series(slope, index=df.index)
+
     for k, v in new_cols.items():
         df[k] = v
     coverage = {k: f'{v.notna().mean()*100:.1f}%' for k, v in new_cols.items()}
     print(f'    +{len(new_cols)}个特征: {", ".join(f"{k}({v})" for k,v in list(coverage.items())[:6])}...')
+    return df
+
+
+
+# ====== D类预: 个股估值 PIT + 同行截面均值(恢复 load_db_features/peer_companies 丢失的 个股PE/PS + 同行) ======
+
+_STOCK_TO_IDX = None   # lazy: stock_code → index_code(行业映射, industry_data 一次查)
+
+
+def _load_stock_to_idx():
+    """stock_code → 申万行业 index_code(industry_data)。模块级缓存, 首次查 DB。"""
+    global _STOCK_TO_IDX
+    if _STOCK_TO_IDX is not None:
+        return _STOCK_TO_IDX
+    try:
+        import pymysql
+        from utils.db_manager import ValuationDB
+        conn = pymysql.connect(**ValuationDB.MYSQL_CONFIG)
+        idf = pd.read_sql('SELECT stock_code, index_code FROM industry_data WHERE index_code IS NOT NULL', conn)
+        conn.close()
+        _STOCK_TO_IDX = dict(zip(idf['stock_code'].astype(str), idf['index_code'].astype(str)))
+    except Exception:
+        _STOCK_TO_IDX = {}
+    return _STOCK_TO_IDX
+
+
+def derive_peer_valuation(df):
+    """个股 PE/PS/PB/市值(PIT, daily_basic ≤报价日) + 同行均值/中位(截面 groupby 报价日×行业)。
+    恢复历史 load_db_features(relative_valuation+peer_companies 快照, 非PIT)丢失的估值特征;
+    本函数改从 daily_basic 时序表 PIT 切(≤报价日), 同行=截面均值(全A 含全成员)。
+    喂 derive_valuation_relative 产 PE_vs_行业/同行、PB_vs、PS_vs。需先 prefetch_daily_basic。"""
+    print('\n  D类预: 个股估值PIT + 同行截面均值...')
+    if '股票代码' not in df.columns or '报价日' not in df.columns:
+        return df
+    s2i = _load_stock_to_idx()
+    cols_map = {'个股PE': 'pe', '个股PS': 'ps', '个股PB': 'pb', '个股市值': 'total_mv'}
+    out = {c: np.full(len(df), np.nan) for c in cols_map}
+    dates = df['报价日'].astype(str).to_numpy()
+    n_hit = 0
+    for code, g in df.groupby('股票代码'):
+        cached = _DAILY_BASIC_CACHE.get(str(code))
+        if cached is None or cached[0] is None:
+            continue
+        sd = cached[0]; dbd = cached[1]
+        for idx in g.index:
+            pos = int(np.searchsorted(sd, dates[idx], 'right')) - 1
+            if pos < 0:
+                continue
+            n_hit += 1
+            for cn, dn in cols_map.items():
+                arr = dbd.get(dn)
+                if arr is not None and pos < len(arr):
+                    out[cn][idx] = arr[pos]
+    for cn in cols_map:
+        df[cn] = out[cn]
+    # 同行截面均值/中位(groupby 报价日×行业 → transform; 全A 含全成员)
+    df['_行业idx'] = df['股票代码'].astype(str).map(s2i)
+    valid = df['_行业idx'].notna()
+    for cn in ['个股PE', '个股PS', '个股PB', '个股市值']:
+        short = cn[2:]   # PE/PS/PB/市值
+        df['同行' + short + '_均值'] = np.nan
+        df['同行' + short + '_中位'] = np.nan
+        if valid.any():
+            df.loc[valid, '同行' + short + '_均值'] = df[valid].groupby(['报价日', '_行业idx'])[cn].transform('mean')
+            df.loc[valid, '同行' + short + '_中位'] = df[valid].groupby(['报价日', '_行业idx'])[cn].transform('median')
+    df = df.drop(columns=['_行业idx'])
+    cov = {c: f'{df[c].notna().mean()*100:.0f}%' for c in ['个股PE', '个股PS', '同行PS_均值', '同行市值_均值']}
+    print(f'    +12特征(个股估值4+同行均值4+中位4, n_hit{n_hit}): {", ".join(f"{k}({v})" for k,v in cov.items())}')
     return df
 
 
@@ -197,7 +284,7 @@ def derive_pb_vs_industry_pit(df):
     """PB_vs_同行中位 ← PIT 行业口径(规范, 2026-06 定): 覆盖 derive_valuation_relative 的 peer 中位口径。
 
     原 peer 口径 = 个股PB / peer_companies 同行中位(非 PIT 快照, 覆盖~53%, 且是潜在 PIT 泄漏)。
-    新口径 = daily_basic PB(≤报价日) / industry_daily sw_index_pb(≤报价日), 与回测 feature_loaders 同源。
+    新口径 = daily_basic PB(≤报价日) / industry_daily sw_index_pb(≤报价日), 与回测 export_features(PIT loader)同源。
     生产 SC 模型 15 特征含此列 → 重训后 PB WOE 基于此口径, 回测/定增同分布不再错配。
 
     前置: 定增 universe 的 industry_daily 须全历史重摄(`ingest_raw --universe placement --industry-only`),
@@ -211,7 +298,7 @@ def derive_pb_vs_industry_pit(df):
     if pkg not in sys.path:
         sys.path.insert(0, pkg)
     sys.path.insert(0, os.path.join(pkg, 'scripts'))
-    from feature_loaders import load_pb_vs_industry
+    from export_features import load_pb_vs_industry
 
     pairs = [(str(c), str(d)) for c, d in zip(df['股票代码'], df['报价日']) if pd.notna(d)]
     pb_map = load_pb_vs_industry(pairs)
@@ -223,6 +310,66 @@ def derive_pb_vs_industry_pit(df):
     if cov < 50:
         print('    ⚠️ 覆盖偏低: 多半是 industry_daily 未全历史重摄 → 先跑 '
               '`ingest_raw --universe placement --industry-only` 再重训')
+    return df
+
+
+# ====== E类预: 行情统计(从 _OHLCV_CACHE PIT 算) → 喂 derive_market_momentum ======
+
+def derive_market_stats_from_ohlcv(df):
+    """从 _OHLCV_CACHE PIT 算行情统计基列: MA20/30/60/120/250、波动率/年化收益/区间收益/胜率_20-250d、
+    当前价、漂移率、波动率(全期)、中位价、价格标准差、数据天数(共 ~27 个)。
+    每股全历史 rolling/expanding 一次, 按报价日 searchsorted(≤报价日)索引。PIT 正确(≤D 序列)。
+
+    恢复: 历史 load_db_features 读 market_data 表(每股一行非PIT快照, 有泄漏)产这些列; 回测没接 → 丢失。
+    本函数从已预取的 _OHLCV_CACHE 重算(PIT), 喂给 derive_market_momentum 产 vol_ratio/return_acceleration/price_vs_MA。
+    缺缓存(如定增侧未 prefetch_ohlcv)→ 静默跳过(定增走 market_data 表另得)。"""
+    print('\n  E类预: 行情统计(从 OHLCV PIT)...')
+    if '股票代码' not in df.columns or '报价日' not in df.columns:
+        print('    缺 股票代码/报价日, 跳过'); return df
+    windows = [20, 30, 60, 120, 250]
+    cols = ([f'MA{w}' for w in windows] + [f'波动率_{w}d' for w in windows] +
+            [f'年化收益_{w}d' for w in windows] + [f'区间收益_{w}d' for w in windows] +
+            [f'胜率_{w}d' for w in windows] +
+            ['当前价', '漂移率', '波动率', '中位价', '价格标准差', '数据天数'])
+    out = {c: np.full(len(df), np.nan) for c in cols}
+    dates = df['报价日'].astype(str).to_numpy()
+    n_hit = 0
+    for code, g in df.groupby('股票代码'):
+        cached = _OHLCV_CACHE.get(str(code))
+        if cached is None or cached[0] is None:
+            continue
+        sd = cached[0]; close = cached[1]['close'].astype(float)
+        n = len(sd)
+        if n < 2:
+            continue
+        cs = pd.Series(close)
+        rs = cs.pct_change()                      # rets 对齐 close 轴, rets[0]=nan
+        stat = {}
+        for w in windows:
+            stat[f'MA{w}'] = cs.rolling(w).mean().to_numpy()
+            stat[f'波动率_{w}d'] = rs.rolling(w).std(ddof=0).to_numpy() * np.sqrt(250)
+            prev = cs.shift(w).to_numpy()
+            ratio = cs.to_numpy() / np.where(prev > 0, prev, np.nan)
+            stat[f'年化收益_{w}d'] = np.where(prev > 0, ratio ** (250.0 / w) - 1, np.nan)
+            stat[f'区间收益_{w}d'] = np.where(prev > 0, ratio - 1, np.nan)
+            stat[f'胜率_{w}d'] = pd.Series((rs > 0).to_numpy().astype(float)).rolling(w).mean().to_numpy()
+        stat['当前价'] = close
+        stat['漂移率'] = rs.expanding().mean().to_numpy() * 250
+        stat['波动率'] = rs.expanding().std(ddof=0).to_numpy() * np.sqrt(250)
+        stat['中位价'] = cs.expanding().median().to_numpy()
+        stat['价格标准差'] = cs.expanding().std(ddof=0).to_numpy()
+        stat['数据天数'] = np.arange(1, n + 1, dtype=float)
+        for idx in g.index:
+            pos = int(np.searchsorted(sd, dates[idx], 'right')) - 1
+            if pos < 0:
+                continue
+            n_hit += 1
+            for c, arr in stat.items():
+                out[c][idx] = arr[pos]
+    for c in cols:
+        df[c] = out[c]
+    cov = {c: f'{pd.Series(out[c]).notna().mean()*100:.0f}%' for c in cols[:8]}
+    print(f'    +{len(cols)}个特征 (n_hit行 {n_hit}/{len(df)}): {", ".join(f"{k}({v})" for k,v in cov.items())}...')
     return df
 
 
@@ -355,6 +502,7 @@ def derive_industry_valuation_growth(df):
             'dates': pd.to_numeric(g['trade_date'], errors='coerce').fillna(0).astype('int64').values,  # int 比较: trade_date 类型不定(str/int/float), 统一 int64 与报价日数值比
             'pe': g['pe'].values.astype(float),
             'pb': g['pb'].values.astype(float),
+            'close': g['close'].values.astype(float),   # 行业指数收盘(算 行业年化收益/区间收益/波动率/胜率)
         }
 
     # 获取每条样本的 index_code
@@ -364,6 +512,12 @@ def derive_industry_valuation_growth(df):
     growth_windows = [60, 120, 250]
     pe_growth = {w: np.full(len(df), np.nan) for w in growth_windows}
     pb_growth = {w: np.full(len(df), np.nan) for w in growth_windows}
+    # 行业指数收益统计(从 close, PIT ≤报价日; 恢复历史 load_db_features 丢失的 行业年化收益/区间收益)
+    ind_windows = [20, 60, 120, 250]
+    ind_range = {w: np.full(len(df), np.nan) for w in ind_windows}   # 行业区间收益_{w}d
+    ind_ann = {w: np.full(len(df), np.nan) for w in ind_windows}     # 行业年化收益_{w}d
+    ind_pe = np.full(len(df), np.nan)   # 行业PE 水平(≤报价日)
+    ind_pb = np.full(len(df), np.nan)   # 行业PB 水平(≤报价日)
 
     matched = 0
     for i, (idx, row) in enumerate(df.iterrows()):   # 用位置 i(非索引值 idx): df.index 可能是股票代码(str), iloc/growth 数组须按位置
@@ -389,6 +543,8 @@ def derive_industry_valuation_growth(df):
 
         pe_now = dg['pe'][pos]
         pb_now = dg['pb'][pos]
+        ind_pe[i] = pe_now   # 行业PE/PB 水平(≤报价日; 恢复历史 load_db_features 的 行业PE/行业PB)
+        ind_pb[i] = pb_now
         if np.isnan(pe_now) and np.isnan(pb_now):
             continue
 
@@ -400,6 +556,14 @@ def derive_industry_valuation_growth(df):
                     pe_growth[w][i] = pe_now / pe_prev - 1
                 if not np.isnan(pb_now) and not np.isnan(pb_prev) and abs(pb_prev) > 1e-8:
                     pb_growth[w][i] = pb_now / pb_prev - 1
+        # 行业指数收益(从 close, PIT ≤报价日; 恢复历史 load_db_features 丢失的 行业年化/区间收益)
+        ind_close = dg['close']
+        for w in ind_windows:
+            if pos >= w:
+                c0 = ind_close[pos - w]; c1 = ind_close[pos]
+                if not np.isnan(c0) and not np.isnan(c1) and abs(c0) > 1e-8:
+                    ind_range[w][i] = c1 / c0 - 1
+                    ind_ann[w][i] = (c1 / c0) ** (250.0 / w) - 1
         matched += 1
 
     print(f'    匹配行业日线: {matched}/{len(df)}')
@@ -408,6 +572,11 @@ def derive_industry_valuation_growth(df):
     for w in growth_windows:
         new_cols[f'行业PE_{w}d增长'] = pd.Series(pe_growth[w], index=df.index)
         new_cols[f'行业PB_{w}d增长'] = pd.Series(pb_growth[w], index=df.index)
+    for w in ind_windows:
+        new_cols[f'行业区间收益_{w}d'] = pd.Series(ind_range[w], index=df.index)
+        new_cols[f'行业年化收益_{w}d'] = pd.Series(ind_ann[w], index=df.index)
+    new_cols['行业PE'] = pd.Series(ind_pe, index=df.index)
+    new_cols['行业PB'] = pd.Series(ind_pb, index=df.index)
 
     for k, v in new_cols.items():
         df[k] = v
@@ -547,6 +716,96 @@ def derive_market_index_features(df):
 _OHLCV_CACHE = {}   # code -> (dates, {open/high/low/close/vol/amount} np arrays) 或 (None, None)
 
 
+def _f(x):
+    """float, NaN/inf → None。pymysql executemany 遇 nan 抛 ProgrammingError 整批失败(被各 save 的 except 吞), 故落盘前必清洗。MySQL DOUBLE 接受 NULL。"""
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    if v != v or v in (float('inf'), float('-inf')):   # nan / inf
+        return None
+    return v
+
+
+def _bulk_group_split(df):
+    """df(含 stock_code + trade_date) → 全局排序后按 stock_code 用 numpy 切边界。
+    替代逐组 groupby+sort_values+逐组 .values: 11.6M 行 object dtype 上 take_2d_axis1 爆慢(全A曾卡 12min+)。
+    返回 (排序后 df, 各组行索引 ndarray list)。调用方按 idx 切片取列(numpy fancy index, 快)。"""
+    df = df.sort_values(['stock_code', 'trade_date'], kind='mergesort')
+    sc = df['stock_code'].to_numpy()
+    n = len(sc)
+    change = np.flatnonzero(sc[1:] != sc[:-1]) + 1 if n > 1 else np.array([], dtype=int)
+    return df, np.split(np.arange(n), change)
+
+
+def _qfq_bulk_read(codes, chunk=800):
+    """从 stock_qfq_daily 批量读 {code: (dates, ohlcv)}。表不存在/空→{}。首次重建后零 tushare。
+    分块读: 全A 11.6M 行一次性 read_sql 峰值 ~3GB 致 8GB Mac swap 卡死; 每块 ~800 股, 峰值内存有界。"""
+    if not codes:
+        return {}
+    out = {}
+    try:
+        import pymysql
+        from utils.db_manager import ValuationDB
+        cfg = ValuationDB.MYSQL_CONFIG
+        conn = pymysql.connect(host=cfg['host'], port=cfg['port'], user=cfg['user'],
+                               password=cfg['password'], database=cfg['database'], charset=cfg['charset'])
+        try:
+            for i in range(0, len(codes), chunk):
+                blk = codes[i:i + chunk]
+                ph = ','.join(['%s'] * len(blk))
+                df = pd.read_sql(f"SELECT stock_code,trade_date,open,high,low,close,vol,amount "
+                                 f"FROM stock_qfq_daily WHERE stock_code IN ({ph})", conn, params=list(blk))
+                if df is None or df.empty:
+                    continue
+                df, splits = _bulk_group_split(df)
+                sc = df['stock_code'].to_numpy(); dates = df['trade_date'].to_numpy()
+                o = df['open'].to_numpy(); h = df['high'].to_numpy(); l = df['low'].to_numpy()
+                c = df['close'].to_numpy(); v = df['vol'].to_numpy(); amt = df['amount'].to_numpy()
+                for idx in splits:
+                    if not len(idx):
+                        continue
+                    out[str(sc[idx[0]])] = (dates[idx], {'open': o[idx], 'high': h[idx], 'low': l[idx],
+                        'close': c[idx], 'vol': v[idx], 'amount': amt[idx]})
+        finally:
+            conn.close()
+    except Exception:
+        pass
+    return out
+
+
+def _qfq_save(code, dates, ohlcv):
+    """一只股的 qfq 全历史落盘 stock_qfq_daily(ON DUP KEY, 建表幂等)。落盘失败不影响计算。"""
+    if dates is None or len(dates) == 0:
+        return
+    try:
+        import pymysql
+        from utils.db_manager import ValuationDB
+        cfg = ValuationDB.MYSQL_CONFIG
+        conn = pymysql.connect(host=cfg['host'], port=cfg['port'], user=cfg['user'],
+                               password=cfg['password'], database=cfg['database'], charset=cfg['charset'])
+        n = len(dates)
+        rows = [(code, str(dates[i]), _f(ohlcv['open'][i]), _f(ohlcv['high'][i]), _f(ohlcv['low'][i]),
+                 _f(ohlcv['close'][i]), _f(ohlcv['vol'][i]), _f(ohlcv['amount'][i])) for i in range(n)]
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""CREATE TABLE IF NOT EXISTS stock_qfq_daily (
+                    stock_code VARCHAR(16) NOT NULL, trade_date CHAR(8) NOT NULL,
+                    open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE, vol DOUBLE, amount DOUBLE,
+                    PRIMARY KEY (stock_code, trade_date)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                sql = ("INSERT INTO stock_qfq_daily (stock_code,trade_date,open,high,low,close,vol,amount) "
+                       "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE "
+                       "open=VALUES(open),high=VALUES(high),low=VALUES(low),close=VALUES(close),vol=VALUES(vol),amount=VALUES(amount)")
+                B = 2000
+                for i in range(0, n, B):
+                    cur.executemany(sql, rows[i:i + B])
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+
 def _fetch_ohlcv_raw(code):
     """实际调 pro_bar(无缓存), 返回 (dates, ohlcv_dict); 失败抛异常。供并发预取重试用。"""
     import tushare as ts
@@ -566,11 +825,17 @@ def _fetch_ohlcv_raw(code):
 
 def _get_stock_ohlcv(code):
     """pro_bar qfq 全量(缓存), 返回 (dates, ohlcv_dict) 或 (None, None)。
+    优先级: 内存缓存 → stock_qfq_daily 本地表 → pro_bar+落盘。
     供 derive_strategy_signals(取 close) 与 derive_alpha_beta_factors(OHLCV) 共用。"""
     if code in _OHLCV_CACHE:
         return _OHLCV_CACHE[code]
+    local = _qfq_bulk_read([code])          # 本地表(免 pro_bar)
+    if code in local:
+        _OHLCV_CACHE[code] = local[code]
+        return local[code]
     try:
         res = _fetch_ohlcv_raw(code)
+        _qfq_save(code, res[0], res[1])     # 落盘供下次
     except Exception:
         res = (None, None)
     _OHLCV_CACHE[code] = res
@@ -579,19 +844,29 @@ def _get_stock_ohlcv(code):
 
 def prefetch_ohlcv(codes, max_workers=12):
     """并发预取所有 unique 股票 OHLCV 入缓存(I/O bound, 线程即可)。
-    tushare 限流时单股退避重试(3 次)。已缓存的跳过。"""
+    本地优先(stock_qfq_daily 批量读), 缺失的才 pro_bar+落盘。tushare 限流单股退避重试(3 次)。"""
     from concurrent.futures import ThreadPoolExecutor, as_completed
     import time
-    todo = [c for c in dict.fromkeys(str(c) for c in codes) if c not in _OHLCV_CACHE]
-    if not todo:
+    uniq = [c for c in dict.fromkeys(str(c) for c in codes) if c not in _OHLCV_CACHE]
+    if not uniq:
         print(f'    OHLCV 缓存已热({len(_OHLCV_CACHE)}), 跳过预取')
         return
-    print(f'    并发预取 {len(todo)} 只 OHLCV (max_workers={max_workers}, 限流重试)...')
+    # 1. 本地 stock_qfq_daily 批量读(免 tushare; 首次重建后命中全部)
+    local = _qfq_bulk_read(uniq)
+    for c, res in local.items():
+        _OHLCV_CACHE[c] = res
+    todo = [c for c in uniq if _OHLCV_CACHE.get(c, (None, None))[0] is None]
+    if not todo:
+        print(f'    OHLCV 全本地命中 {len(local)} 只, 零 tushare')
+        return
+    print(f'    OHLCV: 本地 {len(local)}, 待 pro_bar {len(todo)} (max_workers={max_workers}, 落盘)...')
 
     def _work(code):
         for attempt in range(3):
             try:
-                _OHLCV_CACHE[code] = _fetch_ohlcv_raw(code)
+                res = _fetch_ohlcv_raw(code)
+                _OHLCV_CACHE[code] = res
+                _qfq_save(code, res[0], res[1])      # 落盘 stock_qfq_daily 供下次重建
                 return True
             except Exception:
                 time.sleep(1.5 * (attempt + 1))   # 限流/网络 → 退避重试
@@ -606,11 +881,91 @@ def prefetch_ohlcv(codes, max_workers=12):
                 ok += 1
             if n % 50 == 0:
                 print(f'    预取 {n}/{len(todo)} (成功 {ok})')
-    print(f'    预取完成: {ok}/{len(todo)} 成功')
+    print(f'    预取完成: {ok}/{len(todo)} 成功(已落盘 stock_qfq_daily)')
 
 
 # ====== 模块级 daily_basic 缓存(换手率/量比, 与 OHLCV 缓存并列) ======
 _DAILY_BASIC_CACHE = {}   # code -> (dates, {turnover, vol_ratio}) 或 (None, None)
+
+
+def _db_basic_bulk_read(codes):
+    """从 stock_daily_basic 批量读 {code: (dates, {turnover, vol_ratio})}。表空→{}。"""
+    if not codes:
+        return {}
+    try:
+        import pymysql
+        from utils.db_manager import ValuationDB
+        cfg = ValuationDB.MYSQL_CONFIG
+        conn = pymysql.connect(host=cfg['host'], port=cfg['port'], user=cfg['user'],
+                               password=cfg['password'], database=cfg['database'], charset=cfg['charset'])
+        try:
+            ph = ','.join(['%s'] * len(codes))
+            df = pd.read_sql(f"SELECT stock_code,trade_date,turnover_rate,volume_ratio,pb,pe,ps,total_mv "
+                             f"FROM stock_daily_basic WHERE stock_code IN ({ph})", conn, params=list(codes))
+        finally:
+            conn.close()
+    except Exception:
+        return {}
+    if df is None or df.empty:
+        return {}
+    out = {}
+    df, splits = _bulk_group_split(df)
+    sc = df['stock_code'].to_numpy(); dates = df['trade_date'].to_numpy()
+    def _arr(nm): return df[nm].to_numpy() if nm in df.columns else None
+    to = _arr('turnover_rate'); vr = _arr('volume_ratio'); pb = _arr('pb')
+    pe = _arr('pe'); ps = _arr('ps'); mv = _arr('total_mv')
+    for idx in splits:
+        if not len(idx):
+            continue
+        out[str(sc[idx[0]])] = (dates[idx], {'turnover': to[idx], 'vol_ratio': vr[idx],
+            'pb': pb[idx] if pb is not None else None,
+            'pe': pe[idx] if pe is not None else None,
+            'ps': ps[idx] if ps is not None else None,
+            'total_mv': mv[idx] if mv is not None else None})
+    return out
+
+
+def _db_basic_save(code, dates, db):
+    """一只股 daily_basic 全历史落盘 stock_daily_basic(ON DUP KEY, 建表幂等)。"""
+    if dates is None or len(dates) == 0:
+        return
+    try:
+        import pymysql
+        from utils.db_manager import ValuationDB
+        cfg = ValuationDB.MYSQL_CONFIG
+        conn = pymysql.connect(host=cfg['host'], port=cfg['port'], user=cfg['user'],
+                               password=cfg['password'], database=cfg['database'], charset=cfg['charset'])
+        n = len(dates)
+        rows = [(code, str(dates[i]), _f(db['turnover'][i]), _f(db['vol_ratio'][i]),
+                 _f(db['pb'][i]) if db.get('pb') is not None else None,
+                 _f(db['pe'][i]) if db.get('pe') is not None else None,
+                 _f(db['ps'][i]) if db.get('ps') is not None else None,
+                 _f(db['total_mv'][i]) if db.get('total_mv') is not None else None) for i in range(n)]
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""CREATE TABLE IF NOT EXISTS stock_daily_basic (
+                    stock_code VARCHAR(16) NOT NULL, trade_date CHAR(8) NOT NULL,
+                    turnover_rate DOUBLE, volume_ratio DOUBLE, pb DOUBLE,
+                    pe DOUBLE, ps DOUBLE, total_mv DOUBLE,
+                    PRIMARY KEY (stock_code, trade_date)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # 旧表补列(pb/pe/ps/total_mv; 幂等)
+                for col in ('pb', 'pe', 'ps', 'total_mv'):
+                    cur.execute("""SELECT COUNT(*) FROM information_schema.COLUMNS
+                        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='stock_daily_basic' AND COLUMN_NAME=%s""", (col,))
+                    if cur.fetchone()[0] == 0:
+                        cur.execute(f"ALTER TABLE stock_daily_basic ADD COLUMN {col} DOUBLE")
+                sql = ("INSERT INTO stock_daily_basic (stock_code,trade_date,turnover_rate,volume_ratio,pb,pe,ps,total_mv) "
+                       "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE "
+                       "turnover_rate=VALUES(turnover_rate),volume_ratio=VALUES(volume_ratio),pb=VALUES(pb),"
+                       "pe=VALUES(pe),ps=VALUES(ps),total_mv=VALUES(total_mv)")
+                B = 2000
+                for i in range(0, n, B):
+                    cur.executemany(sql, rows[i:i + B])
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
 
 
 def _fetch_daily_basic_raw(code):
@@ -619,21 +974,29 @@ def _fetch_daily_basic_raw(code):
     from tushare_token import resolve_tushare_token
     os.environ.setdefault('TUSHARE_TOKEN', resolve_tushare_token())
     d = ts.pro_api().daily_basic(ts_code=code,
-                                 fields='ts_code,trade_date,turnover_rate,volume_ratio')
+                                 fields='ts_code,trade_date,turnover_rate,volume_ratio,pb,pe,ps,total_mv')
     if d is None or len(d) == 0:
         raise ValueError(f'daily_basic 空返回: {code}')
     d = d.sort_values('trade_date').drop_duplicates('trade_date').reset_index(drop=True)
+    def _col(nm):
+        return d[nm].astype(float).values if nm in d.columns else np.full(len(d), np.nan)
     return (d['trade_date'].values,
-            {'turnover': d['turnover_rate'].astype(float).values,
-             'vol_ratio': d['volume_ratio'].astype(float).values})
+            {'turnover': _col('turnover_rate'), 'vol_ratio': _col('volume_ratio'),
+             'pb': _col('pb'), 'pe': _col('pe'), 'ps': _col('ps'), 'total_mv': _col('total_mv')})
 
 
 def _get_daily_basic(code):
-    """daily_basic 全量(缓存), 返回 (dates, {turnover, vol_ratio}) 或 (None, None)。"""
+    """daily_basic 全量(缓存), 返回 (dates, {turnover, vol_ratio}) 或 (None, None)。
+    优先级: 内存缓存 → stock_daily_basic 本地表 → tushare+落盘。"""
     if code in _DAILY_BASIC_CACHE:
         return _DAILY_BASIC_CACHE[code]
+    local = _db_basic_bulk_read([code])           # 本地表(免 tushare)
+    if code in local:
+        _DAILY_BASIC_CACHE[code] = local[code]
+        return local[code]
     try:
         res = _fetch_daily_basic_raw(code)
+        _db_basic_save(code, res[0], res[1])      # 落盘供下次
     except Exception:
         res = (None, None)
     _DAILY_BASIC_CACHE[code] = res
@@ -641,19 +1004,29 @@ def _get_daily_basic(code):
 
 
 def prefetch_daily_basic(codes, max_workers=12):
-    """并发预取所有 unique 股票 daily_basic 入缓存。tushare 限流时单股退避重试(3 次)。"""
+    """并发预取所有 unique 股票 daily_basic 入缓存。
+    本地优先(stock_daily_basic 批量读), 缺失的才 tushare+落盘。限流单股退避重试(3 次)。"""
     from concurrent.futures import ThreadPoolExecutor, as_completed
     import time
-    todo = [c for c in dict.fromkeys(str(c) for c in codes) if c not in _DAILY_BASIC_CACHE]
-    if not todo:
+    uniq = [c for c in dict.fromkeys(str(c) for c in codes) if c not in _DAILY_BASIC_CACHE]
+    if not uniq:
         print(f'    daily_basic 缓存已热({len(_DAILY_BASIC_CACHE)}), 跳过预取')
         return
-    print(f'    并发预取 {len(todo)} 只 daily_basic (max_workers={max_workers}, 限流重试)...')
+    local = _db_basic_bulk_read(uniq)
+    for c, res in local.items():
+        _DAILY_BASIC_CACHE[c] = res
+    todo = [c for c in uniq if _DAILY_BASIC_CACHE.get(c, (None, None))[0] is None]
+    if not todo:
+        print(f'    daily_basic 全本地命中 {len(local)} 只, 零 tushare')
+        return
+    print(f'    daily_basic: 本地 {len(local)}, 待 tushare {len(todo)} (max_workers={max_workers}, 落盘)...')
 
     def _work(code):
         for attempt in range(3):
             try:
-                _DAILY_BASIC_CACHE[code] = _fetch_daily_basic_raw(code)
+                res = _fetch_daily_basic_raw(code)
+                _DAILY_BASIC_CACHE[code] = res
+                _db_basic_save(code, res[0], res[1])   # 落盘 stock_daily_basic
                 return True
             except Exception:
                 time.sleep(1.5 * (attempt + 1))
@@ -668,7 +1041,7 @@ def prefetch_daily_basic(codes, max_workers=12):
                 ok += 1
             if n % 50 == 0:
                 print(f'    预取 {n}/{len(todo)} (成功 {ok})')
-    print(f'    预取完成: {ok}/{len(todo)} 成功')
+    print(f'    预取完成: {ok}/{len(todo)} 成功(已落盘 stock_daily_basic)')
 
 
 # ====== H/I类: 三浪/抵抗策略信号 (需 tushare 网络) ======
@@ -813,6 +1186,8 @@ def derive_alpha_beta_factors(df):
     复用模块级 _OHLCV_CACHE(策略信号先跑则缓存已热, 不重复 pro_bar); 大盘/行业 1 次取数。
     PIT 由 ≤报价日 内存切片保证。单股/单因子失败填 NaN, 不影响整体。
     """
+    _orig_idx = df.index
+    df = df.reset_index(drop=True)   # all_factors 按位置索引; fork chunk 标签非连续(iloc[i::n])→ 重置 0..n-1=位置, 末尾恢复(免 IndexError)
     print('\n  L类: Beta+Alpha158 因子(factor_engine)...')
     pkg = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if pkg not in sys.path:
@@ -844,75 +1219,242 @@ def derive_alpha_beta_factors(df):
     prefetch_ohlcv(df['股票代码'].astype(str).unique())   # 并发预取(若策略信号先跑则缓存已热, 秒过)
     prefetch_daily_basic(df['股票代码'].astype(str).unique())  # 换手率/量比(量价族 turnover_factors)
     maxlen = 800   # 月线 MACD 需 ~35 个月 ≈ 800 日线(日线技术因子用尾部, 不受影响)
+    # ===== 按股全历史算一次 SERIES + 按报价日索引(替代逐行重切; 日线族+beta 精确向量化,
+    #       multiperiod/smc 每股 resample 缓存一次 + 逐行建 ≤D 序列含当周部分 bar, PIT 精确复刻标量) =====
+    from factor_engine import (compute_factors_series, _beta_series, _mp_indicators,
+                               _resample_ranges, smc_factors, _FACTOR_NAMES_OF)
+    from strategies.data_loader import _align_three_full
+
     all_factors = {}
-    fetched = 0
-    for i, row in enumerate(df.itertuples(index=True)):
-        code = str(getattr(row, '股票代码', ''))
-        d_raw = getattr(row, '报价日', None)
-        if d_raw is None or pd.isna(d_raw):
+    _all_names = (_FACTOR_NAMES_OF['kline_factors'] + _FACTOR_NAMES_OF['tech_factors']
+                  + _FACTOR_NAMES_OF['volume_factors'] + _FACTOR_NAMES_OF['moment_factors']
+                  + _FACTOR_NAMES_OF['beta_factors'] + _FACTOR_NAMES_OF['smc_factors']
+                  + _FACTOR_NAMES_OF['turnover_factors'] + _FACTOR_NAMES_OF['multiperiod_factors']
+                  + _FACTOR_NAMES_OF['smc_factors_multiperiod'] + _FACTOR_NAMES_OF['turnover_multiperiod'])
+    for k in _all_names:
+        all_factors[k] = np.full(len(df), np.nan)
+
+    uniq = df['股票代码'].astype(str).unique()
+    done = 0
+    for code, grp in df.groupby('股票代码'):
+        code = str(code)
+        sd, ohlcv = _get_stock_ohlcv(code)
+        if sd is None:
             continue
-        d_str = str(int(float(d_raw))) if isinstance(d_raw, (int, float, np.floating)) else str(d_raw)
-        if len(d_str) < 8:
-            continue
-        try:
-            sd, ohlcv = _get_stock_ohlcv(code)
-            if sd is None:
+        sd = sd.astype(str)
+        o = ohlcv['open']; h = ohlcv['high']; l = ohlcv['low']; c = ohlcv['close']; v = ohlcv['vol']; amt = ohlcv['amount']
+        td, db = _get_daily_basic(code)
+        turnover = db['turnover'] if td is not None else None
+        vol_ratio = db['vol_ratio'] if td is not None else None
+        daily_ser = compute_factors_series(o, h, l, c, v, amt)   # 日线族(不含 turnover, td 轴另算)
+        from factor_engine import _turnover_series as _tser
+        td_ser = _tser(turnover, vol_ratio) if td is not None else {}
+        td_str = td.astype(str) if td is not None else None
+        # turnover_multiperiod: td 轴 W/M 日均换手率(每股 resample 一次; 完成柱口径, 非模型特征)
+        tmp = {}
+        if td is not None and len(td) >= 15:
+            tidx = pd.to_datetime(pd.Series(td_str), format='%Y%m%d')
+            ts = pd.Series(np.asarray(turnover, float), index=tidx)
+            for rule, tag, nbars in [('W', 'W', 13), ('M', 'M', 6)]:
+                r = ts.resample(rule).mean().dropna()
+                tmp[tag] = (r.index.strftime('%Y%m%d').to_numpy(), r.values, nbars)
+        # beta: 全量对齐一次 → align 轴 series(按报价日 ≤D 取末 N)
+        beta_ser = {}; adates = np.array([])
+        idx = stock_to_idx.get(code); ig = ind_groups.get(idx)
+        if ig is not None:
+            try:
+                sdf = pd.DataFrame({'trade_date': sd, 'close': c})
+                idf = pd.DataFrame({'trade_date': ig[0], 'close': ig[1]})
+                mdf = pd.DataFrame({'trade_date': mkt_dates, 'close': mkt_close})
+                adates, sret, mret, iret = _align_three_full(sdf, idf, mdf)
+                if len(adates):
+                    beta_ser = _beta_series(sret, mret, iret)
+            except Exception:
+                pass
+        # multiperiod/smc_mp resample 缓存(每股一次, 复用日线起止索引)
+        Wr = _resample_ranges(sd, o, h, l, c, 'W') if len(sd) >= 15 else None
+        Mr = _resample_ranges(sd, o, h, l, c, 'M') if len(sd) >= 15 else None
+
+        for row_idx, d_str in zip(grp.index.values, grp['报价日'].astype(str).values):
+            pos = int(np.searchsorted(sd, d_str, 'right')) - 1
+            if pos < 0:
                 continue
-            sm = sd <= d_str
-            if not sm.any():
-                continue
-            n = int(sm.sum()); lo = max(0, n - maxlen)
-            o = ohlcv['open'][sm][lo:]; h = ohlcv['high'][sm][lo:]; l = ohlcv['low'][sm][lo:]
-            c = ohlcv['close'][sm][lo:]; v = ohlcv['vol'][sm][lo:]; amt = ohlcv['amount'][sm][lo:]
-            sd2 = sd[sm][lo:]
-            if len(c) < 60:
-                continue
-            # 对齐三序列收益(个股/行业/大盘); 对齐失败则 beta 留空, 技术因子仍算
-            sret = _ret(c)
-            mret = iret = np.array([])
-            idx = stock_to_idx.get(code); ig = ind_groups.get(idx)
-            if ig is not None:
-                im = ig[0] <= d_str; in_ = int(im.sum()); ilo = max(0, in_ - maxlen)
-                idf = pd.DataFrame({'trade_date': ig[0][im][ilo:], 'close': ig[1][im][ilo:]})
-                mm = mkt_dates <= d_str; mn = int(mm.sum()); mlo = max(0, mn - maxlen)
-                mdf = pd.DataFrame({'trade_date': mkt_dates[mm][mlo:], 'close': mkt_close[mm][mlo:]})
-                if len(idf) >= 65 and len(mdf) >= 65:
-                    sdf = pd.DataFrame({'trade_date': sd2, 'close': c})
+            for k, arr in daily_ser.items():                      # 日线因子(close 轴)
+                if pos < len(arr) and not np.isnan(arr[pos]):
+                    all_factors[k][row_idx] = arr[pos]
+            if td_ser:                                            # turnover 族(td 轴, 按 td-pos)
+                tpos = int(np.searchsorted(td_str, d_str, 'right')) - 1
+                if tpos >= 0:
+                    for k, arr in td_ser.items():
+                        if tpos < len(arr) and not np.isnan(arr[tpos]):
+                            all_factors[k][row_idx] = arr[tpos]
+            if beta_ser:                                          # beta(align 轴)
+                apos = int(np.searchsorted(adates, d_str, 'right')) - 1
+                if apos >= 0:
+                    for k, arr in beta_ser.items():
+                        if apos < len(arr) and not np.isnan(arr[apos]):
+                            all_factors[k][row_idx] = arr[apos]
+            if pos >= 59:                                         # smc 日线(≤D last 800)
+                lo = max(0, pos + 1 - maxlen)
+                try:
+                    smc = smc_factors(o[lo:pos + 1], h[lo:pos + 1], l[lo:pos + 1], c[lo:pos + 1])
+                    for k, val in smc.items():
+                        if not np.isnan(val):
+                            all_factors[k][row_idx] = val
+                except Exception:
+                    pass
+            for rng, tag, NM in [(Wr, 'W', (48, 12)), (Mr, 'M', (24, 6))]:   # multiperiod + smc_mp
+                if rng is None:
+                    continue
+                last_date, fidx = rng['last_date'], rng['first_idx']
+                bc = int(np.searchsorted(last_date, d_str, 'right')) - 1
+                if bc < 0:
+                    continue
+                wo = rng['wo'][:bc + 1]; wh = rng['wh'][:bc + 1]; wl = rng['wl'][:bc + 1]; wc = rng['wc'][:bc + 1]
+                partial = False
+                if bc + 1 < len(rng['wc']) and sd[fidx[bc + 1]] <= d_str:
+                    s = fidx[bc + 1]; ep = pos
+                    seg_h = h[s:ep + 1]; seg_l = l[s:ep + 1]
+                    wo = np.append(wo, o[s]); wh = np.append(wh, np.nanmax(seg_h))
+                    wl = np.append(wl, np.nanmin(seg_l)); wc = np.append(wc, c[ep]); partial = True
+                if len(wc) >= 5:
                     try:
-                        sr, kr, mr = _align_three(sdf, idf, mdf, maxlen)
-                        if len(sr) >= 60:
-                            sret, iret, mret = sr, kr, mr
+                        for k, val in _mp_indicators(wc, wh, wl, tag).items():
+                            if val is not None and not (isinstance(val, float) and np.isnan(val)):
+                                all_factors[k][row_idx] = val
                     except Exception:
                         pass
-            # daily_basic 换手率/量比(≤报价日 切片, 喂 turnover_factors + 周月线)
-            td, db = _get_daily_basic(code)
-            turnover = vol_ratio_d = turnover_dates = None
-            if td is not None:
-                dbm = td <= d_str
-                if dbm.any():
-                    turnover = db['turnover'][dbm]
-                    vol_ratio_d = db['vol_ratio'][dbm]
-                    turnover_dates = td[dbm]
-            f = compute_factors(o, h, l, c, v, amt, sret, mret, iret, dates=sd2,
-                                turnover=turnover, vol_ratio=vol_ratio_d,
-                                turnover_dates=turnover_dates)
-            for k, val in f.items():
-                all_factors.setdefault(k, np.full(len(df), np.nan))[i] = val
-            fetched += 1
-        except Exception:
-            continue
-        if (i + 1) % 100 == 0:
-            print(f'    进度 {i+1}/{len(df)} | 有因子 {fetched}')
+                    if len(wc) >= max(25, NM[1] + 2):
+                        try:
+                            smc = smc_factors(wo, wh, wl, wc, N=NM[0], M=NM[1])
+                            for k, val in smc.items():
+                                if not np.isnan(val):
+                                    all_factors[f'{k}_{tag}'][row_idx] = val
+                        except Exception:
+                            pass
+                if tag in tmp:                                    # turnover_multiperiod(td 轴, 完成柱)
+                    rdates, rval, nbars = tmp[tag]
+                    bc2 = int(np.searchsorted(rdates, d_str, 'right')) - 1
+                    if bc2 >= nbars - 1:
+                        rec = rval[bc2 - nbars + 1:bc2 + 1]
+                        tsuf = '_W' if tag == 'W' else '_M'
+                        all_factors[f'turnover_mean{tsuf}'][row_idx] = np.nanmean(rec)
+                        all_factors[f'turnover_std{tsuf}'][row_idx] = np.nanstd(rec, ddof=1) if len(rec) >= 2 else np.nan
+        done += 1
+        if done % 100 == 0:
+            print(f'    按股进度 {done}/{len(uniq)}')
 
     for k, arr in all_factors.items():
         df[k] = arr
-    cov = {k: f'{pd.Series(v).notna().mean()*100:.1f}%' for k, v in all_factors.items()}
-    shown = ', '.join(f'{k}({cov[k]})' for k in sorted(all_factors)[:10])
-    print(f'    匹配 {fetched}/{len(df)} | +{len(all_factors)}因子: {shown} ...')
+    df.index = _orig_idx   # 恢复原 index(_derive_chunked concat+sort_index 还原全局序)
+    shown = ', '.join(f'{k}({pd.Series(v).notna().mean()*100:.0f}%)' for k, v in sorted(all_factors.items())[:8])
+    print(f'    完成 {done}/{len(uniq)} 股 | +{len(all_factors)}因子: {shown} ...')
     return df
 
 
 # ====== J类: 月线10月均线趋势 (需 tushare 网络) ======
+
+# ====== hfq 月线持久化(derive_monthly_trend 用, 免 fork 重复 pro_bar 撞限频) ======
+_MONTHLY_CACHE = {}
+
+
+def _monthly_bulk_read(codes):
+    """从 stock_monthly_hfq 批量读 {code: (dates, close)}。表空→{}。"""
+    if not codes:
+        return {}
+    try:
+        import pymysql
+        from utils.db_manager import ValuationDB
+        cfg = ValuationDB.MYSQL_CONFIG
+        conn = pymysql.connect(host=cfg['host'], port=cfg['port'], user=cfg['user'],
+                               password=cfg['password'], database=cfg['database'], charset=cfg['charset'])
+        try:
+            ph = ','.join(['%s'] * len(codes))
+            df = pd.read_sql(f"SELECT stock_code,trade_date,close FROM stock_monthly_hfq WHERE stock_code IN ({ph})",
+                             conn, params=list(codes))
+        finally:
+            conn.close()
+    except Exception:
+        return {}
+    if df is None or df.empty:
+        return {}
+    out = {}
+    df, splits = _bulk_group_split(df)
+    sc = df['stock_code'].to_numpy(); dates = df['trade_date'].to_numpy(); cl = df['close'].to_numpy(float)
+    for idx in splits:
+        if not len(idx):
+            continue
+        out[str(sc[idx[0]])] = (dates[idx], cl[idx])
+    return out
+
+
+def _monthly_save(code, dates, close):
+    """一只股 hfq 月线落盘 stock_monthly_hfq(ON DUP KEY, 建表幂等)。"""
+    if dates is None or len(dates) == 0:
+        return
+    try:
+        import pymysql
+        from utils.db_manager import ValuationDB
+        cfg = ValuationDB.MYSQL_CONFIG
+        conn = pymysql.connect(host=cfg['host'], port=cfg['port'], user=cfg['user'],
+                               password=cfg['password'], database=cfg['database'], charset=cfg['charset'])
+        n = len(dates)
+        rows = [(code, str(dates[i]), _f(close[i])) for i in range(n)]
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""CREATE TABLE IF NOT EXISTS stock_monthly_hfq (
+                    stock_code VARCHAR(16) NOT NULL, trade_date CHAR(8) NOT NULL, close DOUBLE,
+                    PRIMARY KEY (stock_code, trade_date)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                sql = "INSERT INTO stock_monthly_hfq (stock_code,trade_date,close) VALUES (%s,%s,%s) ON DUPLICATE KEY UPDATE close=VALUES(close)"
+                B = 2000
+                for i in range(0, n, B):
+                    cur.executemany(sql, rows[i:i + B])
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+
+def prefetch_monthly(codes, max_workers=12):
+    """并发预取 hfq 月线入 _MONTHLY_CACHE + 落盘 stock_monthly_hfq。本地优先, 缺失才 tushare。"""
+    from concurrent.futures import ThreadPoolExecutor
+    import time
+    uniq = [c for c in dict.fromkeys(str(c) for c in codes) if c not in _MONTHLY_CACHE]
+    if not uniq:
+        return
+    local = _monthly_bulk_read(uniq)
+    for c, r in local.items():
+        _MONTHLY_CACHE[c] = r
+    todo = [c for c in uniq if _MONTHLY_CACHE.get(c, (None, None))[0] is None]
+    if not todo:
+        print(f'    hfq月线: 全本地命中 {len(local)}, 零 tushare')
+        return
+    print(f'    hfq月线: 本地 {len(local)}, 待 tushare {len(todo)} (落盘)...')
+    import tushare as ts
+    from tushare_token import resolve_tushare_token
+    os.environ.setdefault('TUSHARE_TOKEN', resolve_tushare_token())
+
+    def _work(c):
+        for attempt in range(3):
+            try:
+                d = ts.pro_bar(ts_code=c, freq='M', adj='hfq')
+                if d is None or len(d) == 0:
+                    _MONTHLY_CACHE[c] = (None, None)
+                    return False
+                d = d.sort_values('trade_date').drop_duplicates('trade_date').reset_index(drop=True)
+                res = (d['trade_date'].astype(str).to_numpy(), d['close'].astype(float).to_numpy())
+                _MONTHLY_CACHE[c] = res
+                _monthly_save(c, res[0], res[1])
+                return True
+            except Exception:
+                time.sleep(1.0 * (attempt + 1))   # 限频退避
+        _MONTHLY_CACHE[c] = (None, None)
+        return False
+
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        list(ex.map(_work, todo))
+
 
 def derive_monthly_trend(df):
     """按每行报价日 PIT 回算 月线MA10_slope3% + 月线趋势向上, 写 2 列。
@@ -934,24 +1476,16 @@ def derive_monthly_trend(df):
     up = np.zeros(len(df), dtype=int)
 
     unique_codes = df['股票代码'].astype(str).unique().tolist()
-    print(f'    取个股 hfq 月线全量: {len(unique_codes)} 只(缓存)...')
-    cache = {}
+    # 本地优先(免 fork 重复 pro_bar 撞限频): parent 已 prefetch_monthly 则 _MONTHLY_CACHE 热; 否则按块读本地+补缺
+    if not any(c in _MONTHLY_CACHE and _MONTHLY_CACHE[c][0] is not None for c in unique_codes):
+        prefetch_monthly(unique_codes)
+    _mhit = sum(1 for c in unique_codes if c in _MONTHLY_CACHE and _MONTHLY_CACHE[c][0] is not None)
+    print(f'    hfq 月线缓存: {_mhit}/{len(unique_codes)} 有数据')
 
     def get_monthly(code):
-        if code in cache:
-            return cache[code]
-        try:
-            d = ts.pro_bar(ts_code=code, freq='M', adj='hfq')
-            if d is None or len(d) == 0:
-                cache[code] = (None, None)
-                return (None, None)
-            d = d.sort_values('trade_date').drop_duplicates('trade_date').reset_index(drop=True)
-            res = (d['trade_date'].astype(str).to_numpy(), d['close'].astype(float).to_numpy())
-            cache[code] = res
-            return res
-        except Exception:
-            cache[code] = (None, None)
-            return (None, None)
+        if code not in _MONTHLY_CACHE:
+            _MONTHLY_CACHE[code] = (None, None)
+        return _MONTHLY_CACHE[code]
 
     fetched = 0
     for i, row in enumerate(df.itertuples(index=True)):
@@ -1046,6 +1580,184 @@ def derive_market_trend(df):
 
 # ====== 主流程 ======
 
+# 末尾闸门：剔除确认无信号的字段（IV=0 标记/常数/标识/定增参数/行业代码文本）
+# placement 与 backtest 共用(run_derivation 调用); 拦住本脚本重新生成的无信号字段
+DROP_FIELDS = {
+    '市场指数_通过', '行业PE_通过', '个股PE_通过', 'DCF估值_通过',
+    '修正PE估值_通过', '参数构造_通过', '蒙特卡洛_通过', '反向推算_通过',
+    '子场景通过数', 'step1通过', 'step2通过', 'step3通过',
+    '最新交易日', '行情_时间匹配', '财报年份', 'report_year',
+    '市场_above_MA250',
+    '溢价率', '溢价率下限', '锁定期', '融资金额', '无风险利率', 'Beta',
+    '定增建议参与', '有效阈值数',
+    'sw_l1_code', 'sw_l1_name', 'sw_l2_code', 'sw_l2_name', 'sw_l3_code', 'sw_l3_name',
+    '营运资金变动_T', '营运资金变动_T1', '营运资金变动_T2', '营运资金变动_T3', '营运资金变动_T4',
+    '营业利润率', '营收增长率', '行业PS', '净债务', '净资产负债表',
+    '行业级别',
+}
+
+
+# ====== L类补: 行业指数技术面(idx_factor_pro PIT 切片, 87因子) ======
+
+def derive_index_factor_features(df):
+    """从 index_factor_pro PIT 切片(股票→行业指数, ≤报价日)产行业指数技术特征(87 因子)。
+    data/refresh_industry_daily.ingest_idx_factor_pro 落表; 本函数 PIT 切片做回溯特征。"""
+    print('\n  L类补: 行业指数技术面(idx_factor_pro PIT)...')
+    if '股票代码' not in df.columns or '报价日' not in df.columns:
+        return df
+    s2i = _load_stock_to_idx()
+    df['_行业idx'] = df['股票代码'].astype(str).map(s2i)
+    unique_idx = [ic for ic in df['_行业idx'].dropna().unique() if ic]
+    if not unique_idx:
+        print('    无行业映射, 跳过'); return df
+    import pymysql
+    from utils.db_manager import ValuationDB
+    conn = pymysql.connect(**ValuationDB.MYSQL_CONFIG)
+    factor_cols = None; all_factors = {}; n_hit = 0
+    for ic in unique_idx:
+        try:
+            idf = pd.read_sql("SELECT * FROM index_factor_pro WHERE index_code=%s ORDER BY trade_date", conn, params=(str(ic),))
+        except Exception:
+            continue
+        if idf is None or len(idf) == 0:
+            continue
+        if factor_cols is None:
+            factor_cols = [c for c in idf.columns if c not in ('index_code', 'trade_date')]
+            for c in factor_cols:
+                all_factors[f'行业idx_{c}'] = np.full(len(df), np.nan)
+            print(f'    {len(factor_cols)} 因子, {len(unique_idx)} 行业指数')
+        idf['td_int'] = pd.to_numeric(idf['trade_date'], errors='coerce').fillna(0).astype('int64')
+        idf = idf.sort_values('td_int').reset_index(drop=True)
+        td = idf['td_int'].to_numpy()
+        mask = (df['_行业idx'] == ic).to_numpy()
+        sub_dates = np.array([int(float(d)) for d in df.loc[mask, '报价日'].astype(str).to_numpy()])
+        pos = np.searchsorted(td, sub_dates, 'right') - 1
+        valid = pos >= 0
+        if not valid.any():
+            continue
+        sub_indices = np.where(mask)[0][valid]
+        for c in factor_cols:
+            vals = idf[c].to_numpy()
+            all_factors[f'行业idx_{c}'][sub_indices] = vals[pos[valid]]
+        n_hit += len(sub_indices)
+    conn.close()
+    df = df.drop(columns=['_行业idx'])
+    if factor_cols:
+        for col, arr in all_factors.items():
+            df[col] = arr
+        print(f'    +{len(factor_cols)}特征(行业指数技术面, n_hit{n_hit})')
+    return df
+
+
+# ====== ProcessPool 分块并行: 3 个逐行派生(strategy/alpha_beta/monthly_trend)串行~14h → 并行~2h ======
+# 因子逻辑零改动: <1500股 parent preload→fork 继承热缓存(只读); ≥1500股 build_backtest_panel 清父缓存,
+# 各子进程 prefetch 自块(读本地DB)。env PARA_WORKERS 可覆盖。
+_PARA_WORKERS = min(int(os.environ.get('PARA_WORKERS', '3')), max(1, (os.cpu_count() or 4) - 1))   # 8GB Mac+VSCode 控内存
+
+
+def _derive_chunked(df, fn):
+    """按行均分 _PARA_WORKERS 块 → fork Pool 各跑 fn(unchanged) → concat 回原序。
+    fn 为模块级函数(fork 继承 + 按 ref pickle)。行太少(<200/块)则串行退回。"""
+    import multiprocessing as mp
+    n = min(_PARA_WORKERS, max(1, len(df) // 200))
+    if n <= 1:
+        return fn(df)
+    chunks = [df.iloc[i::n].copy() for i in range(n)]   # 交错分块(跨股, 负载均衡)
+    print(f'    [{fn.__name__}] ProcessPool×{n} 并行({len(df)}行, 每块~{len(chunks[0])})...')
+    with mp.get_context('fork').Pool(n) as p:
+        parts = p.map(fn, chunks)
+    return pd.concat(parts).sort_index()
+
+
+def run_derivation(df, skip_placement=False, run_stage2=True):
+    """可重用派生核心: base df(含 股票代码/报价日 + 基列) → Stage1+Stage2 派生 → 清洗。
+
+    **一套派生逻辑, placement 与 backtest/全A 共用**(后者 skip_placement=True,
+    因 manifest 无定增原料)。所有 derive_* 防御式: 缺输入列自动跳过, 不崩。
+    不落盘、不写 DB 快照(由调用方决定)——便于 backtest panel 构建器内联调用。
+    """
+    # ====== Stage 1: Parquet-only ======
+    print('\n' + '='*60)
+    print('Stage 1: Parquet-only 衍生特征')
+    print('='*60)
+    df = derive_fcf_growth_rates(df)
+    df = derive_fcf_cross_metrics(df)
+    df = derive_financial_score_deltas(df)
+    df = derive_peer_valuation(df)   # 个股PE/PS/PB/市值 PIT + 同行截面均值 → 喂 _vs_*
+    df = derive_valuation_relative(df)
+    df = derive_market_stats_from_ohlcv(df)   # 行情统计基列(MA/波动率/年化收益..., 从OHLCV PIT) → 喂 derive_market_momentum
+    df = derive_market_momentum(df)
+    if not skip_placement:
+        df = derive_placement_structure(df)
+
+    # ====== Stage 2: DB/tushare-dependent (各派生独立 try, 单点失败不影响其余) ======
+    if run_stage2:
+        print('\n' + '='*60)
+        print('Stage 2: DB-dependent 衍生特征')
+        print('='*60)
+        # parent preload 按 universe 大小自适应: 小(<1500股, ~0.4GB安全) → 预加载 fork 共享(免子进程冗余取);
+        # 大(≥1500股) → 跳过(8GB Mac OOM), 各 fork 子进程按块读本地(stock_qfq_daily/stock_daily_basic)。
+        try:
+            _nu = df['股票代码'].astype(str).nunique()
+            if _nu < 1500:
+                _all_codes = df['股票代码'].astype(str).unique().tolist()
+                print(f'  预热缓存(OHLCV+daily_basic+monthly)小universe({_nu}股<1500): fork 子进程共享, 免冗余取...')
+                prefetch_ohlcv(_all_codes)
+                prefetch_daily_basic(_all_codes)
+                prefetch_monthly(_all_codes)
+            else:
+                print(f'  universe {_nu}股≥1500: 跳过 parent preload(8GB OOM), 各 fork 子进程按块读本地')
+        except Exception as e:
+            print(f'  ⚠️ 缓存预热失败(子进程将各自取): {e}')
+        try:
+            df = derive_industry_valuation_growth(df)
+            df = derive_market_index_features(df)
+        except Exception as e:
+            print(f'  ⚠️ DB特征失败: {e}')
+        try:
+            df = derive_pb_vs_industry_pit(df)
+        except Exception as e:
+            print(f'  ⚠️ PB PIT 行业口径失败: {e}(保留原 peer 口径)')
+        # ── 3 个逐行派生改 ProcessPool 分块并行(因子逻辑不动) ──
+        try:
+            df = _derive_chunked(df, derive_strategy_signals)
+        except Exception as e:
+            import traceback
+            print(f'  ⚠️ 策略信号(H/I类)失败: {e}')
+            traceback.print_exc()
+        try:
+            df = _derive_chunked(df, derive_alpha_beta_factors)
+        except Exception as e:
+            import traceback
+            print(f'  ⚠️ 因子引擎(L类)失败: {e}')
+            traceback.print_exc()
+        try:
+            df = _derive_chunked(df, derive_monthly_trend)
+        except Exception as e:
+            import traceback
+            print(f'  ⚠️ 月线趋势(J类)失败: {e}')
+            traceback.print_exc()
+        try:
+            df = derive_market_trend(df)
+        except Exception as e:
+            import traceback
+            print(f'  ⚠️ 大盘趋势(K类)失败: {e}')
+            traceback.print_exc()
+
+        try:
+            df = derive_index_factor_features(df)
+        except Exception as e:
+            print(f'  ⚠️ 行业指数技术面失败: {e}')
+
+    # ====== 清理 ======
+    df = df.replace([np.inf, -np.inf], np.nan)
+    drop_present = [c for c in DROP_FIELDS if c in df.columns]
+    if drop_present:
+        df = df.drop(columns=drop_present)
+        print(f'  末尾剔除无信号字段: {len(drop_present)} 个')
+    return df
+
+
 def main():
     parser = argparse.ArgumentParser(description='定增特征衍生 - 从基础特征派生高级特征')
     parser.add_argument('input_path', nargs='?',
@@ -1054,6 +1766,7 @@ def main():
     parser.add_argument('--output', default=None,
                         help='输出路径 (默认: 同目录下 features_derived.parquet)')
     parser.add_argument('--no-db', action='store_true', help='跳过需MySQL的特征(F+G类)')
+    parser.add_argument('--skip-placement', action='store_true', help='跳过定增结构衍生(全A/回测 manifest 无定增原料时用)')
     args = parser.parse_args()
 
     # 输出路径
@@ -1072,97 +1785,8 @@ def main():
     orig_cols = len(df.columns)
     print(f'  {len(df)} 行 × {orig_cols} 列')
 
-    # ====== Stage 1: Parquet-only ======
-    print('\n' + '='*60)
-    print('Stage 1: Parquet-only 衍生特征')
-    print('='*60)
-
-    df = derive_fcf_growth_rates(df)
-    df = derive_fcf_cross_metrics(df)
-    df = derive_financial_score_deltas(df)
-    df = derive_valuation_relative(df)
-    df = derive_market_momentum(df)
-    df = derive_placement_structure(df)
-
-    # ====== Stage 2: DB-dependent ======
-    if not args.no_db:
-        print('\n' + '='*60)
-        print('Stage 2: DB-dependent 衍生特征')
-        print('='*60)
-        try:
-            df = derive_industry_valuation_growth(df)
-            df = derive_market_index_features(df)
-        except Exception as e:
-            print(f'  ⚠️ DB特征失败: {e}')
-
-        # D类补: PB_vs_同行中位 ← PIT 行业口径(覆盖 Stage1 的 peer 中位; 与回测同源; 需 daily_basic 网络)
-        try:
-            df = derive_pb_vs_industry_pit(df)
-        except Exception as e:
-            print(f'  ⚠️ PB PIT 行业口径失败: {e}(保留原 peer 口径)')
-
-        # H/I类: 三浪/抵抗策略信号(需tushare网络, 单独try, 失败不影响F/G)
-        try:
-            df = derive_strategy_signals(df)
-        except Exception as e:
-            import traceback
-            print(f'  ⚠️ 策略信号(H/I类)失败: {e}')
-            traceback.print_exc()
-
-        # L类: Beta+Alpha158 因子(需tushare网络, 复用 H/I 已热的 OHLCV 缓存, 失败不影响前面)
-        try:
-            df = derive_alpha_beta_factors(df)
-        except Exception as e:
-            import traceback
-            print(f'  ⚠️ 因子引擎(L类)失败: {e}')
-            traceback.print_exc()
-
-        # J类: 月线10月均线趋势(需tushare网络, 单独try, 失败不影响前面)
-        try:
-            df = derive_monthly_trend(df)
-        except Exception as e:
-            import traceback
-            print(f'  ⚠️ 月线趋势(J类)失败: {e}')
-            traceback.print_exc()
-
-        # K类: 大盘(沪深300)月线10月趋势(需tushare网络, 单独try; 标签regime驱动→有信号, 入模)
-        try:
-            df = derive_market_trend(df)
-        except Exception as e:
-            import traceback
-            print(f'  ⚠️ 大盘趋势(K类)失败: {e}')
-            traceback.print_exc()
-
-    # ====== 清理 ======
-    df = df.replace([np.inf, -np.inf], np.nan)
-
-    # ====== 末尾闸门：剔除确认无信号的字段（IV=0 标记/常数/标识）======
-    # 放在最后一步，拦住本脚本自己重新生成的字段（如 市场_above_MA250）
-    DROP_FIELDS = {
-        # 子场景通过标记（近常数，IV=0）
-        '市场指数_通过', '行业PE_通过', '个股PE_通过', 'DCF估值_通过',
-        '修正PE估值_通过', '参数构造_通过', '蒙特卡洛_通过', '反向推算_通过',
-        '子场景通过数', 'step1通过', 'step2通过', 'step3通过',
-        # 日期/行情标识（IV=0，不该入模）
-        '最新交易日', '行情_时间匹配', '财报年份', 'report_year',
-        # derive 重新生成的无信号字段
-        '市场_above_MA250',
-        # 定增参数（IV=0）
-        '溢价率', '溢价率下限', '锁定期', '融资金额', '无风险利率', 'Beta',
-        '定增建议参与', '有效阈值数',
-        # 行业代码文本（不该入模）
-        'sw_l1_code', 'sw_l1_name', 'sw_l2_code', 'sw_l2_name', 'sw_l3_code', 'sw_l3_name',
-        # 稀疏 FCF 营运资金变动
-        '营运资金变动_T', '营运资金变动_T1', '营运资金变动_T2', '营运资金变动_T3', '营运资金变动_T4',
-        # 弱/重复
-        '营业利润率', '营收增长率', '行业PS', '净债务', '净资产负债表',
-        # 行业级别：1391个唯一值(几乎每行不同)，非干净分级，脏数据
-        '行业级别',
-    }
-    drop_present = [c for c in DROP_FIELDS if c in df.columns]
-    if drop_present:
-        df = df.drop(columns=drop_present)
-        print(f'  末尾剔除无信号字段: {len(drop_present)} 个')
+    # 派生(可重用核心 run_derivation; placement 与 backtest 共用一套派生逻辑)
+    df = run_derivation(df, skip_placement=args.skip_placement, run_stage2=not args.no_db)
 
     # ====== 保存 ======
     new_cols_count = len(df.columns) - orig_cols

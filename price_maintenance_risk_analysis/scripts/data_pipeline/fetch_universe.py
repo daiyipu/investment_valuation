@@ -123,19 +123,30 @@ def fetch_namechange():
     return out
 
 
+_NC_INDEX = {}   # namechange 按 ts_code 预索引缓存(避免每次全表过滤)
+
+
 def is_st_at(namechange_df, ts_code, date_yyyymmdd):
-    """该股在 date 是否处于 ST/*ST 状态。date=YYYYMMDD。"""
+    """该股在 date 是否处于 ST/*ST 状态。date=YYYYMMDD。
+    用模块级 _NC_INDEX 按 ts_code 预索引(首次 groupby, 后续 O(1) 查表),
+    避免 gen_backtest_samples 百万次调用时每次全表过滤。"""
     if namechange_df is None or namechange_df.empty:
         return False
-    sub = namechange_df[namechange_df['ts_code'] == ts_code]
+    key = id(namechange_df)
+    if key not in _NC_INDEX:   # 首次: 按 ts_code 分组建索引(一次性)
+        _NC_INDEX.clear()
+        _NC_INDEX[key] = {c: g for c, g in namechange_df.groupby('ts_code')}
+    sub = _NC_INDEX[key].get(ts_code)
+    if sub is None:
+        return False
+    d = str(date_yyyymmdd)
     for _, r in sub.iterrows():
         s = str(r.get('start_date', ''))
         e = str(r.get('end_date', '') or '')
         name = str(r.get('name', ''))
-        if s and s <= date_yyyymmdd and (not e or e >= date_yyyymmdd):
+        if s and s <= d and (not e or e >= d):
             if 'ST' in name or '*ST' in name:
                 return True
-    # 也查当前 name(无变更记录但名字带 ST)
     return False
 
 
@@ -154,10 +165,8 @@ def in_universe_at(stock_row, date_yyyymmdd, namechange_df=None, min_list_years=
             return False
     except (ValueError, IndexError):
         return False
-    # 排 ST
-    cur_name = str(stock_row.get('name', ''))
-    if 'ST' in cur_name or '*ST' in cur_name:
-        return False
+    # 排 ST —— 仅用 PIT namechange(该日是否处于 ST/*ST 状态), 不用 stock_row['name']
+    # (后者是当前名=后视: 会把"后来才 ST"的股从所有历史日期剔除, 造成生存偏差)
     if namechange_df is not None and is_st_at(namechange_df, stock_row['ts_code'], date_yyyymmdd):
         return False
     return True
