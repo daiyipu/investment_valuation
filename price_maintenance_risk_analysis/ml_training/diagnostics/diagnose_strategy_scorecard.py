@@ -5,7 +5,7 @@ import numpy as np
 _HERE = os.path.dirname(os.path.abspath(__file__)); _ML = os.path.dirname(_HERE)
 sys.path.insert(0, os.path.join(_ML, 'pipeline'))   # 管线模块已移入 pipeline/
 sys.path.insert(0, _ML); os.chdir(_ML)               # 相对 data/output 路径
-from train_scorecard import calc_iv_all_features
+from train.train_scorecard import calc_iv_all_features
 
 DATA='data/features_derived.parquet'
 OLD_DIR='output/v_20260612_0009_scorecard_auc069' if os.path.exists('output/v_20260612_0009_scorecard_auc069') else 'output/v_20260612_0009_scorecard_12feat_auc069'

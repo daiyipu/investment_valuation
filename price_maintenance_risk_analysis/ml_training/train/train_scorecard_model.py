@@ -15,10 +15,12 @@ import pickle
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+PKG = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # train/→ml_training/→PKG
+for _p in (PKG, os.path.join(PKG,'ml_training'), os.path.join(PKG,'ml_training','pipeline'), os.path.join(PKG,'scripts')):
+    if _p not in sys.path: sys.path.insert(0, _p)
 from validate_methods import make_features, eval_metrics
 from feature_selection import select_features, pipeline_summary, IV_MIN, PSI_MAX, CORR_MAX, VIF_MAX
-from train_horizon_models import GRAY_CFG, build_label, _prep, _ret_col, _tag, _parse_horizon
+from train.train_horizon_models import GRAY_CFG, build_label, _prep, _ret_col, _tag, _parse_horizon
 from eval_loyo import fit_woe, apply_woe
 from db_model_store import save_model_meta
 from model_registry import register_version

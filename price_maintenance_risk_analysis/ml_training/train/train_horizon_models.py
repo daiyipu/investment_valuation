@@ -19,10 +19,12 @@ import argparse, os, sys, json, pickle
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+PKG = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # train/→ml_training/→PKG
+for _p in (PKG, os.path.join(PKG,'ml_training'), os.path.join(PKG,'ml_training','pipeline'), os.path.join(PKG,'scripts')):
+    if _p not in sys.path: sys.path.insert(0, _p)
 from validate_methods import make_features, eval_metrics
 from feature_exclusions import get_excluded_columns
-from train_models import LGB_PARAMS
+from train.train_models import LGB_PARAMS
 # 特征选择统一走标准模块 feature_selection(IV→PSI→去相关→VIF→LGBM), 不再各脚本各搞一套
 from feature_selection import (select_features, prune_by_lgb_importance,
                                pipeline_summary, IV_MIN, PSI_MAX, CORR_MAX, VIF_MAX)

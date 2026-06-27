@@ -573,7 +573,7 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
 
     # ── 加载数据 ──
-    from train_models import prepare_features_full
+    from train.train_models import prepare_features_full
     print('1. 加载特征数据...')
     if args.features_path.endswith('.parquet'):
         df = pd.read_parquet(args.features_path)

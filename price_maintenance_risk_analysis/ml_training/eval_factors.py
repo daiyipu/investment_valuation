@@ -27,7 +27,7 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))            # ml_training/
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'pipeline'))  # 管线模块
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # PKG(utils)
-from train_scorecard import calc_iv_all_features   # noqa: E402
+from train.train_scorecard import calc_iv_all_features   # noqa: E402
 from sklearn.metrics import roc_auc_score          # noqa: E402
 
 # bar 粒度 → 对齐的 target 期限。全部生产口径 GRAY_CFG(gray); quantile p25/p75 已移除。
@@ -55,7 +55,7 @@ def build_labels(df):
 
     1w/2w/1m/3m/7m 各用 GRAY_CFG sweep 定的阈值。quantile p25/p75 方案已移除(2026-06-22)。
     """
-    from train_horizon_models import GRAY_CFG
+    from train.train_horizon_models import GRAY_CFG
     for h, rc in HORIZON_RET.items():
         lo, hi = GRAY_CFG[HORIZON_GK[h]]
         r = pd.to_numeric(df[rc], errors='coerce')
@@ -81,7 +81,7 @@ def load_parquet(path):
 
     不用 parquet 预算列(预算列口径可能与生产不一致); 1w/2w/1m/3m/7m 统一从 GRAY_CFG 重算。
     """
-    from train_horizon_models import GRAY_CFG
+    from train.train_horizon_models import GRAY_CFG
     df = pd.read_parquet(path)
     parq_rc = {'1w': '1周涨跌幅', '2w': '2周涨跌幅', '1m': '1个月涨跌幅', '3m': '3个月涨跌幅', '7m': '7个月涨跌幅'}
     for h, rc in parq_rc.items():

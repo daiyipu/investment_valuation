@@ -28,10 +28,12 @@ import pandas as pd
 from scipy.stats import spearmanr
 from sklearn.metrics import roc_auc_score
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+PKG = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # train/→ml_training/→PKG
+for _p in (PKG, os.path.join(PKG,'ml_training'), os.path.join(PKG,'ml_training','pipeline'), os.path.join(PKG,'scripts')):
+    if _p not in sys.path: sys.path.insert(0, _p)
 from validate_methods import make_features, calc_ks, eval_metrics
 from feature_selection import select_features
-from train_horizon_models import _prep, _train, _ret_col, _tag, _parse_horizon
+from train.train_horizon_models import _prep, _train, _ret_col, _tag, _parse_horizon
 
 
 def _fold(dtr, dte, lo, hi, h):

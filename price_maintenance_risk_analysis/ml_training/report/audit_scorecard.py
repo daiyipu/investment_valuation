@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'pipeline'))   # 管线模块已移入 pipeline/
 from model_registry import get_current
 from db_model_store import load_predict_bundle, get_model_meta
-from train_scorecard import calc_iv_all_features
+from train.train_scorecard import calc_iv_all_features
 from report.feature_glossary import explain
 
 PARQUET = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'features_derived.parquet')
@@ -37,7 +37,7 @@ PARQUET = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'feat
 
 def _gray_label(df, horizon=7):
     """horizon 个月 gray 标签, 用生产口径 GRAY_CFG(与训练一致)。"""
-    from train_horizon_models import GRAY_CFG
+    from train.train_horizon_models import GRAY_CFG
     lo, hi = GRAY_CFG.get(horizon, (-20, 10))
     col = f'{horizon}个月涨跌幅'
     s = pd.to_numeric(df[col], errors='coerce') if col in df.columns else pd.Series(np.nan, index=df.index)

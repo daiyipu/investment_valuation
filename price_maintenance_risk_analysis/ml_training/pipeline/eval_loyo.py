@@ -33,7 +33,7 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from validate_methods import make_features, eval_metrics
 from feature_selection import select_features, prune_by_lgb_importance
-from train_horizon_models import GRAY_CFG, HORIZONS, build_label, _prep, _train, _ret_col, _tag, _parse_horizon
+from train.train_horizon_models import GRAY_CFG, HORIZONS, build_label, _prep, _train, _ret_col, _tag, _parse_horizon
 
 
 # ─────────────── 自包含 WOE(防 test 标签泄漏) ───────────────
@@ -229,7 +229,7 @@ def _eval_fold_fixed(dtr, dte, horizon, kind, features):
     m.fit(Xtr_w.replace([np.inf, -np.inf], np.nan).fillna(0), ytr)
     asc = eval_metrics(yte.values, m.predict_proba(
         Xte_w.replace([np.inf, -np.inf], np.nan).fillna(0))[:, 1])
-    from train_horizon_models import _incl_thr
+    from train.train_horizon_models import _incl_thr
     full = _ic_full(dte, feats, med, gbm, lr, sc_lr, m, wb, ret, _incl_thr(horizon))  # 全行 IC + 含灰 AUC/KS
     return {'lgb_auc': al['auc'], 'lgb_ks': al['ks'], 'lr_auc': ar['auc'],
             'lr_ks': ar['ks'], 'sc_auc': asc['auc'], 'sc_ks': asc['ks'], 'n_feat': len(feats),

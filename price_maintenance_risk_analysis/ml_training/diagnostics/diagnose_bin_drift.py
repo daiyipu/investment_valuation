@@ -5,7 +5,7 @@ import pandas as pd
 _HERE = os.path.dirname(os.path.abspath(__file__)); _ML = os.path.dirname(_HERE)
 sys.path.insert(0, os.path.join(_ML, 'pipeline'))   # 管线模块已移入 pipeline/
 sys.path.insert(0, _ML); os.chdir(_ML)               # predict_profitability + 相对 data/output 路径
-from train_scorecard import woe_transform
+from train.train_scorecard import woe_transform
 from predict_profitability import _parse_interval
 
 DATA='data/features_derived.parquet'

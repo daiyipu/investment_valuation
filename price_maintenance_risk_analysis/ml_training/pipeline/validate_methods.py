@@ -34,7 +34,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 sys.path.insert(0, os.path.dirname(SCRIPT_DIR))   # ml_training/(compare_selection/predict_profitability 在根)
 
-from train_scorecard import (
+from train.train_scorecard import (
     calc_iv_all_features, woe_transform, train_scorecard_lr, build_scorecard,
 )
 from report.compare_selection import lasso_select, stepwise_aic

@@ -32,7 +32,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from train_scorecard import calc_iv_all_features, remove_correlated, filter_by_vif
+from train.train_scorecard import calc_iv_all_features, remove_correlated, filter_by_vif
 
 # ─────────────── 固定阈值(定标, 勿轻易改) ───────────────
 IV_MIN = 0.01      # 步1: IV 下限(2026-06-21 由 0.02 放宽; 前门放宽, 让 PSI/corr/VIF/共识/LOO 后段流程自己筛合理指标, 缓解 IV 单变量+train锚定偏见)

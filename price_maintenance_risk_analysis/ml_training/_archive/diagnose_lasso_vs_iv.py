@@ -27,7 +27,7 @@ from scipy.stats import spearmanr
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from train_horizon_models import _prep, GRAY_CFG
+from train.train_horizon_models import _prep, GRAY_CFG
 from validate_methods import make_features, calc_ks
 from feature_selection import select_features
 

@@ -23,7 +23,7 @@ from db_model_store import load_predict_bundle, list_model_metas, get_model_meta
 from model_registry import get_current
 from eval_loyo import apply_woe
 from validate_methods import calc_ks
-from train_horizon_models import GRAY_CFG
+from train.train_horizon_models import GRAY_CFG
 
 PARQUET = os.path.join(HERE, 'data', 'features_derived.parquet')
 

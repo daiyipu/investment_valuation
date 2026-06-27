@@ -20,8 +20,8 @@ SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # ml_t
 sys.path.insert(0, SCRIPT_DIR)
 sys.path.insert(0, os.path.join(SCRIPT_DIR, 'pipeline'))   # 管线模块已移入 pipeline/
 
-from train_models import prepare_features_full
-from train_scorecard import calc_iv_all_features, woe_transform
+from train.train_models import prepare_features_full
+from train.train_scorecard import calc_iv_all_features, woe_transform
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 from sklearn.preprocessing import StandardScaler
