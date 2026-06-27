@@ -1,13 +1,4 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-批量财务评分脚本
-读取上市公司清单，自动计算近5年财务评分，结果写回Excel
-
-用法:
-    python price_maintenance_risk_analysis/scripts/batch_financial_score.py
-    python scripts/batch_financial_score.py <excel_path>
-"""
+# ====== batch_financial_score (score) ======
 
 import sys
 import os
@@ -594,7 +585,7 @@ def score_company(fetcher: TushareDataFetcher, threshold_calc: IndustryThreshold
     return results
 
 
-def main():
+def main_score():
     import argparse
     parser = argparse.ArgumentParser(description='批量财务评分（支持行级增量续跑）')
     parser.add_argument('excel_path', help='输入Excel（screening结果）；若对应 _scored 已存在则续传补算')
@@ -848,5 +839,467 @@ def main():
     print(f"\n完成! 结果文件: {output_path}")
 
 
+
+
+# ====== backfill_financial_indicators (indicators) ======
+import argparse
+import os
+import sys
+import time
+import numpy as np
+import pandas as pd
+import pymysql
+import tushare as ts
+
+# 复用 EFAES 的财务比率算法(与定增训练集同源同公式)
+EFAES_PATH = '/Users/davy/github/EFAES'
+if EFAES_PATH not in sys.path:
+    sys.path.insert(0, EFAES_PATH)
+from src.core.calculate_financial_ratios import calculate_financial_ratios  # noqa: E402
+
+# tushare token: 走 resolve_tushare_token(不再硬编码; 旧 literal f2380... 已泄漏, 需在 tushare.pro 轮换)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from tushare_token import resolve_tushare_token  # noqa: E402
+os.environ.setdefault('TUSHARE_TOKEN', resolve_tushare_token())
+
+TABLE_FIELDS = [
+    'current_ratio', 'quick_ratio', 'inv_turn', 'ar_turn', 'ca_turn', 'assets_turn',
+    'roa', 'npta', 'roe', 'roe_dt', 'netprofit_margin', 'grossprofit_margin',
+    'debt_to_assets', 'int_to_talcap', 'debt_to_eqt', 'ebit_to_interest',
+    'cash_to_liqdebt', 'cash_to_liqdebt_withinterest', 'rd_exp_ratio',
+    'op_yoy', 'ebt_yoy', 'netprofit_yoy', 'dt_netprofit_yoy', 'roe_yoy',
+    'tr_yoy', 'or_yoy', 'equity_yoy',
+]
+# fina_indicator 不提供、必须从报表算的 5 个
+NEED_STATEMENT = ['inv_turn', 'ebit_to_interest', 'cash_to_liqdebt',
+                  'cash_to_liqdebt_withinterest', 'rd_exp_ratio']
+
+
+def _fetch_statements(pro, code, start, end):
+    """取三张表的年报行，附 report_year 列。"""
+    out = {}
+    for name, fn in [('balancesheet', pro.balancesheet),
+                     ('income', pro.income),
+                     ('cashflow', pro.cashflow)]:
+        df = pd.DataFrame()
+        for attempt in range(3):  # tushare 限频会返回空 → 退避重试
+            try:
+                df = fn(ts_code=code, start_date=start, end_date=end)
+            except Exception:
+                df = pd.DataFrame()
+            if df is not None and len(df) > 0:
+                break
+            time.sleep(1.5 * (attempt + 1))
+        time.sleep(0.25)
+        if df is None or len(df) == 0 or 'end_date' not in df.columns:
+            out[name] = pd.DataFrame(columns=['report_year'])
+            continue
+        ed = df['end_date'].astype(str)
+        mask = ed.str.endswith('1231')
+        df = df[mask].copy()
+        df['report_year'] = ed[mask].str[:4].astype(int).values
+        out[name] = df.reset_index(drop=True)
+    return out
+
+
+def main_indicators():
+    ap = argparse.ArgumentParser(description='回填 financial_indicators(三表算法, 与定增同源)')
+    ap.add_argument('excel', help='含 股票代码 列的 Excel')
+    ap.add_argument('--token', default=None, help='tushare token(默认走 resolve_tushare_token)')
+    ap.add_argument('--years', type=int, default=5)
+    ap.add_argument('--start-year', type=int, default=2016)  # 多取几年供平均值(当年+上年)
+    ap.add_argument('--end-year', type=int, default=2025)
+    ap.add_argument('--force', action='store_true',
+                    help='全量重算 Excel 每只(新股建行 + 既有行 DELETE+INSERT 覆盖); '
+                         '不加则只补"既有行里 5 报表字段缺失"的股(回测全A新股原本无行, null-filter 会漏掉, 必加)')
+    args = ap.parse_args()
+
+    ex = pd.read_excel(args.excel, sheet_name='Sheet1')
+    codes = [str(c) for c in ex['股票代码'].dropna().unique()]
+    conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', password='',
+                           database='investment_valuation', charset='utf8mb4')
+    if args.force:
+        # 全量: Excel 每只都重算(下方 INSERT 前先 DELETE, 幂等覆盖)。回测全A必走此路——
+        # 新股原本无 financial_indicators 行, 默认 null-filter 只查"既有行缺字段"会整批漏掉。
+        missing = codes
+        print(f'--force 全量重算: Excel {len(codes)} 只(新股建行 + 既有行覆盖)')
+    else:
+        # 默认: 只补"既有行里 5 报表字段缺失"的(即只被 fina_indicator 快捷覆盖、缺 inv_turn/rd_exp_ratio)
+        cs = ','.join([f"'{c}'" for c in codes])
+        null_sql = (f"SELECT DISTINCT stock_code FROM financial_indicators "
+                    f"WHERE stock_code IN ({cs}) AND (inv_turn IS NULL OR rd_exp_ratio IS NULL)")
+        null_codes = set(pd.read_sql(null_sql, conn)['stock_code'])
+        missing = [c for c in codes if c in null_codes]
+        print(f'Excel {len(codes)} 只; 缺 5 报表字段待重算: {len(missing)}(回测全A新股请加 --force)')
+
+    pro = ts.pro_api(args.token or os.environ['TUSHARE_TOKEN'])
+    cur = conn.cursor()
+    sd, ed = f'{args.start_year}0101', f'{args.end_year}1231'
+    target_years = list(range(args.end_year - args.years + 1, args.end_year + 1))
+    cols = ['stock_code', 'report_year'] + TABLE_FIELDS + ['used_average_values', 'valid_indicator_count', 'ann_date', 'end_date']
+    ins_sql = f"INSERT INTO financial_indicators ({', '.join(cols)}) VALUES ({', '.join(['%s']*len(cols))})"
+
+    ok = rows = fail = 0
+    for i, code in enumerate(missing):
+        try:
+            stmts = _fetch_statements(pro, code, sd, ed)
+            bs, isc, cf = stmts['balancesheet'], stmts['income'], stmts['cashflow']
+            if len(bs) == 0 or len(isc) == 0:
+                fail += 1
+                continue
+            computed = []  # (year, [27 vals], valid_count)
+            for yr in target_years:
+                try:
+                    ratios = calculate_financial_ratios(bs, isc, cf, yr)
+                except Exception:
+                    continue
+                if not ratios:
+                    continue
+                vals, vc = [], 0
+                for f in TABLE_FIELDS:
+                    v = ratios.get(f)
+                    try:
+                        v = float(v)
+                    except (TypeError, ValueError):
+                        v = None
+                    if v is None or v != v or np.isinf(v):
+                        v = None
+                    else:
+                        vc += 1
+                    vals.append(v)
+                if vc > 0:
+                    is_row = isc[isc['report_year'] == yr]
+                    ad = ed_ = None
+                    if len(is_row) > 0:
+                        ad = str(is_row.iloc[0].get('ann_date', ''))[:8]
+                        ed_ = str(is_row.iloc[0].get('end_date', ''))[:8]
+                        ad = ad if ad.isdigit() else None
+                        ed_ = ed_ if ed_.isdigit() else None
+                    computed.append((yr, vals, vc, ad, ed_))
+            if not computed:
+                fail += 1
+                continue
+            cur.execute('DELETE FROM financial_indicators WHERE stock_code=%s', (code,))
+            for yr, vals, vc, ad, ed_ in computed:
+                cur.execute(ins_sql, [code, yr] + vals + [0, vc, ad, ed_])
+                rows += 1
+            ok += 1
+            if (i + 1) % 25 == 0:
+                conn.commit()
+                print(f'  进度 {i+1}/{len(missing)} ...')
+        except Exception as e:
+            fail += 1
+            print(f'  {code} 失败: {e}')
+    conn.commit()
+    conn.close()
+    print(f'完成: {ok}/{len(missing)} 只成功, 插入 {rows} 行, 失败 {fail}')
+
+
+
+
+# ====== bulk_backfill_early_scores (early) ======
+import os, sys, time, argparse, threading
+sys.path.insert(0, os.path.expanduser('~/github/EFAES'))
+from src.web.config import DB_CONFIG, TUSHARE_TOKEN
+from src.core.calculate_financial_score import FinancialScoringCard
+import tushare as ts, pandas as pd, numpy as np
+from concurrent.futures import ThreadPoolExecutor
+
+PRO = ts.pro_api(TUSHARE_TOKEN)
+NEG = {'debt_to_assets', 'int_to_talcap', 'debt_to_eqt'}
+INDICATORS = ['inv_turn', 'ar_turn', 'ca_turn', 'assets_turn', 'netprofit_margin', 'grossprofit_margin',
+              'roe', 'roe_dt', 'roa', 'npta', 'current_ratio', 'quick_ratio', 'cash_to_liqdebt',
+              'cash_to_liqdebt_withinterest', 'debt_to_assets', 'int_to_talcap', 'debt_to_eqt', 'ebit_to_interest',
+              'netprofit_yoy', 'dt_netprofit_yoy', 'roe_yoy', 'tr_yoy', 'or_yoy', 'equity_yoy', 'op_yoy', 'ebt_yoy',
+              'rd_exp_ratio']
+_VIP_SEM = threading.Semaphore(4)  # vip 接口并发上限
+
+
+def _vip(fn, period):
+    for attempt in range(3):
+        try:
+            with _VIP_SEM:
+                d = getattr(PRO, fn)(period=period)
+            if d is not None and not d.empty:
+                return d
+        except Exception as e:
+            print(f'    {fn}({period}) 重试{attempt}: {str(e)[:80]}')
+            time.sleep(1.0 * (attempt + 1))
+    return None
+
+
+def bulk_indicators(years):
+    """fina_indicator_vip 按期拉全市场财务指标(与 fina_indicator 同字段, vip 支持按期批量)。
+    过滤年报(end_date==period), 按 ts_code 去重(保留最新 ann_date)。返回含 report_year 的 DataFrame。"""
+    frames = []
+    for y in years:
+        d = _vip('fina_indicator_vip', f'{y}1231')
+        if d is None or d.empty:
+            print(f'  fina_indicator_vip({y}): 空')
+            continue
+        d = d[d['end_date'].astype(str) == f'{y}1231'].copy()
+        if d.empty:
+            continue
+        d = d.sort_values('ann_date', ascending=False).drop_duplicates('ts_code', keep='first')
+        d['report_year'] = y
+        frames.append(d)
+        print(f'  fina_indicator_vip({y}): {len(d)} 公司')
+    ratios = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    if not ratios.empty:
+        ratios['ts_code'] = ratios['ts_code'].astype(str)
+        print(f'  合并: {len(ratios)} 行, {ratios["ts_code"].nunique()} 公司, '
+              f'{ratios["report_year"].min()}~{ratios["report_year"].max()}年')
+    return ratios
+
+
+def industry_of(ts_code):
+    """index_member_all 反查申万行业(支持并发, 退避重试)。返回名称+code(code 用于正向取成分)。"""
+    for attempt in range(3):
+        try:
+            d = PRO.index_member_all(ts_code=ts_code)
+            if d is not None and not d.empty:
+                r = d.sort_values('in_date', ascending=False).iloc[0]
+                if r.get('l3_name'):
+                    return {'l3': r.get('l3_name'), 'l3_code': r.get('l3_code'),
+                            'l2': r.get('l2_name'), 'l2_code': r.get('l2_code'),
+                            'l1': r.get('l1_name'), 'l1_code': r.get('l1_code')}
+                return None  # 非空但无三级 → 真无分类, 不重试
+        except Exception:
+            pass
+        if attempt < 2:
+            time.sleep(0.5 * (attempt + 1))
+    return None
+
+
+def members_by_code(code, level):
+    """index_member_all 正向(按 l3_code/l2_code)取行业成分股 ts_code, 带重试。
+    index_member_all 单接口双向: 反查用 ts_code, 正查用 l3_code/l2_code(注意用 code 不是 name,
+    name 不被识别会返回全量)。并发友好, 替代 index_classify+index_member 两步。"""
+    if not code:
+        return []
+    for attempt in range(3):
+        try:
+            d = PRO.index_member_all(**{f'{level}_code': code})
+            if d is not None and not d.empty:
+                return d['ts_code'].astype(str).unique().tolist()
+            return []  # 非空但无成分 → 真无
+        except Exception:
+            if attempt < 2:
+                time.sleep(0.6 * (attempt + 1))
+    return []
+
+
+def compute_thresholds(ratios, industry_members_map):
+    """按 (行业, 年) 出阈值 {indicator: {极差/较差/中等/良好/优秀}}。负向指标反向。"""
+    thresholds = {}
+    for l3, members in industry_members_map.items():
+        if not members:
+            continue
+        sub = ratios[ratios['ts_code'].isin(members)]
+        for y, g in sub.groupby('report_year'):
+            if len(g) < 5:
+                continue
+            t = {}
+            for col in INDICATORS:
+                if col not in g.columns:
+                    continue
+                vals = g[col].replace([np.inf, -np.inf], np.nan).dropna()
+                if len(vals) < 5:
+                    continue
+                p10, p30, p50, p70, p90 = (vals.quantile(q) for q in (0.1, 0.3, 0.5, 0.7, 0.9))
+                if pd.isna(p50):
+                    continue
+                if col in NEG:
+                    t[col] = {'优秀': p10, '良好': p30, '中等': p50, '较差': p70, '极差': p90}
+                else:
+                    t[col] = {'极差': p10, '较差': p30, '中等': p50, '良好': p70, '优秀': p90}
+            if len(t) >= 10:
+                thresholds[(l3, int(y))] = t
+    return thresholds
+
+
+def score_stock(ts_code, t_year, ind_info, ratios, thr_l3, thr_l2, scorer):
+    """本地评一只股 T-4..T 年。阈值三级→二级 回退(冷门三级样本不足时兜底)。"""
+    results = {}
+    l3 = ind_info.get('l3') if ind_info else None
+    l2 = ind_info.get('l2') if ind_info else None
+    for y in range(t_year - 4, t_year + 1):
+        rrow = ratios[(ratios['ts_code'] == ts_code) & (ratios['report_year'] == y)]
+        thr = thr_l3.get((l3, y)) or thr_l2.get((l2, y))
+        if rrow.empty or not thr:
+            continue
+        ratios_dict = {k: v for k, v in rrow.iloc[0].to_dict().items()
+                       if k not in ('ts_code', 'company_name', 'ann_date', 'end_date', 'report_year', 'used_average_values')}
+        scorer.set_industry_thresholds(thr)
+        scorer.load_company_data(ratios_dict, ts_code)
+        sc = scorer.calculate_score()
+        results[y] = {'总分': round(sc['总得分'], 2), '评级': scorer.get_rating(sc['总得分']),
+                      '盈利能力': round(sc['维度得分'].get('盈利能力', 0), 2),
+                      '成长能力': round(sc['维度得分'].get('成长能力', 0), 2),
+                      '运营能力': round(sc['维度得分'].get('运营能力', 0), 2),
+                      '偿债能力': round(sc['维度得分'].get('偿债能力', 0), 2)}
+    return results
+
+
+def save_to_db(stock_code, ind_info, results):
+    import pymysql
+    if not results:
+        return
+    conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', password='',
+                           database='investment_valuation', charset='utf8mb4')
+    try:
+        with conn.cursor() as cur:
+            for year, r in results.items():
+                cur.execute("""INSERT INTO company_annual_scores
+                    (stock_code, report_year, total_score, rating, profitability, growth, operating, solvency,
+                     industry_l1, industry_l2, industry_l3)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    ON DUPLICATE KEY UPDATE total_score=VALUES(total_score), rating=VALUES(rating),
+                    profitability=VALUES(profitability), growth=VALUES(growth), operating=VALUES(operating),
+                    solvency=VALUES(solvency), industry_l1=VALUES(industry_l1), industry_l2=VALUES(industry_l2),
+                    industry_l3=VALUES(industry_l3)""",
+                            (stock_code, year, r['总分'], r['评级'], r['盈利能力'], r['成长能力'], r['运营能力'], r['偿债能力'],
+                             (ind_info or {}).get('l1'), (ind_info or {}).get('l2'), (ind_info or {}).get('l3')))
+            conn.commit()
+    finally:
+        conn.close()
+
+
+def main_early():
+    ap = argparse.ArgumentParser(description='Bulk vip 回填 2010-2016 年度评分')
+    ap.add_argument('excel', help='输入 Excel(股票代码/股票简称/报价日)')
+    ap.add_argument('--limit', type=int, default=0, help='只处理前N只(0=全部)')
+    args = ap.parse_args()
+
+    df = pd.read_excel(args.excel)
+    df = df.rename(columns={c: c.strip() for c in df.columns})
+    placements = [(str(r['股票代码']).strip(), int(str(r['报价日']).strip()[:4]))
+                  for _, r in df.iterrows() if pd.notna(r['股票代码'])]
+    if args.limit:
+        placements = placements[:args.limit]
+    print(f'待回填: {len(placements)} 只股')
+
+    # 年份范围(报价日 T-4..T 的并集; +1年做增长率基期)
+    yrs = sorted({t - 4 for _, t in placements} | {t for _, t in placements})
+    fetch_years = list(range(min(yrs) - 1, max(yrs) + 1))
+    print(f'取数年份(含增长基期): {fetch_years[0]}~{fetch_years[-1]}')
+
+    print('\n[1/3] fina_indicator_vip 按期拉全市场指标...')
+    ratios = bulk_indicators(fetch_years)
+    ratios['report_year'] = ratios['report_year'].astype(int)
+
+    print('\n[2/3] 各股行业反查 + 三级/二级成分股 + 全部(行业,年)阈值...')
+    unique_codes = sorted({c for c, _ in placements})
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        ind_map = dict(ex.map(lambda c: (c, industry_of(c)), unique_codes))
+    print(f'  {len(unique_codes)} 只唯一股 / {len(placements)} 条placement')
+    unique_l3 = sorted({i['l3'] for i in ind_map.values() if i and i.get('l3')})
+    unique_l2 = sorted({i['l2'] for i in ind_map.values() if i and i.get('l2')})
+    print(f'  涉及 {len(unique_l3)} 个三级 / {len(unique_l2)} 个二级行业')
+
+    def _code_for(name, name_key, code_key):
+        return next((i.get(code_key) for i in ind_map.values() if i and i.get(name_key) == name), None)
+
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        mm_l3 = dict(zip(unique_l3, ex.map(lambda n: members_by_code(_code_for(n, 'l3', 'l3_code'), 'l3'), unique_l3)))
+        mm_l2 = dict(zip(unique_l2, ex.map(lambda n: members_by_code(_code_for(n, 'l2', 'l2_code'), 'l2'), unique_l2)))
+    thr_l3 = compute_thresholds(ratios, mm_l3)
+    thr_l2 = compute_thresholds(ratios, mm_l2)
+    print(f'  阈值: 三级 {len(thr_l3)} / 二级 {len(thr_l2)} 个(行业,年)组合')
+
+    print('\n[3/3] 本地评分 + 落库...')
+    scorer = FinancialScoringCard(DB_CONFIG)
+    ok = 0
+    for i, (code, t_year) in enumerate(placements, 1):
+        ind = ind_map.get(code)
+        if not ind or not (ind.get('l3') or ind.get('l2')):
+            continue
+        results = score_stock(code, t_year, ind, ratios, thr_l3, thr_l2, scorer)
+        if results:
+            save_to_db(code, ind, results)
+            ok += 1
+        if i % 50 == 0 or i == len(placements):
+            print(f'  [{i}/{len(placements)}] 已评分 {ok} 只')
+    print(f'\n完成: {ok}/{len(placements)} 只股评分落库')
+
+
+
+
+# ====== backfill_ann_date (ann_date) ======
+import argparse
+import os
+import sys
+import time
+import pymysql
+import tushare as ts
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from tushare_token import resolve_tushare_token   # noqa: E402
+os.environ.setdefault('TUSHARE_TOKEN', resolve_tushare_token())
+
+
+def main_ann_date():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--token', default=None, help='tushare token(默认走 resolve_tushare_token)')
+    ap.add_argument('--sleep', type=float, default=0.18)
+    args = ap.parse_args()
+
+    conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', password='',
+                           database='investment_valuation', charset='utf8mb4')
+    cur = conn.cursor()
+    cur.execute('SELECT DISTINCT stock_code FROM financial_indicators WHERE ann_date IS NULL')
+    codes = [r[0] for r in cur.fetchall()]
+    print(f'待回填 ann_date 的股票: {len(codes)}')
+
+    pro = ts.pro_api(args.token or os.environ['TUSHARE_TOKEN'])
+    ok = rows = fail = 0
+    for i, code in enumerate(codes):
+        try:
+            df = None
+            for attempt in range(3):  # 限频退避
+                try:
+                    df = pro.fina_indicator(ts_code=code, start_date='20140101', end_date='20251231')
+                except Exception:
+                    df = None
+                if df is not None and len(df) > 0:
+                    break
+                time.sleep(1.2 * (attempt + 1))
+            time.sleep(args.sleep)
+            if df is None or len(df) == 0 or 'ann_date' not in df.columns:
+                fail += 1
+                continue
+            # 取年报(end_date 以 1231 结尾), 建 report_year -> (ann_date, end_date)
+            ann_map = {}
+            for _, r in df.iterrows():
+                ed = str(r.get('end_date', ''))
+                if not ed.endswith('1231'):
+                    continue
+                yr = int(ed[:4])
+                ad = str(r.get('ann_date', '') or '')
+                if ad and ad != 'nan':
+                    ann_map[yr] = (ad[:8], ed[:8])
+            if not ann_map:
+                fail += 1
+                continue
+            # UPDATE 该股票对应 report_year 的 ann_date/end_date
+            for yr, (ad, ed) in ann_map.items():
+                cur.execute(
+                    'UPDATE financial_indicators SET ann_date=%s, end_date=%s WHERE stock_code=%s AND report_year=%s',
+                    (ad, ed, code, yr))
+                rows += cur.rowcount
+            conn.commit()
+            ok += 1
+            if (i + 1) % 50 == 0:
+                print(f'  进度 {i+1}/{len(codes)} ...')
+        except Exception as e:
+            fail += 1
+            print(f'  {code} 失败: {e}')
+    conn.close()
+    print(f'完成: {ok}/{len(codes)} 只成功, 更新 {rows} 行, 失败 {fail}')
+
+
+
 if __name__ == '__main__':
-    main()
+    _cmd=sys.argv[1] if len(sys.argv)>1 else 'score'
+    sys.argv=[sys.argv[0]]+sys.argv[2:]
+    {'score': main_score, 'indicators': main_indicators, 'early': main_early, 'ann_date': main_ann_date}[_cmd]()
