@@ -889,6 +889,7 @@ def main():
                         help='(已废弃，评分/标签现从 DB 读取) 保留仅作兼容，不再使用')
     parser.add_argument('--output', default=None, help='输出文件路径(默认ml_training/data/features.parquet)')
     parser.add_argument('--no-mysql', action='store_true', help='跳过fund_risk_control数据')
+    parser.add_argument('--limit', type=int, default=0, help='仅前 N 样本(0=全部, smoke 用)')
     args = parser.parse_args()
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -898,6 +899,8 @@ def main():
     # ── 1. 从 placement_evaluation 取样本键 + 财务评分/标签 ──
     print('1. 从 DB 加载样本键 (placement_evaluation)...')
     sample_keys = load_sample_keys_from_db()
+    if args.limit:
+        sample_keys = sample_keys[:args.limit]
     print(f'   {len(sample_keys)} 条 (stock_code, issue_date)')
     if not sample_keys:
         print('   ⚠️ placement_evaluation 无数据，请先运行 scripts/data_pipeline/backfill_evaluations.py')
@@ -934,47 +937,31 @@ def main():
 
     stock_codes = scored['股票代码'].tolist()
 
-    # ── 2. 从investment_valuation加载全部DB特征 ──
-    print('2. 加载investment_valuation DB特征...')
-    # sample_keys 与 scored/load_db_features 三者行顺序一致，按行索引对齐
-    db_feats = load_db_features(sample_keys)
-    matched = db_feats['当前价'].notna().sum()
-    print(f'   行情数据: {matched}/{len(stock_codes)}')
-    time_match = db_feats.get('行情_时间匹配')
-    if time_match is not None:
-        exact = (time_match == 1).sum()
-        recalc = (time_match == 0).sum()
-        missing = (time_match == -1).sum()
-        print(f'   行情时间匹配: 精确={exact}, 回算={recalc}, 无数据={missing}')
-    matched_ind = db_feats['行业波动率_20d'].notna().sum()
-    print(f'   行业数据: {matched_ind}/{len(stock_codes)}')
-    matched_peer = db_feats['同行公司数'].notna().sum()
-    print(f'   同行数据: {matched_peer}/{len(stock_codes)}')
+    # ── 2. build_features: PIT 特征装配唯一入口(定增/回测/predict 三产线共用, 三层一入口·组装层) ──
+    # 收敛自 load_db_features(快照 market_data/relative_valuation/peer_companies, 非PIT) + 独立
+    # load_financial_ratios → 合并为 build_features 一次出。build_features 内部:
+    # prefetch_ohlcv → 基列(FCF/评分/财务比率, PIT) → run_derivation(11派生) → specials(NB+SUE)。
+    # 已训模型存 DB(ml_model_meta)不受影响; 此处只改"未来训练"用的特征源(快照→PIT, 正泄漏口径)。
+    print('2. build_features PIT 装配(与回测同源)...')
+    # scripts/ 上路(build_backtest_panel 所在; 模块级 path 设置在 main() 调用之后, 就地补)
+    _scripts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'scripts')
+    if _scripts_dir not in sys.path:
+        sys.path.insert(0, _scripts_dir)
+    from build_backtest_panel import build_features as _build_features
+    samples_df = pd.DataFrame(sample_keys, columns=['股票代码', '报价日'])
+    db_feats = _build_features(samples_df, skip_placement=True).reset_index(drop=True)
+    print(f'   build_features: {len(db_feats)} 行 × {len(db_feats.columns)} 列 (PIT, 与回测同源; 定增结构特征模型不用且在EXCLUDE内, scored带标签/最终结论)')
 
-    # ── 3. 从fund_risk_control加载财务比率（三表已弃用：fund_risk_control 仅7家数据，
-    #        覆盖率0.43%，且与 financial_indicators API 比率表重复，全部 importance=0）──
-    if not args.no_mysql:
-        print('3. 加载财务比率(financial_indicators)...')
-        ratio_feats = load_financial_ratios(sample_keys)
-    else:
-        ratio_feats = pd.DataFrame()
-
-    # ── 4. 合并所有特征 ──
-    print('4. 合并全部特征...')
-    # 用行索引对齐（避免重复股票代码的笛卡尔积）
+    # ── 3. 合并 scored(评分/标签/最终结论, placement_evaluation 权威源) + build_features(PIT 特征) ──
+    print('3. 合并 scored + PIT 特征...')
     scored = scored.reset_index(drop=True)
-    db_feats = db_feats.reset_index(drop=True)
-    # 去掉 db_feats 中与 scored 同名的列（如 股票代码/报价日/报价日价格/定增决策…），
-    # 一律取 scored（来自 placement_evaluation，权威源）的版本，避免 concat 后出现重名列。
+    # 去掉 build_features 中与 scored 同名的列(股票代码/报价日/总分/盈利能力/成长能力 等),
+    # 一律取 scored(placement_evaluation 权威源)版本, 避免 concat 重名列。
     _dup_cols = set(scored.columns) & set(db_feats.columns)
     if _dup_cols:
         print(f'   去重列(取scored版): {sorted(_dup_cols)}')
     db_feat_cols = [c for c in db_feats.columns if c not in _dup_cols]
     merged = pd.concat([scored, db_feats[db_feat_cols]], axis=1)
-
-    # 财务比率已按 sample_keys 行对齐(PIT)，直接 concat
-    if not ratio_feats.empty:
-        merged = pd.concat([merged.reset_index(drop=True), ratio_feats.reset_index(drop=True)], axis=1)
 
     # ── 剔除死字段（importance=0 且 IV<0.02，模型从未使用）──
     # 来源：三表已不加载；以下是其余无预测力的标识/稀疏/重复字段

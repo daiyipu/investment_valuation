@@ -88,16 +88,16 @@ def _bulk_score_base(samples):
     return pd.DataFrame(out, index=samples.index)
 
 
-def _per_section_extras(df, horizon, skip_label):
-    """逐截面补 specials(nb_hold_ratio + SUE 全系列 8 变体; FCF_加速/总分_delta_2y/PB_vs_同行中位 已由 derive 产) + return_{h}m 标签。
-    load_specials 复用(缓存); fwd_returns 复用(_CLOSE_CACHE)。"""
-    _SUE_COLS = ['sue_beat', 'sue_zscore', 'sue_pos_streak', 'sue_recency_d',
-                 'sue_yoy_acc', 'sue_yoy_mean3', 'sue_yoy', 'sue_up_trend']
-    _NB_COLS = ['nb_hold_ratio', 'nb_hold_chg_20d', 'nb_hold_chg_60d']
+_NB_COLS = ['nb_hold_ratio', 'nb_hold_chg_20d', 'nb_hold_chg_60d']
+_SUE_COLS = ['sue_beat', 'sue_zscore', 'sue_pos_streak', 'sue_recency_d',
+             'sue_yoy_acc', 'sue_yoy_mean3', 'sue_yoy', 'sue_up_trend']
+
+
+def _add_specials(df):
+    """逐截面补 specials(NB 3 + SUE 8)经 load_specials(PIT, 缓存)。
+    FCF_加速/总分_delta_2y/PB_vs_同行中位 已由 run_derivation 产, 此处只补 NB+SUE。"""
     for col in _NB_COLS + _SUE_COLS:
         df[col] = np.nan
-    if not skip_label:
-        df[f'return_{horizon}m'] = np.nan
     dates = sorted(df['报价日'].astype(str).unique())
     for i, d in enumerate(dates):
         idx = df.index[df['报价日'].astype(str) == d]
@@ -109,14 +109,23 @@ def _per_section_extras(df, horizon, skip_label):
                     df.loc[idx, col] = sp.reindex(index=codes)[col].values
         except Exception as e:
             print(f'    load_specials @ {d} 失败: {e}')
-        if not skip_label:
-            try:
-                ret = fwd_returns(codes, d, months=horizon)
-                df.loc[idx, f'return_{horizon}m'] = [ret.get(c) for c in codes]
-            except Exception as e:
-                print(f'    fwd_returns @ {d} 失败: {e}')
         if (i + 1) % 12 == 0:
-            print(f'    截面 {i+1}/{len(dates)} ({d})')
+            print(f'    specials 截面 {i+1}/{len(dates)} ({d})')
+    return df
+
+
+def _add_labels(df, horizon):
+    """逐截面补 return_{horizon}m 标签(经 fwd_returns, _CLOSE_CACHE)。标签非特征, 装配后单独加。"""
+    df[f'return_{horizon}m'] = np.nan
+    dates = sorted(df['报价日'].astype(str).unique())
+    for i, d in enumerate(dates):
+        idx = df.index[df['报价日'].astype(str) == d]
+        codes = df.loc[idx, '股票代码'].astype(str).tolist()
+        try:
+            ret = fwd_returns(codes, d, months=horizon)
+            df.loc[idx, f'return_{horizon}m'] = [ret.get(c) for c in codes]
+        except Exception as e:
+            print(f'    fwd_returns @ {d} 失败: {e}')
     return df
 
 
@@ -141,26 +150,39 @@ def _filter_tradable(samples):
     return samples[keep].reset_index(drop=True)
 
 
+def build_features(samples, skip_placement=True):
+    """★ 特征装配唯一入口(定增/回测/predict 三产线共用)。三层一入口·组装层。
+    samples: DataFrame 含 [股票代码, 报价日] → 返回全 PIT 特征 DataFrame(不含标签)。
+    流程: prefetch_ohlcv → 基列(FCF/评分/财务比率, PIT) → run_derivation(11 派生) → _add_specials(NB+SUE)。
+    业务无关: 定增结构由 skip_placement 跳过(全A 无原料); 标签由调用方另行 _add_labels。"""
+    df = samples[['股票代码', '报价日']].copy().reset_index(drop=True)
+    df['股票代码'] = df['股票代码'].astype(str)
+    df['报价日'] = df['报价日'].astype(str)
+    prefetch_ohlcv(df['股票代码'].unique())
+    keys = list(zip(df['股票代码'], df['报价日']))
+    fcf = load_fcf_bulk(keys); fcf.index = df.index
+    score = _bulk_score_base(df); score.index = df.index
+    ratios = load_financial_ratios(keys); ratios.index = df.index
+    df = pd.concat([df, fcf, score, ratios], axis=1)
+    df = run_derivation(df, skip_placement=skip_placement)
+    df = _add_specials(df)
+    df = df.replace([np.inf, -np.inf], np.nan)
+    return df
+
+
 def _build_batch(batch_df, horizon, skip_label):
-    """单批端到端建 panel: prefetch→filter→基列→run_derivation→extras→清洗。
+    """单批端到端建 panel: cache清→prefetch→filter→build_features→标签。
     8GB Mac: 分批把主 df 降到 ~120k 行避免 swap 拖垮逐行 Stage2。每批前清模块缓存(bound 内存)。"""
     import gc as _gc
     from derive_features import _OHLCV_CACHE as _OCV, _DAILY_BASIC_CACHE as _DBC, _MONTHLY_CACHE as _MC
     _OCV.clear(); _DBC.clear(); _MC.clear(); _gc.collect()
     bdf = batch_df.copy().reset_index(drop=True)   # _filter_tradable 的 keep[index] 须 0..n-1 连续
     bdf['报价日'] = bdf['报价日'].astype(str)
-    prefetch_ohlcv(bdf['股票代码'].astype(str).unique())
-    n0 = len(bdf)
+    prefetch_ohlcv(bdf['股票代码'].astype(str).unique())   # filter 前需热缓存
     bdf = _filter_tradable(bdf)
-    df = bdf[['股票代码', '报价日']].copy()
-    df['股票代码'] = df['股票代码'].astype(str)
-    fcf = load_fcf_bulk(list(zip(df['股票代码'].astype(str), df['报价日'].astype(str)))); fcf.index = df.index
-    score = _bulk_score_base(df)
-    ratios = load_financial_ratios(list(zip(df['股票代码'].astype(str), df['报价日'].astype(str)))); ratios.index = df.index
-    df = pd.concat([df, fcf, score, ratios], axis=1)
-    df = run_derivation(df, skip_placement=True)
-    df = _per_section_extras(df, horizon, skip_label)
-    df = df.replace([np.inf, -np.inf], np.nan)
+    df = build_features(bdf, skip_placement=True)          # ★ 唯一装配入口(两产线共用)
+    if not skip_label:
+        df = _add_labels(df, horizon)
     return df
 
 
