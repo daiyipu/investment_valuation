@@ -211,6 +211,39 @@ def register_panel(path, tag, note='', label_config=''):
     return sha
 
 
+def load_panel(tag):
+    """★ DB 直读: ml_train_wide 按 tag 取 BLOB → 内存 DataFrame(无中间文件)。
+    训练/LOYO/验证的样本空间唯一来源 = DB; 不再依赖本地 parquet。
+    用法: df = load_panel('placement_train_20260627')  # 取代 pd.read_parquet(features_path)。"""
+    import io
+    cfg = ValuationDB.MYSQL_CONFIG
+    conn = pymysql.connect(host=cfg['host'], port=cfg['port'], user=cfg['user'],
+                           password=cfg['password'], database=cfg['database'], charset=cfg['charset'])
+    cur = conn.cursor()
+    cur.execute("SELECT parquet FROM ml_train_wide WHERE tag=%s", (tag,))
+    row = cur.fetchone(); conn.close()
+    if not row:
+        raise KeyError(f"ml_train_wide 无 tag={tag}")
+    import pandas as pd
+    return pd.read_parquet(io.BytesIO(row[0]))
+
+
+def load_features(src):
+    """统一装载: src 是 ml_train_wide tag → load_panel(DB直读); 否则当文件路径 → read_parquet。
+    训练脚本可用此替代 pd.read_parquet(features_path), 既支持 DB tag 也兼容旧文件路径。"""
+    import pandas as pd
+    # 探: src 是否为 ml_train_wide 已知 tag
+    cfg = ValuationDB.MYSQL_CONFIG
+    conn = pymysql.connect(host=cfg['host'], port=cfg['port'], user=cfg['user'],
+                           password=cfg['password'], database=cfg['database'], charset=cfg['charset'])
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM ml_train_wide WHERE tag=%s", (src,))
+    is_tag = cur.fetchone() is not None; conn.close()
+    if is_tag:
+        return load_panel(src)
+    return pd.read_parquet(src)
+
+
 def restore_panel(tag, out_path=None):
     """从 ml_train_wide(模型训练宽表)按 tag 还原 panel parquet 到 out_path。
     DB 为样本空间唯一来源后, 训练/LOYO/验证经此取回 panel 到本地再读。
