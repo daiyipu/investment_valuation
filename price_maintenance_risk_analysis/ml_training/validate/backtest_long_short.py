@@ -32,8 +32,8 @@ from scipy.stats import spearmanr
 PKG = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # validate/→ml_training/→PKG
 for _p in (PKG, os.path.join(PKG,'ml_training'), os.path.join(PKG,'ml_training','pipeline'), os.path.join(PKG,'scripts')):
     if _p not in sys.path: sys.path.insert(0, _p)
-from predict_profitability import score_sc
-from db_model_store import load_predict_bundle, get_model_meta
+from deploy.predict_profitability import score_sc
+from deploy.db_model_store import load_predict_bundle, get_model_meta
 from report.report_horizon import latest_gray_sc
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from samples.fetch_universe import fetch_stock_basic, fetch_namechange, in_universe_at

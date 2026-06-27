@@ -30,8 +30,8 @@ from features.feature_selection import select_features, CORR_MAX, VIF_MAX
 from train.train_horizon_models import GRAY_CFG, build_label, _prep, _train, _ret_col, _tag, _parse_horizon
 from train.train_scorecard import calc_iv_all_features, remove_correlated, filter_by_vif
 from eval_loyo import loyo_fixed, fit_woe, apply_woe
-from db_model_store import save_model_meta
-from model_registry import register_version
+from deploy.db_model_store import save_model_meta
+from deploy.model_registry import register_version
 from train.train_scorecard_model import print_scorecard, WOE_FILL, run as run_sc
 
 

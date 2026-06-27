@@ -19,8 +19,8 @@ from sklearn.metrics import roc_auc_score
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from db_model_store import load_predict_bundle, list_model_metas, get_model_meta
-from model_registry import get_current
+from deploy.db_model_store import load_predict_bundle, list_model_metas, get_model_meta
+from deploy.model_registry import get_current
 from eval_loyo import apply_woe
 from validate_methods import calc_ks
 from train.train_horizon_models import GRAY_CFG

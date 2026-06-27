@@ -38,7 +38,7 @@ from train.train_scorecard import (
     calc_iv_all_features, woe_transform, train_scorecard_lr, build_scorecard,
 )
 from report.compare_selection import lasso_select, stepwise_aic
-from predict_profitability import _parse_interval
+from deploy.predict_profitability import _parse_interval
 from features.feature_exclusions import get_excluded_columns
 
 

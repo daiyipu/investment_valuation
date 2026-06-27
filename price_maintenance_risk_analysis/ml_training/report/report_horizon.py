@@ -30,7 +30,7 @@ from sklearn.linear_model import LogisticRegression
 HERE = os.path.dirname(os.path.abspath(__file__))                  # report/
 ML_ROOT = os.path.dirname(HERE)                                    # ml_training/(data/output)
 sys.path.insert(0, os.path.join(ML_ROOT, 'pipeline'))              # pipeline/(db_model_store/eval_loyo/validate_methods/train_horizon_models)
-from db_model_store import load_predict_bundle, get_model_meta, list_model_metas
+from deploy.db_model_store import load_predict_bundle, get_model_meta, list_model_metas
 from eval_loyo import fit_woe, apply_woe
 from validate_methods import make_features, calc_ks, eval_metrics
 from train.train_horizon_models import build_label, GRAY_CFG, _prep, _parse_horizon, _incl_thr

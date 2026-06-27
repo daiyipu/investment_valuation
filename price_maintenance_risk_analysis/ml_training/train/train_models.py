@@ -489,7 +489,7 @@ def main():
     # ═══════════════════════════════════════════════
     if not args.classic:
         try:
-            from model_registry import register_version
+            from deploy.model_registry import register_version
             version_name = os.path.basename(version_dir)
             archived = [f for f in archive_files
                         if os.path.exists(os.path.join(version_dir, f))]

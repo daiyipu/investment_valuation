@@ -28,7 +28,7 @@ from train.train_models import LGB_PARAMS
 # 特征选择统一走标准模块 feature_selection(IV→PSI→去相关→VIF→LGBM), 不再各脚本各搞一套
 from features.feature_selection import (select_features, prune_by_lgb_importance,
                                pipeline_summary, IV_MIN, PSI_MAX, CORR_MAX, VIF_MAX)
-from db_model_store import save_model_meta   # 模型元信息入 DB(替代散落 meta.json)
+from deploy.db_model_store import save_model_meta   # 模型元信息入 DB(替代散落 meta.json)
 
 HORIZONS = [1, 3, 6, 7, 12]   # 月期限(批量 eval_loyo.run 用); 周 '1w'/'2w' 走 train_to_production 单期限路径
 # 灰度区阈值(lose,win)。月: 1m/3m sweep 定 (-10,10); 6/7/12m 沿用 [-20,+10]。
@@ -98,7 +98,7 @@ def build_label(df, horizon, kind='gray'):
 
 
 def run(features_path, split_year=2024):
-    from model_registry import register_version
+    from deploy.model_registry import register_version
     raw = pd.read_parquet(features_path).dropna(subset=['报价日']).reset_index(drop=True)
     raw['_y'] = (pd.to_numeric(raw['报价日'], errors='coerce') // 10000).astype('Int64')
     dtr = raw[raw['_y'] <= split_year].drop(columns=['_y'])

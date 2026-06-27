@@ -534,7 +534,7 @@ def _archive_and_register_scorecard(output_dir, features, eval_results, args, fi
             f.write(f'- {x}\n')
 
     try:
-        from model_registry import register_version
+        from deploy.model_registry import register_version
         n = eval_results.get('n_samples')
         pos = eval_results.get('n_profit')
         pos_rate = float(pos) / float(n) if n else None

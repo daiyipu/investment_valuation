@@ -27,8 +27,8 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # ml_training/
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'pipeline'))   # 管线模块已移入 pipeline/
-from model_registry import get_current
-from db_model_store import load_predict_bundle, get_model_meta
+from deploy.model_registry import get_current
+from deploy.db_model_store import load_predict_bundle, get_model_meta
 from train.train_scorecard import calc_iv_all_features
 from report.feature_glossary import explain
 

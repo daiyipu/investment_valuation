@@ -22,8 +22,8 @@ from validate_methods import make_features, eval_metrics
 from features.feature_selection import select_features, pipeline_summary, IV_MIN, PSI_MAX, CORR_MAX, VIF_MAX
 from train.train_horizon_models import GRAY_CFG, build_label, _prep, _ret_col, _tag, _parse_horizon
 from eval_loyo import fit_woe, apply_woe
-from db_model_store import save_model_meta
-from model_registry import register_version
+from deploy.db_model_store import save_model_meta
+from deploy.model_registry import register_version
 from sklearn.linear_model import LogisticRegression
 
 WOE_FILL = lambda X: X.replace([np.inf, -np.inf], np.nan).fillna(0)

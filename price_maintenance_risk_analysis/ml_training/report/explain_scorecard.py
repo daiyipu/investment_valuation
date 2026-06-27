@@ -144,7 +144,7 @@ def build_feature_df(scored_path):
 
 def explain_model(df, version, tag):
     """对一个 SC 模型版本, 拆解每特征 logit 贡献并打印。"""
-    from db_model_store import load_predict_bundle
+    from deploy.db_model_store import load_predict_bundle
     from eval_loyo import apply_woe
 
     bundle = load_predict_bundle(version)
@@ -242,14 +242,14 @@ def main():
         if df.empty:
             print('❌ 特征构建为空'); sys.exit(1)
 
-        from model_registry import get_current
-        from db_model_store import list_model_metas
+        from deploy.model_registry import get_current
+        from deploy.db_model_store import list_model_metas
 
         green_ver = get_current('full')
         metas = list_model_metas(kind='gray')
         cur_nfeat = 0
         try:
-            from db_model_store import load_predict_bundle
+            from deploy.db_model_store import load_predict_bundle
             cur_nfeat = len(load_predict_bundle(green_ver)['features'])
         except Exception:
             pass

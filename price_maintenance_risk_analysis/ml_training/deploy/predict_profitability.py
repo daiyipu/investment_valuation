@@ -8,7 +8,7 @@
 
 支持两种用法:
   1. 独立运行: python ml_training/predict_profitability.py <scored_excel> [--output result.xlsx]
-  2. 被调用:   from predict_profitability import predict; df = predict(scored_excel_path)
+  2. 被调用:   from deploy.predict_profitability import predict; df = predict(scored_excel_path)
 
 输出两列:
   - 盈利概率_LightGBM   (current.full 模型概率; SC 模型时即评分卡概率)
@@ -149,8 +149,8 @@ def predict(scored_excel_path):
         derive_market_momentum, derive_industry_valuation_growth,
         derive_market_index_features,
     )
-    from model_registry import require_current_dir, get_current
-    from db_model_store import load_predict_bundle   # full 模型权重+meta 从 DB 加载(不再读磁盘 version 目录)
+    from deploy.model_registry import require_current_dir, get_current
+    from deploy.db_model_store import load_predict_bundle   # full 模型权重+meta 从 DB 加载(不再读磁盘 version 目录)
 
     output_dir = os.path.join(SCRIPT_DIR, 'output')
     # 模型从 registry 的当前生产版本读取（见 manage_models.py current）
@@ -350,8 +350,8 @@ def predict(scored_excel_path):
     # 9b. 蓝绿对比: 同时用上一个生产版本(BLUE)打分
     # ═══════════════════════════════════════════════
     try:
-        from db_model_store import list_model_metas, get_model_meta
-        from model_registry import get_previous
+        from deploy.db_model_store import list_model_metas, get_model_meta
+        from deploy.model_registry import get_previous
         all_metas = list_model_metas(kind='gray')
         cur_nfeat = len(sc_main['features']) if is_sc else 0
         _cur_h = (get_model_meta(version) or {}).get('horizon')   # current 期限(如 7m)
@@ -391,7 +391,7 @@ def predict(scored_excel_path):
     #     模型由 train_to_production.py --horizon 1/3/1w/2w --kind gray 训。DB 找不到最新版则跳过。
     # ═══════════════════════════════════════════════
     try:
-        from db_model_store import list_model_metas as _lmm
+        from deploy.db_model_store import list_model_metas as _lmm
     except Exception:
         _lmm = None
     if _lmm is not None:
