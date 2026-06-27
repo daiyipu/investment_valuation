@@ -23,8 +23,8 @@ import pandas as pd
 
 PKG = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # price_maintenance_risk_analysis/
 sys.path.insert(0, PKG)
-sys.path.insert(0, os.path.join(PKG, 'scripts'))
-from data_pipeline.fetch_universe import fetch_stock_basic, fetch_namechange, in_universe_at, resolve_universe
+sys.path.insert(0, os.path.join(PKG, 'ml_training'))
+from samples.fetch_universe import fetch_stock_basic, fetch_namechange, in_universe_at, resolve_universe
 
 DATA_DIR = os.path.join(PKG, 'ml_training', 'data')
 SAMPLES_PARQ = os.path.join(DATA_DIR, 'backtest_samples.parquet')

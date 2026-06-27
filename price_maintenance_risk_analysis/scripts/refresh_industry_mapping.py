@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.join(PKG, 'scripts', 'data_pipeline'))
 from tushare_token import resolve_tushare_token  # noqa: E402
 os.environ.setdefault('TUSHARE_TOKEN', resolve_tushare_token())
 import tushare as ts  # noqa: E402
-from data_pipeline.fetch_universe import resolve_universe  # noqa: E402
+from samples.fetch_universe import resolve_universe  # noqa: E402
 
 _DB = dict(host='127.0.0.1', port=3306, user='root', password='',
            database='investment_valuation', charset='utf8mb4')

@@ -36,7 +36,7 @@ from predict_profitability import score_sc
 from db_model_store import load_predict_bundle, get_model_meta
 from report_horizon import latest_gray_sc
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from data_pipeline.fetch_universe import fetch_stock_basic, fetch_namechange, in_universe_at
+from samples.fetch_universe import fetch_stock_basic, fetch_namechange, in_universe_at
 from data_pipeline.compute_labels import add_months, bench_return, build_series, _nearest
 
 

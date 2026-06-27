@@ -35,7 +35,7 @@ from tushare_token import resolve_tushare_token  # noqa: E402
 os.environ.setdefault('TUSHARE_TOKEN', resolve_tushare_token())
 from update_market_data import ingest_stock_full  # noqa: E402  (复用单股 L0, 不改 update_market_data)
 from utils.db_manager import ValuationDB  # noqa: E402
-from data_pipeline.fetch_universe import resolve_universe  # noqa: E402
+from samples.fetch_universe import resolve_universe  # noqa: E402
 
 
 def _resolve_codes(universe, src):
