@@ -8,7 +8,9 @@ L5 报告固化层, 配合 skill quant-ml-pipeline。"""
 import argparse, os, sys, warnings
 warnings.filterwarnings('ignore')
 import pandas as pd, numpy as np, pymysql
-PKG = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, PKG)
+PKG = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # validate/→ml_training/→PKG
+for _p in (PKG, os.path.join(PKG,'ml_training'), os.path.join(PKG,'ml_training','pipeline'), os.path.join(PKG,'scripts')):
+    if _p not in sys.path: sys.path.insert(0, _p)
 from utils.db_manager import ValuationDB
 
 

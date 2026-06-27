@@ -5,17 +5,18 @@
 """
 import os, sys, pickle, argparse
 from datetime import datetime
-PKG = '/Users/davy/github/investment_valuation/price_maintenance_risk_analysis'
+PKG = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.chdir(PKG)
 sys.path.insert(0, PKG)
 sys.path.insert(0, os.path.join(PKG, 'scripts'))
 import numpy as np, pandas as pd
 from scipy.stats import spearmanr
 sys.path.insert(0, os.path.join(PKG, 'ml_training'))
-import backtest_long_short as bls           # fwd_returns + _CLOSE_CACHE + score_sc 路径
+sys.path.insert(0, os.path.join(PKG, 'ml_training', 'pipeline'))
+from validate import backtest_long_short as bls           # fwd_returns + _CLOSE_CACHE + score_sc 路径
 from db_model_store import load_predict_bundle
 from predict_profitability import score_sc  # SC 打分(同 backtest_long_short)
-from save_validation_db import save_validation_run  # 验证结果直接入库(不产裸csv); panel落库延后
+from validate.save_validation_db import save_validation_run  # 验证结果直接入库(不产裸csv); panel落库延后
 
 # 各期限最新 SC 模型(确定性指定, 非 latest)
 MODELS = {

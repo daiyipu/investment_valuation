@@ -46,7 +46,7 @@ from utils.db_manager import ValuationDB  # noqa: E402
 from export_features import load_financial_ratios, load_fcf_bulk, _pit_year  # noqa: E402  (基列装载单源)
 from derive_features import run_derivation, prefetch_ohlcv  # noqa: E402  (一套派生核心, placement/全A 共用)
 from export_features import prefetch_sue_timelines, load_specials  # noqa: E402  (5 PIT loader 已并入 export_features)
-from backtest_long_short import fwd_returns  # noqa: E402  (7m 前瞻, _CLOSE_CACHE)
+from validate.backtest_long_short import fwd_returns  # noqa: E402  (7m 前瞻, _CLOSE_CACHE)
 
 DATA_DIR = os.path.join(PKG, 'ml_training', 'data')
 SAMPLES_PARQ = os.path.join(DATA_DIR, 'backtest_samples.parquet')
