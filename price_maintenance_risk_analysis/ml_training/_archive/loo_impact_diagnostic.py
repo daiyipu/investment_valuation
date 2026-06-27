@@ -16,7 +16,7 @@
 import argparse, contextlib, io, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pandas as pd
-from eval_loyo import loyo_fixed
+from validate.eval_loyo import loyo_fixed
 
 # 新26共识(Part A 去重后) + Part A 删的2个 + 旧34里新26没有的
 NEW26 = ['pvt_slope_20', '行业PB_60d增长', '行业PE_120d增长', '行业PE_250d增长', '行业PB_120d增长', 'ROC_M_3',

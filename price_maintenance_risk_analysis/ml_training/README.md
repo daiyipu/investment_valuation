@@ -86,9 +86,11 @@ L4 部署 → ml_training/deploy/       (predict_profitability / score_one_stock
 | `train_models.py` | LGB+LR 双模型训练(旧版基线)。 |
 | `sweep_label.py` | 标签阈值扫描(双样本空间:非灰AUC/KS+全样本IC+灰度%)。 |
 
-### validate/ — 验证
+### validate/ — 验证(含评估底层引擎)
 | 脚本 | 职责 |
 |---|---|
+| `eval_loyo.py` | **LOYO 标准评估引擎**:`fit_woe`/`apply_woe`(CV 拟合-应用)/`run`(逐年留一)。项目唯一评估口径,被 train/report 共用。 |
+| `validate_methods.py` | **验证指标+打分应用**:AUC/KS/IV + `apply_woe_score`(打分应用WOE)+`make_features`。被 train/report/scoring 共用。 |
 | `backtest_long_short.py` | **全A多空回测+IC/ICIR**(量化核心验证);`fwd_returns`/`eval_cross_section`。 |
 | `save_validation_db.py` | **验证/报告入库唯一入口**:`save_validation_run`→ml_validation*;`save_model_report`→ml_model_report;`load_panel`/`register_panel`/`restore_panel`/`list_panels`(ml_train_wide)。 |
 | `validate_5h.py` | 5期限验证(补return_3m/1m/1w/2w标签+IC/ICIR/L-S)。 |
@@ -123,6 +125,9 @@ L4 部署 → ml_training/deploy/       (predict_profitability / score_one_stock
 |---|---|
 | `eval_loyo.py` | **LOYO 标准评估**:`fit_woe`/`apply_woe`(CV 拟合-应用)/`run`(逐年留一)。项目唯一评估口径。 |
 | `validate_methods.py` | AUC/KS/IV 指标 + `apply_woe_score`(打分应用WOE)+`make_features`。 |
+
+### pipeline/ — (已并入 validate/)
+> eval_loyo + validate_methods 已移入 `validate/`(评估底层引擎,被 train/report 共用)。pipeline/ 目录移除。
 
 ### diagnostics/ — 诊断
 | 脚本 | 职责 |

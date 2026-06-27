@@ -145,7 +145,7 @@ def build_feature_df(scored_path):
 def explain_model(df, version, tag):
     """对一个 SC 模型版本, 拆解每特征 logit 贡献并打印。"""
     from deploy.db_model_store import load_predict_bundle
-    from eval_loyo import apply_woe
+    from validate.eval_loyo import apply_woe
 
     bundle = load_predict_bundle(version)
     sc = pickle.loads(bundle['lr_bundle'])

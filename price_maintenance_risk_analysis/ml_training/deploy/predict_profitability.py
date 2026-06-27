@@ -40,7 +40,7 @@ def score_sc(sc_bundle, X_src_df):
       dict 含 features/medians/woe_bins/lr_model/proba_deciles。
     X_src_df: 任意股票的特征 DataFrame(列含 sc_bundle['features']), 缺列自动 NaN→median 填。
     返回 (proba: np.ndarray, tier: np.ndarray[int] 1-10)。"""
-    from eval_loyo import apply_woe as _aw
+    from validate.eval_loyo import apply_woe as _aw
     feats = sc_bundle['features']
     medians = sc_bundle.get('medians', {})
     X_sc = pd.DataFrame(index=X_src_df.index)
@@ -283,7 +283,7 @@ def predict(scored_excel_path):
     if is_sc:
         # 评分卡路径: WOE 分箱 + LR 打分(替代 LGB+LR)
         print('  [ML-6/7] 评分卡(SC) 预测(WOE+LR)...')
-        from eval_loyo import apply_woe
+        from validate.eval_loyo import apply_woe
         sc = pickle.loads(bundle['lr_bundle'])   # {kind, woe_bins, lr_model, features, medians}
         X_woe = apply_woe(X_pred, sc['features'], sc['woe_bins']).replace([np.inf, -np.inf], 0).fillna(0)
         lgb_proba = sc['lr_model'].predict_proba(X_woe)[:, 1]
@@ -318,7 +318,7 @@ def predict(scored_excel_path):
 
     def _score_sc(sc_bundle, sc_features, sc_medians, sc_deciles, label_tag, X_src_df):
         """用一套 SC 模型打分, 返回 {盈利概率_tag, 档位_tag} 两列 + 概率数组。"""
-        from eval_loyo import apply_woe as _aw
+        from validate.eval_loyo import apply_woe as _aw
         X_sc = pd.DataFrame(index=X_src_df.index)
         for feat in sc_features:
             X_sc[feat] = pd.to_numeric(X_src_df[feat], errors='coerce') if feat in X_src_df.columns else np.nan

@@ -28,7 +28,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from train.train_scorecard import calc_iv_all_features
 from train.train_horizon_models import GRAY_CFG, _prep
-from validate_methods import make_features
+from validate.validate_methods import make_features
 from features.feature_selection import calc_psi, IV_MIN, PSI_MAX, N_IV
 from deploy.db_model_store import get_model_meta
 from deploy.model_registry import get_current

@@ -26,11 +26,11 @@ PKG = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 for _p in (PKG, os.path.join(PKG,'ml_training'), os.path.join(PKG,'ml_training','pipeline'), os.path.join(PKG,'scripts')):
     if _p not in sys.path: sys.path.insert(0, _p)
 from validate.save_validation_db import load_features  # noqa: E402  (DB样本空间直读)
-from validate_methods import make_features
+from validate.validate_methods import make_features
 from features.feature_selection import select_features, CORR_MAX, VIF_MAX
 from train.train_horizon_models import GRAY_CFG, build_label, _prep, _train, _ret_col, _tag, _parse_horizon
 from train.train_scorecard import calc_iv_all_features, remove_correlated, filter_by_vif
-from eval_loyo import loyo_fixed, fit_woe, apply_woe
+from validate.eval_loyo import loyo_fixed, fit_woe, apply_woe
 from deploy.db_model_store import save_model_meta
 from deploy.model_registry import register_version
 from train.train_scorecard_model import print_scorecard, WOE_FILL, run as run_sc
