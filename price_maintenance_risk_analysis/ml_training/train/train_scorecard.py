@@ -586,7 +586,7 @@ def main():
         sys.exit(1)
 
     # 统一排除清单 (与 compare_selection.py 共用 feature_exclusions)
-    from feature_exclusions import get_excluded_columns
+    from features.feature_exclusions import get_excluded_columns
     excl = get_excluded_columns(X.columns)
     if excl:
         X = X.drop(columns=excl)

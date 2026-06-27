@@ -32,7 +32,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from validate_methods import make_features, eval_metrics
-from feature_selection import select_features, prune_by_lgb_importance
+from features.feature_selection import select_features, prune_by_lgb_importance
 from train.train_horizon_models import GRAY_CFG, HORIZONS, build_label, _prep, _train, _ret_col, _tag, _parse_horizon
 
 

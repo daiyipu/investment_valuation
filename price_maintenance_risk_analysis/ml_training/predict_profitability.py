@@ -142,8 +142,8 @@ def predict(scored_excel_path):
         DataFrame: SC 模型→[股票代码, 盈利概率_评分卡]; LGB 模型→[股票代码, 盈利概率_LightGBM, 盈利概率_逻辑回归]
     """
     import lightgbm as lgb
-    from export_features import load_db_features, load_scored_features, load_financial_ratios
-    from derive_features import (
+    from features.export_features import load_db_features, load_scored_features, load_financial_ratios
+    from features.derive_features import (
         derive_fcf_growth_rates, derive_fcf_cross_metrics,
         derive_financial_score_deltas, derive_valuation_relative,
         derive_market_momentum, derive_industry_valuation_growth,
@@ -231,7 +231,7 @@ def predict(scored_excel_path):
 
     # ── 因子引擎 + 策略信号(与 derive_features 完全一致, 保证训练/预测特征空间统一) ──
     try:
-        from derive_features import derive_strategy_signals, derive_alpha_beta_factors
+        from features.derive_features import derive_strategy_signals, derive_alpha_beta_factors
         df = derive_strategy_signals(df)
         df = derive_alpha_beta_factors(df)
         print(f'    因子引擎: +{sum(1 for c in df.columns if c.startswith(("MACD","RSI","KDJ","BOLL","ROC_","k_","ret_","vol_","amount_","corr_","vwap_","beta_","idiovol","三浪","抵抗")))} 因子列')

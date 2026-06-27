@@ -17,7 +17,7 @@
   - 各训练脚本(如 train_horizon_models)只调 select_features + prune_by_lgb_importance。
 
 用法:
-  from feature_selection import select_features, prune_by_lgb_importance
+  from features.feature_selection import select_features, prune_by_lgb_importance
   kept, detail = select_features(Xtr, ytr, Xte)   # 步 1-4
   gbm = train_lgb(Xtr[kept], ytr)                 # 训练
   final = prune_by_lgb_importance(gbm, kept)      # 步 5: 剔树未用特征

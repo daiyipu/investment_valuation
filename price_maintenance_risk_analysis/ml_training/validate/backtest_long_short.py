@@ -71,7 +71,7 @@ def compute_features(codes, date_yyyymmdd, model_feats):
     rows['报价日'] = date_yyyymmdd
     # 1) 价量/行业/beta(factor_engine, PIT ≤报价日)
     try:
-        from derive_features import derive_alpha_beta_factors
+        from features.derive_features import derive_alpha_beta_factors
         pv = derive_alpha_beta_factors(rows.copy())
         for c in pv.columns:
             if c in model_feats:
@@ -80,7 +80,7 @@ def compute_features(codes, date_yyyymmdd, model_feats):
         print(f'    derive_alpha_beta_factors 夻败: {e}')
     # 1b) 行业估值增长(行业PE/PB_{60,120,250}d增长) — derive_industry_valuation_growth
     try:
-        from derive_features import derive_industry_valuation_growth
+        from features.derive_features import derive_industry_valuation_growth
         iv = derive_industry_valuation_growth(rows.copy())
         for c in iv.columns:
             if c in model_feats:
@@ -89,7 +89,7 @@ def compute_features(codes, date_yyyymmdd, model_feats):
         print(f'    derive_industry_valuation_growth 失败: {e}')
     # 2) 财务比率(PIT ann_date≤date)
     try:
-        from export_features import load_financial_ratios
+        from features.export_features import load_financial_ratios
         keys = [(c, date_yyyymmdd) for c in codes]
         fr = load_financial_ratios(keys)
         for c in fr.columns:
@@ -99,7 +99,7 @@ def compute_features(codes, date_yyyymmdd, model_feats):
         print(f'    load_financial_ratios 失败: {e}')
     # 3) 5 个特殊特征(独立 PIT loader: FCF/总分/nb_hold/PB_vs同行 PIT; SUE 桩)
     try:
-        from export_features import load_specials
+        from features.export_features import load_specials
         sp = load_specials(codes, date_yyyymmdd)
         for c in sp.columns:
             if c in model_feats:
@@ -122,7 +122,7 @@ def fwd_returns(codes, date_yyyymmdd, months=7):
     from tushare_token import resolve_tushare_token
     os.environ.setdefault('TUSHARE_TOKEN', resolve_tushare_token())
     try:
-        from derive_features import _OHLCV_CACHE as _OHC   # 同一 dict 对象(引用共享)
+        from features.derive_features import _OHLCV_CACHE as _OHC   # 同一 dict 对象(引用共享)
     except Exception:
         _OHC = {}
     out = {}

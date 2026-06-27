@@ -39,7 +39,7 @@ from train.train_scorecard import (
 )
 from report.compare_selection import lasso_select, stepwise_aic
 from predict_profitability import _parse_interval
-from feature_exclusions import get_excluded_columns
+from features.feature_exclusions import get_excluded_columns
 
 
 # ====== 纯函数 ======
@@ -323,8 +323,8 @@ def run_part_a(features_path, threshold, n, iv_min, split_year=2024,
 
 def build_external_features(excel_path):
     """从 _scored Excel 重建完整特征矩阵(复用 validate_model.py 范本)。"""
-    from export_features import load_scored_features, load_db_features, load_financial_ratios
-    from derive_features import (
+    from features.export_features import load_scored_features, load_db_features, load_financial_ratios
+    from features.derive_features import (
         derive_fcf_growth_rates, derive_fcf_cross_metrics,
         derive_financial_score_deltas, derive_valuation_relative,
         derive_market_momentum, derive_industry_valuation_growth,

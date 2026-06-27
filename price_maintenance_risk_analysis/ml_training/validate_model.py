@@ -96,7 +96,7 @@ def main():
 
     # ====== 2. 完整 DB 特征提取 (复用 export_features) ======
     print('\n2. 完整DB特征提取...')
-    from export_features import load_db_features, load_financial_ratios
+    from features.export_features import load_db_features, load_financial_ratios
     sample_keys = list(zip(scored['股票代码'].tolist(), scored['报价日_excel'].tolist()))
     db_feats = load_db_features(sample_keys)
     db_feat_cols = [c for c in db_feats.columns if c != '股票代码']
@@ -132,7 +132,7 @@ def main():
 
     # ====== 3. 完整衍生特征 (复用 derive_features) ======
     print('\n3. 完整衍生特征...')
-    from derive_features import (
+    from features.derive_features import (
         derive_fcf_growth_rates, derive_fcf_cross_metrics,
         derive_financial_score_deltas, derive_valuation_relative,
         derive_market_momentum, derive_industry_valuation_growth,

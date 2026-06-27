@@ -360,8 +360,8 @@ def ingest_capitalflow(conn, write, limit):
 
 # ── smc: OHLCV → smc_factors(daily+W/M) ──
 def ingest_smc(conn, write, limit):
-    from derive_features import _get_stock_ohlcv, prefetch_ohlcv
-    from factor_engine import smc_factors, smc_factors_multiperiod
+    from features.derive_features import _get_stock_ohlcv, prefetch_ohlcv
+    from features.factor_engine import smc_factors, smc_factors_multiperiod
     base = pd.read_parquet(os.path.join(PKG, 'ml_training', 'data', 'features.parquet'))
     base['_kqd'] = base['报价日'].map(lambda v: str(int(float(v))) if pd.notna(v) else None)
     base = base.dropna(subset=['_kqd']).reset_index(drop=True)

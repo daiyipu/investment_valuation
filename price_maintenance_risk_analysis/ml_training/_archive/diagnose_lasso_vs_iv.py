@@ -29,7 +29,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from train.train_horizon_models import _prep, GRAY_CFG
 from validate_methods import make_features, calc_ks
-from feature_selection import select_features
+from features.feature_selection import select_features
 
 PARQUET = os.path.join(HERE, 'data', 'features_derived.parquet')
 H = 7

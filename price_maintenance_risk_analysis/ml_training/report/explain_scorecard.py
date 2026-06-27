@@ -88,8 +88,8 @@ def build_scored_excel(code, name, issue_date):
 
 def build_feature_df(scored_path):
     """复刻 predict_profitability ML-1~3: 读 Excel + DB + 衍生 + 因子引擎 → 单行全特征 df。"""
-    from export_features import load_db_features, load_scored_features, load_financial_ratios
-    from derive_features import (
+    from features.export_features import load_db_features, load_scored_features, load_financial_ratios
+    from features.derive_features import (
         derive_fcf_growth_rates, derive_fcf_cross_metrics,
         derive_financial_score_deltas, derive_valuation_relative,
         derive_market_momentum, derive_industry_valuation_growth,

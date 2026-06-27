@@ -37,7 +37,7 @@ import pandas as pd
 PKG = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # train/→ml_training/→PKG
 for _p in (PKG, os.path.join(PKG,'ml_training'), os.path.join(PKG,'ml_training','pipeline'), os.path.join(PKG,'scripts')):
     if _p not in sys.path: sys.path.insert(0, _p)
-from feature_exclusions import get_excluded_columns
+from features.feature_exclusions import get_excluded_columns
 
 warnings.filterwarnings('ignore')
 

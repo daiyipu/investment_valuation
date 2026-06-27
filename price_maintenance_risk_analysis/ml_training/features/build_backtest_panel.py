@@ -36,16 +36,16 @@ import numpy as np
 import pandas as pd
 import pymysql
 
-PKG = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))           # price_maintenance_risk_analysis/
+PKG = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # features/→ml_training/→PKG
 sys.path.insert(0, PKG)
 sys.path.insert(0, os.path.join(PKG, 'ml_training'))
 sys.path.insert(0, os.path.join(PKG, 'ml_training', 'pipeline'))
 sys.path.insert(0, os.path.join(PKG, 'scripts'))
 
 from utils.db_manager import ValuationDB  # noqa: E402
-from export_features import load_financial_ratios, load_fcf_bulk, _pit_year  # noqa: E402  (基列装载单源)
-from derive_features import run_derivation, prefetch_ohlcv  # noqa: E402  (一套派生核心, placement/全A 共用)
-from export_features import prefetch_sue_timelines, load_specials  # noqa: E402  (5 PIT loader 已并入 export_features)
+from features.export_features import load_financial_ratios, load_fcf_bulk, _pit_year  # noqa: E402  (基列装载单源)
+from features.derive_features import run_derivation, prefetch_ohlcv  # noqa: E402  (一套派生核心, placement/全A 共用)
+from features.export_features import prefetch_sue_timelines, load_specials  # noqa: E402  (5 PIT loader 已并入 export_features)
 from validate.backtest_long_short import fwd_returns  # noqa: E402  (7m 前瞻, _CLOSE_CACHE)
 
 DATA_DIR = os.path.join(PKG, 'ml_training', 'data')
@@ -133,7 +133,7 @@ def _filter_tradable(samples):
     """剔除"报价日当月无成交"的停牌行(用热的 _OHLCV_CACHE, 须先 prefetch_ohlcv)。
     这些股在报价日附近长期停牌 → 无 D 价 → return_NaN 污染; 投资者当天根本买不到, 应剔。
     判据: 报价日 D 的最近一笔成交(≤D)须落在 D 所在自然月内, 否则视为当月停牌。"""
-    from derive_features import _OHLCV_CACHE
+    from features.derive_features import _OHLCV_CACHE
     keep = np.ones(len(samples), dtype=bool)
     for code, g in samples.groupby('股票代码'):
         cached = _OHLCV_CACHE.get(str(code))
@@ -174,7 +174,7 @@ def _build_batch(batch_df, horizon, skip_label):
     """单批端到端建 panel: cache清→prefetch→filter→build_features→标签。
     8GB Mac: 分批把主 df 降到 ~120k 行避免 swap 拖垮逐行 Stage2。每批前清模块缓存(bound 内存)。"""
     import gc as _gc
-    from derive_features import _OHLCV_CACHE as _OCV, _DAILY_BASIC_CACHE as _DBC, _MONTHLY_CACHE as _MC
+    from features.derive_features import _OHLCV_CACHE as _OCV, _DAILY_BASIC_CACHE as _DBC, _MONTHLY_CACHE as _MC
     _OCV.clear(); _DBC.clear(); _MC.clear(); _gc.collect()
     bdf = batch_df.copy().reset_index(drop=True)   # _filter_tradable 的 keep[index] 须 0..n-1 连续
     bdf['报价日'] = bdf['报价日'].astype(str)

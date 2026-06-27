@@ -7,7 +7,7 @@ warnings.filterwarnings('ignore')
 PKG = '/Users/davy/github/investment_valuation/price_maintenance_risk_analysis'
 os.chdir(PKG); sys.path.insert(0, PKG); sys.path.insert(0, os.path.join(PKG, 'ml_training'))
 import pandas as pd, pymysql
-from derive_features import prefetch_ohlcv, prefetch_daily_basic, prefetch_monthly
+from features.derive_features import prefetch_ohlcv, prefetch_daily_basic, prefetch_monthly
 from utils.db_manager import ValuationDB
 
 ap = argparse.ArgumentParser()

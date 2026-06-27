@@ -298,7 +298,7 @@ def derive_pb_vs_industry_pit(df):
     if pkg not in sys.path:
         sys.path.insert(0, pkg)
     sys.path.insert(0, os.path.join(pkg, 'scripts'))
-    from export_features import load_pb_vs_industry
+    from features.export_features import load_pb_vs_industry
 
     pairs = [(str(c), str(d)) for c, d in zip(df['股票代码'], df['报价日']) if pd.notna(d)]
     pb_map = load_pb_vs_industry(pairs)
@@ -1193,7 +1193,7 @@ def derive_alpha_beta_factors(df):
     if pkg not in sys.path:
         sys.path.insert(0, pkg)
     from strategies.data_loader import _align_three, _MARKET_INDEX
-    from factor_engine import compute_factors, _ret
+    from features.factor_engine import compute_factors, _ret
 
     import pymysql
     conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', password='',
@@ -1221,7 +1221,7 @@ def derive_alpha_beta_factors(df):
     maxlen = 800   # 月线 MACD 需 ~35 个月 ≈ 800 日线(日线技术因子用尾部, 不受影响)
     # ===== 按股全历史算一次 SERIES + 按报价日索引(替代逐行重切; 日线族+beta 精确向量化,
     #       multiperiod/smc 每股 resample 缓存一次 + 逐行建 ≤D 序列含当周部分 bar, PIT 精确复刻标量) =====
-    from factor_engine import (compute_factors_series, _beta_series, _mp_indicators,
+    from features.factor_engine import (compute_factors_series, _beta_series, _mp_indicators,
                                _resample_ranges, smc_factors, _FACTOR_NAMES_OF)
     from strategies.data_loader import _align_three_full
 
@@ -1247,7 +1247,7 @@ def derive_alpha_beta_factors(df):
         turnover = db['turnover'] if td is not None else None
         vol_ratio = db['vol_ratio'] if td is not None else None
         daily_ser = compute_factors_series(o, h, l, c, v, amt)   # 日线族(不含 turnover, td 轴另算)
-        from factor_engine import _turnover_series as _tser
+        from features.factor_engine import _turnover_series as _tser
         td_ser = _tser(turnover, vol_ratio) if td is not None else {}
         td_str = td.astype(str) if td is not None else None
         # turnover_multiperiod: td 轴 W/M 日均换手率(每股 resample 一次; 完成柱口径, 非模型特征)

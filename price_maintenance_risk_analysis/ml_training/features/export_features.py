@@ -947,7 +947,7 @@ def main():
     _scripts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'scripts')
     if _scripts_dir not in sys.path:
         sys.path.insert(0, _scripts_dir)
-    from build_backtest_panel import build_features as _build_features
+    from features.build_backtest_panel import build_features as _build_features
     samples_df = pd.DataFrame(sample_keys, columns=['股票代码', '报价日'])
     db_feats = _build_features(samples_df, skip_placement=True).reset_index(drop=True)
     print(f'   build_features: {len(db_feats)} 行 × {len(db_feats.columns)} 列 (PIT, 与回测同源; 定增结构特征模型不用且在EXCLUDE内, scored带标签/最终结论)')
