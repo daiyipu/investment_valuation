@@ -211,6 +211,43 @@ def register_panel(path, tag, note='', label_config=''):
     return sha
 
 
+def restore_panel(tag, out_path=None):
+    """从 ml_train_wide(模型训练宽表)按 tag 还原 panel parquet 到 out_path。
+    DB 为样本空间唯一来源后, 训练/LOYO/验证经此取回 panel 到本地再读。
+    不传 out_path 则写到 PKG/ml_training/data/<tag>.parquet。返回写出路径。"""
+    cfg = ValuationDB.MYSQL_CONFIG
+    conn = pymysql.connect(host=cfg['host'], port=cfg['port'], user=cfg['user'],
+                           password=cfg['password'], database=cfg['database'], charset=cfg['charset'])
+    cur = conn.cursor()
+    cur.execute("SELECT parquet, n_rows, n_cols FROM ml_train_wide WHERE tag=%s", (tag,))
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        raise KeyError(f"ml_train_wide 无 tag={tag}")
+    blob, n_rows, n_cols = row
+    if out_path is None:
+        out_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                                'ml_training', 'data', f'{tag}.parquet')
+    with open(out_path, 'wb') as f:
+        f.write(blob)
+    print(f"✅ 还原 panel {tag} → {out_path} ({n_rows}×{n_cols}, {len(blob)//1024//1024}MB)", flush=True)
+    return out_path
+
+
+def list_panels():
+    """列出 ml_train_wide 所有样本空间(tag/行/列/大小/sha)。"""
+    cfg = ValuationDB.MYSQL_CONFIG
+    conn = pymysql.connect(host=cfg['host'], port=cfg['port'], user=cfg['user'],
+                           password=cfg['password'], database=cfg['database'], charset=cfg['charset'])
+    cur = conn.cursor()
+    cur.execute("SELECT tag, n_rows, n_cols, size_mb, LEFT(sha256,10), label_config FROM ml_train_wide ORDER BY tag")
+    rows = cur.fetchall(); conn.close()
+    print(f"ml_train_wide(模型训练宽表) {len(rows)} 个样本空间:")
+    for tag, nr, nc, sz, sha, lc in rows:
+        print(f"  {tag} | {nr}×{nc} {sz}MB sha={sha} | {lc}")
+    return rows
+
+
 def main():
     ap = argparse.ArgumentParser(description='回测验证结果落库(读 csv → save_validation_run)')
     ap.add_argument('--csv', required=True, help='逐截面 records(date,ic,long,short,ls,n)')
