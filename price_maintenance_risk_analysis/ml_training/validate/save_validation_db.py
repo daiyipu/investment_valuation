@@ -281,6 +281,35 @@ def list_panels():
     return rows
 
 
+def save_model_report(model_version, report_type, df, note=''):
+    """模型报告(特征重要性/IV/LOYO逐折/系数等)入库 ml_model_report(替代裸csv)。
+    df→csv文本存payload; (model_version, report_type) 唯一(重跑覆盖)。"""
+    cfg = ValuationDB.MYSQL_CONFIG
+    conn = pymysql.connect(host=cfg['host'], port=cfg['port'], user=cfg['user'],
+                           password=cfg['password'], database=cfg['database'], charset=cfg['charset'])
+    cur = conn.cursor()
+    payload = df.to_csv(index=False)
+    cur.execute("DELETE FROM ml_model_report WHERE model_version=%s AND report_type=%s", (model_version, report_type))
+    cur.execute("INSERT INTO ml_model_report (model_version, report_type, payload) VALUES (%s,%s,%s)",
+                (model_version, report_type, payload))
+    conn.commit(); conn.close()
+    print(f"✓ 模型报告 {model_version}/{report_type} 入库 ml_model_report ({len(df)}行)", flush=True)
+
+
+def load_model_report(model_version, report_type):
+    """从 ml_model_report 取回(payload csv→DataFrame)。"""
+    import io
+    cfg = ValuationDB.MYSQL_CONFIG
+    conn = pymysql.connect(host=cfg['host'], port=cfg['port'], user=cfg['user'],
+                           password=cfg['password'], database=cfg['database'], charset=cfg['charset'])
+    cur = conn.cursor()
+    cur.execute("SELECT payload FROM ml_model_report WHERE model_version=%s AND report_type=%s", (model_version, report_type))
+    row = cur.fetchone(); conn.close()
+    if not row:
+        raise KeyError(f"ml_model_report 无 {model_version}/{report_type}")
+    return pd.read_csv(io.StringIO(row[0]))
+
+
 def main():
     ap = argparse.ArgumentParser(description='回测验证结果落库(读 csv → save_validation_run)')
     ap.add_argument('--csv', required=True, help='逐截面 records(date,ic,long,short,ls,n)')
