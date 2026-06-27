@@ -27,9 +27,9 @@ from scipy.stats import spearmanr
 from sklearn.metrics import roc_auc_score
 from sklearn.linear_model import LogisticRegression
 
-HERE = os.path.dirname(os.path.abspath(__file__))                 # pipeline/(自身导入用)
-ML_ROOT = os.path.dirname(HERE)                                    # ml_training/(data/output 在这)
-sys.path.insert(0, HERE)
+HERE = os.path.dirname(os.path.abspath(__file__))                  # report/
+ML_ROOT = os.path.dirname(HERE)                                    # ml_training/(data/output)
+sys.path.insert(0, os.path.join(ML_ROOT, 'pipeline'))              # pipeline/(db_model_store/eval_loyo/validate_methods/train_horizon_models)
 from db_model_store import load_predict_bundle, get_model_meta, list_model_metas
 from eval_loyo import fit_woe, apply_woe
 from validate_methods import make_features, calc_ks, eval_metrics

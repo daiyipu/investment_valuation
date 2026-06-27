@@ -225,7 +225,7 @@ def main():
 
     # 报告(SC): 管线终步自动出 per-year AUC/KS/IC md(固化: 说标签→一键出模型+报告)
     if args.model == 'sc':
-        from report_horizon import generate_report
+        from report.report_horizon import generate_report
         generate_report(args.features_path, args.horizon, ver)
 
 

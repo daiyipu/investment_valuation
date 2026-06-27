@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 warnings.filterwarnings('ignore')
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # ml_training/(搬自 report/ 升一层)
 sys.path.insert(0, SCRIPT_DIR)
 sys.path.insert(0, os.path.join(SCRIPT_DIR, 'pipeline'))   # 管线模块已移入 pipeline/
 

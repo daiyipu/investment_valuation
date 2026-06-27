@@ -21,7 +21,7 @@ import sys
 
 import pandas as pd
 
-HERE = os.path.dirname(os.path.abspath(__file__))            # ml_training/
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # ml_training/(搬自 report/ 升一层)            # ml_training/
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, 'pipeline'))           # 管线模块
 from validate_methods import make_features
@@ -29,7 +29,7 @@ from train_horizon_models import build_label, _ret_col, _tag, _parse_horizon
 from eval_loyo import loyo_fixed
 from train_to_production import deploy_lgb
 from db_model_store import get_model_meta
-from report_horizon import latest_gray_sc
+from report.report_horizon import latest_gray_sc
 
 
 def full_features(df, horizon):

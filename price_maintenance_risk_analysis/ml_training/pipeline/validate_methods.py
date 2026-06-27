@@ -37,7 +37,7 @@ sys.path.insert(0, os.path.dirname(SCRIPT_DIR))   # ml_training/(compare_selecti
 from train_scorecard import (
     calc_iv_all_features, woe_transform, train_scorecard_lr, build_scorecard,
 )
-from compare_selection import lasso_select, stepwise_aic
+from report.compare_selection import lasso_select, stepwise_aic
 from predict_profitability import _parse_interval
 from feature_exclusions import get_excluded_columns
 

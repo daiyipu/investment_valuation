@@ -33,7 +33,7 @@ import pandas as pd
 
 warnings.filterwarnings('ignore')
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))           # ml_training/
+SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # ml_training/(搬自 report/ 升一层)           # ml_training/
 PKG_DIR = os.path.dirname(SCRIPT_DIR)                             # price_maintenance_risk_analysis/
 SCRIPTS_DIR = os.path.join(PKG_DIR, 'scripts')
 BATCH_SCRIPT = os.path.join(SCRIPTS_DIR, 'batch_screen_and_score.py')
