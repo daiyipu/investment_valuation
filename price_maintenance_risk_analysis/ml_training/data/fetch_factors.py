@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""统一因子摄入 → placement_evaluation DB(单一原始源)。
+"""统一因子摄入 → placement_evaluation DB(单一原始源) + 时序表。
 
 吸收原 4 个脚本: placement(定增结构) / chip(筹码 cyq_chips) / capitalflow(资金流+北向) / smc(聪明钱 OHLCV)。
 全部写 placement_evaluation(key=stock_code+issue_date, 幂等 ADD COLUMN)。SMC 由原"写 parquet"改为写 DB。
-评估(IV/AUC)不在此脚本, 归建模侧。
+
+★ 时序表迁移(Phase 0.5):
+  chip → chip_daily(每日汇总5指标: winner_rate/avg_cost/concentration/peak_price/cost_spread)
+  moneyflow → moneyflow_daily(每日原始大小单买卖量额)
+  hk_hold → nb_hold_daily(每日北向持股比例+数量)
+  ingest_chip/ingest_capitalflow 同时写时序表 + PE 列(过渡期双写, PE 列保留向后兼容)。
 
 用法:
-  python scripts/fetch_factors.py {placement|chip|capitalflow|smc|all} [--write] [--limit N]
+  python scripts/fetch_factors.py {placement|chip|capitalflow|smc|sue|margin|report_rc|pledge|dividend|repurchase|top_list|block_trade|holdernumber|holdertrade|surv|regime|macro|all} [--write] [--limit N]
   无 --write 只 dry-run 打印覆盖。
 """
 import argparse
@@ -92,6 +97,131 @@ def _clean(v):
         return None if f != f else f   # NaN→NULL
     except (TypeError, ValueError):
         return None
+
+
+def _sv(v):
+    """SQL-safe value: NaN/Inf → None。"""
+    if v is None:
+        return None
+    try:
+        f = float(v)
+        return None if (f != f or f == float('inf') or f == float('-inf')) else f
+    except (TypeError, ValueError):
+        return None
+
+
+# ── 时序表写入工具 ──
+def _upsert_chip_daily(conn, stock, chip_map):
+    """将 cyq_chips 每日筹码分布汇总 → chip_daily 表。
+    chip_map: {trade_date_str: [(price, percent), ...]}
+    每日汇总5列: winner_rate/avg_cost/concentration/peak_price/cost_spread(绝对值,非相对)。
+    """
+    if not chip_map:
+        return 0
+    rows = []
+    for td, hist in chip_map.items():
+        if not hist:
+            continue
+        prices = np.array([p for p, _ in hist], float)
+        pcts = np.array([q for _, q in hist], float)
+        if prices.size == 0 or pcts.sum() <= 0:
+            continue
+        pcts = pcts / pcts.sum() * 100.0
+        wr = float(pcts[prices < prices.mean()].sum() / 100.0)  # 占位winner_rate(无close)
+        avg_cost = float((prices * pcts).sum() / 100.0)
+        hhi = float(((pcts / 100.0) ** 2).sum())
+        peak_price = float(prices[np.argmax(pcts)])
+        order = np.argsort(prices)
+        ps, qs = prices[order], pcts[order]
+        cum = np.cumsum(qs)
+        p25 = float(ps[np.searchsorted(cum, 25)])
+        p75 = float(ps[np.searchsorted(cum, 75)])
+        cost_spread = p75 - p25
+        rows.append((td, stock, wr, avg_cost, hhi, peak_price, cost_spread))
+    if not rows:
+        return 0
+    cur = conn.cursor()
+    cur.executemany(
+        "INSERT INTO chip_daily (trade_date, ts_code, winner_rate, avg_cost, "
+        "concentration, peak_price, cost_spread) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s) "
+        "ON DUPLICATE KEY UPDATE winner_rate=VALUES(winner_rate), avg_cost=VALUES(avg_cost), "
+        "concentration=VALUES(concentration), peak_price=VALUES(peak_price), cost_spread=VALUES(cost_spread)",
+        rows)
+    conn.commit()
+    return len(rows)
+
+
+def _upsert_moneyflow_daily(conn, stock, mf_df):
+    """moneyflow DataFrame → moneyflow_daily 表(原始大小单买卖量额)。"""
+    if mf_df is None or len(mf_df) == 0:
+        return 0
+    d = mf_df.copy()
+    rows = []
+    for _, r in d.iterrows():
+        td = str(r.get('trade_date', ''))
+        if len(td) != 8:
+            continue
+        rows.append((td, stock,
+                     _sv(r.get('buy_sm_vol')), _sv(r.get('buy_sm_amount')),
+                     _sv(r.get('sell_sm_vol')), _sv(r.get('sell_sm_amount')),
+                     _sv(r.get('buy_md_vol')), _sv(r.get('buy_md_amount')),
+                     _sv(r.get('sell_md_vol')), _sv(r.get('sell_md_amount')),
+                     _sv(r.get('buy_lg_vol')), _sv(r.get('buy_lg_amount')),
+                     _sv(r.get('sell_lg_vol')), _sv(r.get('sell_lg_amount')),
+                     _sv(r.get('buy_elg_vol')), _sv(r.get('buy_elg_amount')),
+                     _sv(r.get('sell_elg_vol')), _sv(r.get('sell_elg_amount')),
+                     _sv(r.get('net_mf_vol')), _sv(r.get('net_mf_amount'))))
+    if not rows:
+        return 0
+    cur = conn.cursor()
+    cur.executemany(
+        "INSERT INTO moneyflow_daily (trade_date, ts_code, "
+        "buy_sm_vol, buy_sm_amt, sell_sm_vol, sell_sm_amt, "
+        "buy_md_vol, buy_md_amt, sell_md_vol, sell_md_amt, "
+        "buy_lg_vol, buy_lg_amt, sell_lg_vol, sell_lg_amt, "
+        "buy_elg_vol, buy_elg_amt, sell_elg_vol, sell_elg_amt, "
+        "net_mf_vol, net_mf_amt) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+        "ON DUPLICATE KEY UPDATE "
+        "buy_sm_vol=VALUES(buy_sm_vol), buy_sm_amt=VALUES(buy_sm_amt), "
+        "sell_sm_vol=VALUES(sell_sm_vol), sell_sm_amt=VALUES(sell_sm_amt), "
+        "buy_md_vol=VALUES(buy_md_vol), buy_md_amt=VALUES(buy_md_amt), "
+        "sell_md_vol=VALUES(sell_md_vol), sell_md_amt=VALUES(sell_md_amt), "
+        "buy_lg_vol=VALUES(buy_lg_vol), buy_lg_amt=VALUES(buy_lg_amt), "
+        "sell_lg_vol=VALUES(sell_lg_vol), sell_lg_amt=VALUES(sell_lg_amt), "
+        "buy_elg_vol=VALUES(buy_elg_vol), buy_elg_amt=VALUES(buy_elg_amt), "
+        "sell_elg_vol=VALUES(sell_elg_vol), sell_elg_amt=VALUES(sell_elg_amt), "
+        "net_mf_vol=VALUES(net_mf_vol), net_mf_amt=VALUES(net_mf_amt)",
+        rows)
+    conn.commit()
+    return len(rows)
+
+
+def _upsert_nb_hold_daily(conn, stock, nb_df):
+    """hk_hold DataFrame → nb_hold_daily 表(每日北向持股比例+数量)。"""
+    if nb_df is None or len(nb_df) == 0:
+        return 0
+    rows = []
+    for _, r in nb_df.iterrows():
+        td = str(r.get('trade_date', ''))
+        if len(td) != 8:
+            continue
+        ratio = _sv(r.get('ratio'))
+        qty = _sv(r.get('vol', r.get('hold_qty', r.get('in_hold'))))
+        if ratio is None and qty is None:
+            continue
+        rows.append((td, stock, ratio, qty))
+    if not rows:
+        return 0
+    cur = conn.cursor()
+    cur.executemany(
+        "INSERT INTO nb_hold_daily (trade_date, ts_code, hold_ratio, hold_qty) "
+        "VALUES (%s,%s,%s,%s) "
+        "ON DUPLICATE KEY UPDATE hold_ratio=VALUES(hold_ratio), hold_qty=VALUES(hold_qty)",
+        rows)
+    conn.commit()
+    return len(rows)
 
 
 def load_sample_keys(conn, since=None):
@@ -236,22 +366,36 @@ def nearest_td(chip_map, issue_date, tol=10):
     return best if bd <= tol else None
 
 
+def _dict_query(conn, sql):
+    """执行 SELECT → 返回 list[dict](兼容 pymysql 1.4.6 不支持 cursor(cursorclass=...))。"""
+    cur = conn.cursor()
+    cur.execute(sql)
+    cols = [d[0] for d in cur.description]
+    rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    cur.close()
+    return rows
+
+
 def ingest_chip(conn, write, limit):
-    cur = conn.cursor(cursorclass=pymysql.cursors.DictCursor)
-    cur.execute("SELECT stock_code, issue_date, issue_date_price FROM placement_evaluation "
-                "WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8 AND issue_date >= '2018'")
-    samp = pd.DataFrame(cur.fetchall())
-    conn.cursor().close()
+    """筹码分布 → chip_daily 时序表 + placement_evaluation(过渡双写)。"""
+    samp = pd.DataFrame(_dict_query(conn,
+        "SELECT stock_code, issue_date, issue_date_price FROM placement_evaluation "
+        "WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8 AND issue_date >= '2018'"))
     samp['issue_date'] = samp['issue_date'].astype(str)
     stocks = sorted(samp['stock_code'].unique())
     if limit:
         stocks = stocks[:limit]
     pro = ts.pro_api()
     rows = []
+    ts_rows = 0  # 时序表写入计数
     for i, stock in enumerate(stocks):
         sd = samp[samp['stock_code'] == stock]
         dates = sorted(int(x) for x in sd['issue_date'])
         cm = fetch_stock_chips(pro, stock, dates)
+        # ★ 写 chip_daily 时序表
+        if write and cm:
+            ts_rows += _upsert_chip_daily(conn, stock, cm)
+        # PE 兼容写入(过渡期保留)
         for _, r in sd.iterrows():
             td = nearest_td(cm, r['issue_date'])
             cp = r.get('issue_date_price')
@@ -260,11 +404,11 @@ def ingest_chip(conn, write, limit):
                 rows.append((stock, r['issue_date'], f))
         time.sleep(0.3)
         if (i + 1) % 200 == 0:
-            print(f'  [chip] {i+1}/{len(stocks)} | {len(rows)} 样本', flush=True)
-    print(f'  [chip] 匹配 {len(rows)} 样本')
+            print(f'  [chip] {i+1}/{len(stocks)} | PE {len(rows)} 样本 | 时序 {ts_rows} 行', flush=True)
+    print(f'  [chip] PE 匹配 {len(rows)} 样本 | 时序表 {ts_rows} 行')
     if write:
         n = batch_update(conn, 'chip', rows)
-        print(f'  ✅ 回写 {n} 行')
+        print(f'  ✅ PE 回写 {n} 行 + 时序表 {ts_rows} 行')
 
 
 # ── capitalflow: moneyflow + hk_hold ──
@@ -327,22 +471,27 @@ def nb_features(nb_df, issue_yd):
 
 
 def ingest_capitalflow(conn, write, limit):
-    cur = conn.cursor(cursorclass=pymysql.cursors.DictCursor)
-    cur.execute("SELECT stock_code, issue_date FROM placement_evaluation "
-                "WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8 AND issue_date >= '2013'")
-    samp = pd.DataFrame(cur.fetchall())
-    conn.cursor().close()
+    """资金流+北向 → moneyflow_daily + nb_hold_daily 时序表 + placement_evaluation(过渡双写)。"""
+    samp = pd.DataFrame(_dict_query(conn,
+        "SELECT stock_code, issue_date FROM placement_evaluation "
+        "WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8 AND issue_date >= '2013'"))
     samp['issue_date'] = samp['issue_date'].astype(str)
     stocks = sorted(samp['stock_code'].unique())
     if limit:
         stocks = stocks[:limit]
     pro = ts.pro_api()
     rows = []
+    mf_ts, nb_ts = 0, 0  # 时序表写入计数
     for i, stock in enumerate(stocks):
         sd = samp[samp['stock_code'] == stock]
         dates = sorted(int(x) for x in sd['issue_date'])
         mf = _fetch_series(pro, stock, dates, 'moneyflow')
         nb = _fetch_series(pro, stock, dates, 'hk_hold')
+        # ★ 写时序表
+        if write:
+            mf_ts += _upsert_moneyflow_daily(conn, stock, mf)
+            nb_ts += _upsert_nb_hold_daily(conn, stock, nb)
+        # PE 兼容写入(过渡期保留)
         for _, r in sd.iterrows():
             f = {}
             f.update(mf_features(mf, int(r['issue_date'])))
@@ -351,11 +500,11 @@ def ingest_capitalflow(conn, write, limit):
                 rows.append((stock, r['issue_date'], f))
         time.sleep(0.3)
         if (i + 1) % 200 == 0:
-            print(f'  [capitalflow] {i+1}/{len(stocks)} | {len(rows)} 样本', flush=True)
-    print(f'  [capitalflow] 匹配 {len(rows)} 样本')
+            print(f'  [capitalflow] {i+1}/{len(stocks)} | PE {len(rows)} 样本 | mf时序 {mf_ts} nb时序 {nb_ts}', flush=True)
+    print(f'  [capitalflow] PE 匹配 {len(rows)} 样本 | 时序表 mf={mf_ts} nb={nb_ts}')
     if write:
         n = batch_update(conn, 'capitalflow', rows)
-        print(f'  ✅ 回写 {n} 行')
+        print(f'  ✅ PE 回写 {n} 行 + 时序表 mf={mf_ts} nb={nb_ts}')
 
 
 # ── smc: OHLCV → smc_factors(daily+W/M) ──
