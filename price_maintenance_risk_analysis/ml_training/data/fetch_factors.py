@@ -1855,7 +1855,8 @@ def main():
     targets = list(SOURCES) if args.source == 'all' else [args.source]
     for src in targets:
         print(f'\n=== {src} ===')
-        ensure_columns(conn, src)
+        if src in COLS:
+            ensure_columns(conn, src)
         SOURCES[src](conn, args.write, args.limit)
     conn.close()
 
