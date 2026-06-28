@@ -552,6 +552,17 @@ def load_scored_features_from_db(sample_keys):
             for _k, _v in pe.items():
                 if isinstance(_k, str) and _k.startswith('sue_'):
                     r[_k] = _v
+            # ── 2026-06 新增因子族(Phase 1-4 fetch_factors)──
+            # 通用发射: 自动发所有新因子前缀列
+            _NEW_PREFIXES = ('margin_', 'rc_', 'pledge_', 'dividend_', 'repurchase_',
+                             'toplist_', 'block_', 'holder_', 'insider_', 'surv_',
+                             'macro_', 'broker_rec_')
+            for _k, _v in pe.items():
+                if isinstance(_k, str) and _k.startswith(_NEW_PREFIXES):
+                    r[_k] = _v
+            # ── fina_rank 行业排名特征 ──
+            for _fc in ('roe_industry_rank', 'roa_industry_rank', 'gross_margin_industry_rank'):
+                r[_fc] = pe.get(_fc)
             # 超额收益原始(compute_labels excess 回填; 目标变量→feature_exclusions 排除) + _0标签(跑赢基准)
             for _h in (1, 3, 7):
                 for _b in ('mkt', 'ind'):
