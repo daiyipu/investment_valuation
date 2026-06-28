@@ -102,6 +102,10 @@ COLS = {
               ('macro_us_10y', 'DOUBLE'), ('macro_us_cn_spread', 'DOUBLE'),
               ('macro_lpr_1y', 'DOUBLE'), ('macro_lpr_chg', 'DOUBLE'),
               ('macro_hsgt_net_5d', 'DOUBLE'), ('macro_hsgt_net_20d', 'DOUBLE')],
+    # ── 补充: broker + VIP ──
+    'broker_rec': [('broker_rec_count', 'INT'), ('broker_rec_broker_count', 'INT')],
+    'fina_rank': [('roe_industry_rank', 'DOUBLE'), ('roa_industry_rank', 'DOUBLE'),
+                  ('gross_margin_industry_rank', 'DOUBLE')],
 }
 
 
@@ -1184,7 +1188,7 @@ def ingest_dividend(conn, write, limit):
 
 # ── P1: repurchase 股票回购 ──
 def ingest_repurchase(conn, write, limit):
-    """股票回购 → placement_evaluation(直写 PE)。"""
+    """股票回购 → placement_evaluation(直写 PE, 8线程并发)。"""
     samp = pd.DataFrame(_dict_query(conn,
         "SELECT stock_code, issue_date FROM placement_evaluation "
         "WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8"))
@@ -1193,8 +1197,9 @@ def ingest_repurchase(conn, write, limit):
     if limit:
         stocks = stocks[:limit]
     pro = ts.pro_api()
-    rows = []
-    for i, stock in enumerate(stocks):
+    samp_map = {s: g for s, g in samp.groupby('stock_code')}
+
+    def _worker(stock):
         for attempt in range(3):
             try:
                 df = pro.repurchase(ts_code=stock)
@@ -1203,39 +1208,35 @@ def ingest_repurchase(conn, write, limit):
                 time.sleep(1.0 * (attempt + 1))
                 df = None
         if df is None or len(df) == 0:
-            continue
+            return []
         df['ann_date'] = df.get('ann_date', pd.Series()).astype(str)
-        sd = samp[samp['stock_code'] == stock]
-        for _, r in sd.iterrows():
+        rows = []
+        for _, r in samp_map.get(stock, pd.DataFrame()).iterrows():
             iss = r['issue_date']
             pit = df[(df['ann_date'] <= iss) & (df['ann_date'].str.len() == 8)]
             if len(pit) == 0:
                 continue
             f = {}
-            # 近1年回购次数
             yr_ago = str(int(iss[:4]) - 1) + iss[4:]
             recent = pit[pit['ann_date'] >= yr_ago]
             f['repurchase_count_1y'] = int(len(recent))
-            # 最近回购距报价日天数
             try:
                 f['repurchase_recent_d'] = int(
                     (pd.Timestamp(iss) - pd.Timestamp(pit['ann_date'].iloc[-1])).days)
             except Exception:
                 pass
-            # 回购金额/总市值(简化: 用 repurchase_amount 如有)
             amt = _sv(pit.iloc[-1].get('repurchase_amount', pit.iloc[-1].get('amt')))
             if amt and amt > 0:
-                f['repurchase_amount_ratio'] = _sv(amt)  # 占位
-            # 完成进度
+                f['repurchase_amount_ratio'] = _sv(amt)
             proc = _sv(pit.iloc[-1].get('proc', pit.iloc[-1].get('progress')))
             if proc is not None:
                 f['repurchase_progress'] = _sv(proc / 100.0 if proc > 1 else proc)
             if f:
                 rows.append((stock, iss, f))
-        time.sleep(0.3)
-        if (i + 1) % 200 == 0:
-            print(f'  [repurchase] {i+1}/{len(stocks)} | {len(rows)} 样本', flush=True)
-    print(f'  [repurchase] 匹配 {len(rows)} 样本')
+        time.sleep(0.15)
+        return rows
+
+    rows = _parallel_per_stock(stocks, _worker, max_workers=8, label='repurchase')
     if write and rows:
         ensure_columns(conn, 'repurchase')
         n = batch_update(conn, 'repurchase', rows)
@@ -1311,7 +1312,7 @@ def ingest_top_list(conn, write, limit):
 
 # ── P2: block_trade 大宗交易 ──
 def ingest_block_trade(conn, write, limit):
-    """大宗交易 → placement_evaluation(直写 PE)。"""
+    """大宗交易 → placement_evaluation(直写 PE, 8线程并发)。"""
     samp = pd.DataFrame(_dict_query(conn,
         "SELECT stock_code, issue_date FROM placement_evaluation "
         "WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8"))
@@ -1320,8 +1321,9 @@ def ingest_block_trade(conn, write, limit):
     if limit:
         stocks = stocks[:limit]
     pro = ts.pro_api()
-    rows = []
-    for i, stock in enumerate(stocks):
+    samp_map = {s: g for s, g in samp.groupby('stock_code')}
+
+    def _worker(stock):
         for attempt in range(3):
             try:
                 df = pro.block_trade(ts_code=stock)
@@ -1330,12 +1332,12 @@ def ingest_block_trade(conn, write, limit):
                 time.sleep(1.0 * (attempt + 1))
                 df = None
         if df is None or len(df) == 0:
-            continue
+            return []
         df['trade_date'] = df.get('trade_date', pd.Series()).astype(str)
-        df['tp'] = pd.to_numeric(df.get('tp', pd.Series()), errors='coerce')  # 成交价
+        df['tp'] = pd.to_numeric(df.get('tp', pd.Series()), errors='coerce')
         df['amount'] = pd.to_numeric(df.get('amount', pd.Series()), errors='coerce')
-        sd = samp[samp['stock_code'] == stock]
-        for _, r in sd.iterrows():
+        rows = []
+        for _, r in samp_map.get(stock, pd.DataFrame()).iterrows():
             iss = r['issue_date']
             yr_ago = str(int(iss[:4]) - 1) + iss[4:] if len(iss) == 8 else None
             if not yr_ago:
@@ -1344,17 +1346,15 @@ def ingest_block_trade(conn, write, limit):
             if len(recent) == 0:
                 continue
             f = {'block_count_30d': int(len(recent))}
-            # 平均折价率
             if 'tp' in recent.columns:
-                # 简化: 折价率需要收盘价对比,此处用成交价/成交价(占位)
                 f['block_discount_avg'] = 0.0
             if recent['amount'].notna().any():
                 f['block_amount_ratio'] = _sv(float(recent['amount'].sum()))
             rows.append((stock, iss, f))
-        time.sleep(0.3)
-        if (i + 1) % 200 == 0:
-            print(f'  [block_trade] {i+1}/{len(stocks)} | {len(rows)} 样本', flush=True)
-    print(f'  [block_trade] 匹配 {len(rows)} 样本')
+        time.sleep(0.15)
+        return rows
+
+    rows = _parallel_per_stock(stocks, _worker, max_workers=8, label='block_trade')
     if write and rows:
         ensure_columns(conn, 'block_trade')
         n = batch_update(conn, 'block_trade', rows)
@@ -1363,7 +1363,7 @@ def ingest_block_trade(conn, write, limit):
 
 # ── P2: stk_holdernumber 股东人数 ──
 def ingest_holdernumber(conn, write, limit):
-    """股东人数 → placement_evaluation(直写 PE)。"""
+    """股东人数 → placement_evaluation(直写 PE, 8线程并发)。"""
     samp = pd.DataFrame(_dict_query(conn,
         "SELECT stock_code, issue_date FROM placement_evaluation "
         "WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8"))
@@ -1372,8 +1372,9 @@ def ingest_holdernumber(conn, write, limit):
     if limit:
         stocks = stocks[:limit]
     pro = ts.pro_api()
-    rows = []
-    for i, stock in enumerate(stocks):
+    samp_map = {s: g for s, g in samp.groupby('stock_code')}
+
+    def _worker(stock):
         for attempt in range(3):
             try:
                 df = pro.stk_holdernumber(ts_code=stock)
@@ -1382,12 +1383,12 @@ def ingest_holdernumber(conn, write, limit):
                 time.sleep(1.0 * (attempt + 1))
                 df = None
         if df is None or len(df) == 0:
-            continue
+            return []
         df['end_date'] = df.get('end_date', pd.Series()).astype(str)
         df['holder_num'] = pd.to_numeric(df.get('holder_num', pd.Series()), errors='coerce')
         df = df.sort_values('end_date')
-        sd = samp[samp['stock_code'] == stock]
-        for _, r in sd.iterrows():
+        rows = []
+        for _, r in samp_map.get(stock, pd.DataFrame()).iterrows():
             iss = r['issue_date']
             pit = df[(df['end_date'] <= iss) & df['holder_num'].notna()]
             if len(pit) == 0:
@@ -1398,10 +1399,10 @@ def ingest_holdernumber(conn, write, limit):
                 if prev > 0:
                     f['holder_count_chg'] = _sv(float(pit.iloc[-1]['holder_num'] / prev - 1))
             rows.append((stock, iss, f))
-        time.sleep(0.3)
-        if (i + 1) % 200 == 0:
-            print(f'  [holdernumber] {i+1}/{len(stocks)} | {len(rows)} 样本', flush=True)
-    print(f'  [holdernumber] 匹配 {len(rows)} 样本')
+        time.sleep(0.15)
+        return rows
+
+    rows = _parallel_per_stock(stocks, _worker, max_workers=8, label='holdernumber')
     if write and rows:
         ensure_columns(conn, 'holdernumber')
         n = batch_update(conn, 'holdernumber', rows)
@@ -1410,7 +1411,7 @@ def ingest_holdernumber(conn, write, limit):
 
 # ── P2: stk_holdertrade 股东增减持 ──
 def ingest_holdertrade(conn, write, limit):
-    """股东增减持 → placement_evaluation(直写 PE)。"""
+    """股东增减持 → placement_evaluation(直写 PE, 8线程并发)。"""
     samp = pd.DataFrame(_dict_query(conn,
         "SELECT stock_code, issue_date FROM placement_evaluation "
         "WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8"))
@@ -1419,8 +1420,9 @@ def ingest_holdertrade(conn, write, limit):
     if limit:
         stocks = stocks[:limit]
     pro = ts.pro_api()
-    rows = []
-    for i, stock in enumerate(stocks):
+    samp_map = {s: g for s, g in samp.groupby('stock_code')}
+
+    def _worker(stock):
         for attempt in range(3):
             try:
                 df = pro.stk_holdertrade(ts_code=stock)
@@ -1429,12 +1431,12 @@ def ingest_holdertrade(conn, write, limit):
                 time.sleep(1.0 * (attempt + 1))
                 df = None
         if df is None or len(df) == 0:
-            continue
+            return []
         df['ann_date'] = df.get('ann_date', pd.Series()).astype(str)
         df['in_vol'] = pd.to_numeric(df.get('in_vol', pd.Series()), errors='coerce')
         df['change_vol'] = pd.to_numeric(df.get('change_vol', pd.Series()), errors='coerce')
-        sd = samp[samp['stock_code'] == stock]
-        for _, r in sd.iterrows():
+        rows = []
+        for _, r in samp_map.get(stock, pd.DataFrame()).iterrows():
             iss = r['issue_date']
             yr_ago = str(int(iss[:4]) - 1) + iss[4:] if len(iss) == 8 else None
             if not yr_ago:
@@ -1450,10 +1452,10 @@ def ingest_holdertrade(conn, write, limit):
                 f['insider_direction'] = _sv(float(chg.sum() / (chg.abs().sum() + 1e-9)))
             if f:
                 rows.append((stock, iss, f))
-        time.sleep(0.3)
-        if (i + 1) % 200 == 0:
-            print(f'  [holdertrade] {i+1}/{len(stocks)} | {len(rows)} 样本', flush=True)
-    print(f'  [holdertrade] 匹配 {len(rows)} 样本')
+        time.sleep(0.15)
+        return rows
+
+    rows = _parallel_per_stock(stocks, _worker, max_workers=8, label='holdertrade')
     if write and rows:
         ensure_columns(conn, 'holdertrade')
         n = batch_update(conn, 'holdertrade', rows)
@@ -1471,8 +1473,9 @@ def ingest_surv(conn, write, limit):
     if limit:
         stocks = stocks[:limit]
     pro = ts.pro_api()
-    rows = []
-    for i, stock in enumerate(stocks):
+    samp_map = {s: g for s, g in samp.groupby('stock_code')}
+
+    def _worker(stock):
         for attempt in range(3):
             try:
                 df = pro.stk_surv(ts_code=stock)
@@ -1481,10 +1484,10 @@ def ingest_surv(conn, write, limit):
                 time.sleep(1.0 * (attempt + 1))
                 df = None
         if df is None or len(df) == 0:
-            continue
+            return []
         df['surv_date'] = df.get('surv_date', df.get('ann_date', pd.Series())).astype(str)
-        sd = samp[samp['stock_code'] == stock]
-        for _, r in sd.iterrows():
+        rows = []
+        for _, r in samp_map.get(stock, pd.DataFrame()).iterrows():
             iss = r['issue_date']
             yr_ago = str(int(iss[:4]) - 1) + iss[4:] if len(iss) == 8 else None
             if not yr_ago:
@@ -1499,10 +1502,10 @@ def ingest_surv(conn, write, limit):
             except Exception:
                 pass
             rows.append((stock, iss, f))
-        time.sleep(0.3)
-        if (i + 1) % 200 == 0:
-            print(f'  [surv] {i+1}/{len(stocks)} | {len(rows)} 样本', flush=True)
-    print(f'  [surv] 匹配 {len(rows)} 样本')
+        time.sleep(0.15)
+        return rows
+
+    rows = _parallel_per_stock(stocks, _worker, max_workers=8, label='surv')
     if write and rows:
         ensure_columns(conn, 'surv')
         n = batch_update(conn, 'surv', rows)
@@ -1688,6 +1691,142 @@ def ingest_regime(conn, write, limit):
         print(f'  ✅ 回写 {n} 行')
 
 
+# ── 补充: broker_recommend 券商月度金股 ──
+def ingest_broker_rec(conn, write, limit):
+    """券商月度金股 → placement_evaluation(直写 PE)。
+    broker_recommend 按月拉取(全市场),聚合到样本。
+    """
+    samp = pd.DataFrame(_dict_query(conn,
+        "SELECT stock_code, issue_date FROM placement_evaluation "
+        "WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8"))
+    samp['issue_date'] = samp['issue_date'].astype(str)
+    stocks = sorted(samp['stock_code'].unique())
+    if limit:
+        stocks = stocks[:limit]
+    stock_set = set(stocks)
+    pro = ts.pro_api()
+    # 拉取近3年月度金股
+    import datetime
+    now = datetime.datetime.now()
+    months = []
+    for i in range(36):  # 36个月
+        d = now - datetime.timedelta(days=30 * i)
+        months.append(d.strftime('%Y%m'))
+    # 按 stock 聚合: {stock: [(month, broker), ...]}
+    rec_map = defaultdict(list)
+    for m in months:
+        try:
+            df = pro.broker_recommend(month=m)
+            if df is not None and len(df):
+                for _, r in df.iterrows():
+                    ts_c = str(r.get('ts_code', ''))
+                    if ts_c in stock_set:
+                        rec_map[ts_c].append((m, str(r.get('broker', ''))))
+            time.sleep(0.2)
+        except Exception:
+            continue
+    # 匹配样本
+    rows = []
+    for _, r in samp.iterrows():
+        code, iss = r['stock_code'], r['issue_date']
+        if code not in stock_set:
+            continue
+        recs = rec_map.get(code, [])
+        if not recs:
+            continue
+        # 报价日前6个月内被推荐
+        iss_int = int(iss[:6])
+        recent = [(m, b) for m, b in recs if int(m) >= iss_int - 6 and int(m) <= iss_int]
+        if not recent:
+            continue
+        f = {
+            'broker_rec_count': len(recent),
+            'broker_rec_broker_count': len(set(b for _, b in recent)),
+        }
+        rows.append((code, iss, f))
+    print(f'  [broker_rec] 匹配 {len(rows)} 样本 (覆盖 {len(rec_map)} 只股)')
+    if write and rows:
+        ensure_columns(conn, 'broker_rec')
+        n = batch_update(conn, 'broker_rec', rows)
+        print(f'  ✅ 回写 {n} 行')
+
+
+# ── 补充: fina_indicator_vip 截面排名 ──
+def ingest_fina_rank(conn, write, limit):
+    """fina_indicator_vip 截面 → 行业内 ROE/ROA/毛利率排名 → PE。
+    取最近一期截面数据,计算行业内百分位排名。
+    """
+    pro = ts.pro_api()
+    # 拉最近一期 fina_indicator_vip 截面
+    print('  [fina_rank] 拉取 fina_indicator_vip 截面...')
+    try:
+        df = pro.fina_indicator_vip(period='20231231')
+    except Exception as e:
+        print(f'  [fina_rank] fina_indicator_vip 失败: {e}')
+        # fallback: 尝试更早期间
+        for p in ['20230930', '20230630', '20221231']:
+            try:
+                df = pro.fina_indicator_vip(period=p)
+                if df is not None and len(df):
+                    print(f'  [fina_rank] fallback 到 period={p}, {len(df)} 行')
+                    break
+            except Exception:
+                continue
+        else:
+            print('  [fina_rank] 所有期间均失败'); return
+    if df is None or len(df) == 0:
+        print('  [fina_rank] 无数据'); return
+    print(f'  [fina_rank] {len(df)} 行, {df["ts_code"].nunique()} 只股')
+    # 数值化
+    for c in ['roe', 'roa', 'grossprofit_margin']:
+        df[c] = pd.to_numeric(df.get(c, pd.Series()), errors='coerce')
+    # 加载行业映射
+    cur = conn.cursor()
+    cur.execute("SELECT stock_code, sw_l3_code FROM stocks WHERE sw_l3_code IS NOT NULL")
+    ind_map = {r[0]: r[1] for r in cur.fetchall()}
+    cur.close()
+    df['industry'] = df['ts_code'].map(ind_map)
+    df = df.dropna(subset=['industry'])
+    # 计算行业内百分位排名(0-1, 1=最好)
+    for col in ['roe', 'roa', 'grossprofit_margin']:
+        rank_col = f'{col}_rank'
+        df[rank_col] = df.groupby('industry')[col].rank(pct=True)
+    # 匹配样本
+    samp = pd.DataFrame(_dict_query(conn,
+        "SELECT stock_code, issue_date FROM placement_evaluation "
+        "WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8"))
+    samp['issue_date'] = samp['issue_date'].astype(str)
+    stocks = sorted(samp['stock_code'].unique())
+    if limit:
+        stocks = stocks[:limit]
+    stock_set = set(stocks)
+    rank_df = df[df['ts_code'].isin(stock_set)]
+    rows = []
+    for _, r in samp.iterrows():
+        code = r['stock_code']
+        rd = rank_df[rank_df['ts_code'] == code]
+        if len(rd) == 0:
+            continue
+        rd = rd.iloc[0]
+        f = {}
+        roe_r = _sv(rd.get('roe_rank'))
+        roa_r = _sv(rd.get('roa_rank'))
+        gm_r = _sv(rd.get('grossprofit_margin_rank'))
+        if roe_r is not None:
+            f['roe_industry_rank'] = roe_r
+        if roa_r is not None:
+            f['roa_industry_rank'] = roa_r
+        if gm_r is not None:
+            f['gross_margin_industry_rank'] = gm_r
+        if f:
+            rows.append((code, r['issue_date'], f))
+    print(f'  [fina_rank] 匹配 {len(rows)} 样本')
+    if write and rows:
+        ensure_columns(conn, 'fina_rank')
+        n = batch_update(conn, 'fina_rank', rows)
+        print(f'  ✅ 回写 {n} 行')
+
+
 SOURCES = {'placement': ingest_placement, 'chip': ingest_chip,
            'capitalflow': ingest_capitalflow, 'smc': ingest_smc, 'sue': ingest_sue,
            # P0
@@ -1701,6 +1840,8 @@ SOURCES = {'placement': ingest_placement, 'chip': ingest_chip,
            'surv': ingest_surv,
            # P3
            'regime': ingest_regime, 'macro': ingest_regime,
+           # 补充
+           'broker_rec': ingest_broker_rec, 'fina_rank': ingest_fina_rank,
            }
 
 
