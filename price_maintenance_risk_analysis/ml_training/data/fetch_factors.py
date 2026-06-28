@@ -325,10 +325,17 @@ def batch_update(conn, source, rows):
     vals = [tuple(_clean(r[2].get(c)) for c in cols) + (r[0], r[1]) for r in rows]
     if not vals:
         return 0
-    cur = conn.cursor()
-    n = cur.executemany(upd, vals)
-    conn.commit()
-    return n
+    for _retry in range(3):
+        try:
+            cur = conn.cursor()
+            n = cur.executemany(upd, vals)
+            conn.commit()
+            return n
+        except pymysql.err.OperationalError as e:
+            if e.args[0] == 1213 and _retry < 2:  # Deadlock
+                time.sleep(0.5 * (_retry + 1))
+                continue
+            raise
 
 
 # ── placement: 东方财富 RPT_SEO_DETAIL + 易米主表 ──
