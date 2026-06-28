@@ -63,6 +63,42 @@ COLS = {
             ('sue_beat', 'DOUBLE'), ('sue_recency_d', 'DOUBLE'),
             ('sue_yoy_mean3', 'DOUBLE'), ('sue_yoy_acc', 'DOUBLE'),
             ('sue_pos_streak', 'DOUBLE'), ('sue_up_trend', 'DOUBLE')],
+    # ── P0 新增 ──
+    'margin': [('margin_rzye', 'DOUBLE'), ('margin_rqye', 'DOUBLE'),
+               ('margin_rzjme_5d', 'DOUBLE'), ('margin_rzjme_20d', 'DOUBLE'),
+               ('margin_rzye_chg_20d', 'DOUBLE'), ('margin_rqjme_20d', 'DOUBLE'),
+               ('margin_rzrq_balance', 'DOUBLE'), ('margin_rzye_trend_60d', 'DOUBLE')],
+    'report_rc': [('rc_eps_consensus', 'DOUBLE'), ('rc_eps_revision', 'DOUBLE'),
+                  ('rc_analyst_count', 'INT'), ('rc_rating_avg', 'DOUBLE'),
+                  ('rc_rating_chg', 'DOUBLE'), ('rc_target_upside', 'DOUBLE'),
+                  ('rc_eps_dispersion', 'DOUBLE'), ('rc_revision_breadth', 'DOUBLE'),
+                  ('rc_imp_profit_yoy', 'DOUBLE'), ('rc_recency', 'INT')],
+    # ── P1 新增 ──
+    'pledge': [('pledge_ratio', 'DOUBLE'), ('pledge_ratio_chg', 'DOUBLE'),
+               ('pledge_count', 'INT'), ('pledge_danger_zone', 'INT')],
+    'dividend': [('div_yield_ttm', 'DOUBLE'), ('div_payout_ratio', 'DOUBLE'),
+                 ('div_yield_chg', 'DOUBLE'), ('div_bonus_shares', 'DOUBLE'),
+                 ('div_consistency', 'INT')],
+    'repurchase': [('repurchase_amount_ratio', 'DOUBLE'), ('repurchase_recent_d', 'INT'),
+                   ('repurchase_count_1y', 'INT'), ('repurchase_progress', 'DOUBLE')],
+    # ── P2 新增 ──
+    'top_list': [('toplist_count_30d', 'INT'), ('toplist_inst_net_buy', 'DOUBLE'),
+                 ('toplist_institutional', 'INT')],
+    'block_trade': [('block_count_30d', 'INT'), ('block_discount_avg', 'DOUBLE'),
+                    ('block_amount_ratio', 'DOUBLE')],
+    'holdernumber': [('holder_count', 'INT'), ('holder_count_chg', 'DOUBLE')],
+    'holdertrade': [('insider_net_buy_90d', 'DOUBLE'), ('insider_buy_count_90d', 'INT'),
+                    ('insider_direction', 'DOUBLE')],
+    'surv': [('surv_count_90d', 'INT'), ('surv_recency', 'INT')],
+    # ── P3 新增 ──
+    'macro': [('macro_cpi_yoy', 'DOUBLE'), ('macro_ppi_yoy', 'DOUBLE'),
+              ('macro_ppi_cpi_spread', 'DOUBLE'), ('macro_pmi', 'DOUBLE'),
+              ('macro_pmi_expansion', 'INT'), ('macro_m1_yoy', 'DOUBLE'),
+              ('macro_m2_yoy', 'DOUBLE'), ('macro_m1_m2_scissor', 'DOUBLE'),
+              ('macro_sf_yoy', 'DOUBLE'), ('macro_shibor_3m', 'DOUBLE'),
+              ('macro_us_10y', 'DOUBLE'), ('macro_us_cn_spread', 'DOUBLE'),
+              ('macro_lpr_1y', 'DOUBLE'), ('macro_lpr_chg', 'DOUBLE'),
+              ('macro_hsgt_net_5d', 'DOUBLE'), ('macro_hsgt_net_20d', 'DOUBLE')],
 }
 
 
@@ -733,8 +769,912 @@ def ingest_sue(conn, write, limit):
         print(f'  ✅ 回写 {n} 行')
 
 
+# ── P0: margin_detail 融资融券 ──
+def _upsert_margin_daily(conn, df):
+    """margin_detail DataFrame → margin_daily 表(全市场当日)。"""
+    if df is None or len(df) == 0:
+        return 0
+    rows = []
+    for _, r in df.iterrows():
+        rows.append((str(r['trade_date']), str(r['ts_code']),
+                     _sv(r.get('rzye')), _sv(r.get('rqye')),
+                     _sv(r.get('rzmre')), _sv(r.get('rqyl')),
+                     _sv(r.get('rzche')), _sv(r.get('rqchl')),
+                     _sv(r.get('rqmcl')), _sv(r.get('rzrqye'))))
+    if not rows:
+        return 0
+    cur = conn.cursor()
+    cur.executemany(
+        "INSERT INTO margin_daily (trade_date, ts_code, rzye, rqye, rzmre, rqyl, "
+        "rzche, rqchl, rqmcl, rzrqye) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+        "ON DUPLICATE KEY UPDATE rzye=VALUES(rzye), rqye=VALUES(rqye), rzmre=VALUES(rzmre), "
+        "rqyl=VALUES(rqyl), rzche=VALUES(rzche), rqchl=VALUES(rqchl), "
+        "rqmcl=VALUES(rqmcl), rzrqye=VALUES(rzrqye)", rows)
+    conn.commit()
+    return len(rows)
+
+
+def _margin_features_from_ts(margin_df, issue_date):
+    """从 margin_daily 切片计算 8 个特征。PIT: trade_date <= issue_date。"""
+    if margin_df is None or len(margin_df) == 0:
+        return {}
+    d = margin_df.copy()
+    d = d[d['trade_date'].astype(int) <= int(issue_date)].sort_values('trade_date')
+    if len(d) == 0:
+        return {}
+    rzye = pd.to_numeric(d['rzye'], errors='coerce')
+    rqye = pd.to_numeric(d['rqye'], errors='coerce')
+    rzche = pd.to_numeric(d['rzche'], errors='coerce')
+    rzmre = pd.to_numeric(d['rzmre'], errors='coerce')
+    rqmcl = pd.to_numeric(d['rqmcl'], errors='coerce')
+    rzjme = rzmre - rzche  # 融资净买入
+    rqjme = pd.to_numeric(d['rqmcl'], errors='coerce')  # 融券净卖出(近似)
+    out = {}
+    cur_rzye = _sv(rzye.iloc[-1])
+    cur_rqye = _sv(rqye.iloc[-1])
+    if cur_rzye is not None:
+        out['margin_rzye'] = cur_rzye
+    if cur_rqye is not None:
+        out['margin_rqye'] = cur_rqye
+    # 5日融资净买入
+    if len(rzjme) >= 5:
+        out['margin_rzjme_5d'] = _sv(rzjme.iloc[-5:].sum())
+    # 20日融资净买入
+    if len(rzjme) >= 20:
+        out['margin_rzjme_20d'] = _sv(rzjme.iloc[-20:].sum())
+    # 融资余额20日变化率
+    if len(rzye) >= 21 and rzye.iloc[-21] > 0:
+        out['margin_rzye_chg_20d'] = _sv(rzye.iloc[-1] / rzye.iloc[-21] - 1)
+    # 20日融券净卖出
+    if len(rqjme) >= 20:
+        out['margin_rqjme_20d'] = _sv(rqjme.iloc[-20:].sum())
+    # 多空力量对比
+    if cur_rzye and cur_rqye and (cur_rzye + cur_rqye) > 0:
+        out['margin_rzrq_balance'] = _sv((cur_rzye - cur_rqye) / (cur_rzye + cur_rqye))
+    # 融资余额60日趋势(slope)
+    if len(rzye) >= 60:
+        y = rzye.iloc[-60:].values.astype(float)
+        x = np.arange(len(y), dtype=float)
+        mask = ~np.isnan(y)
+        if mask.sum() >= 30:
+            slope = np.polyfit(x[mask], y[mask], 1)[0]
+            out['margin_rzye_trend_60d'] = _sv(slope / (y[mask].mean() + 1e-9))
+    return out
+
+
+def ingest_margin(conn, write, limit):
+    """融资融券 → margin_daily 时序表 + placement_evaluation 特征列。
+    按 trade_date 批量拉取(一次全市场 ~3800 股),避免逐股调用。
+    """
+    # 确定日期范围
+    cur = conn.cursor()
+    cur.execute("SELECT MIN(issue_date), MAX(issue_date) FROM placement_evaluation "
+                "WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8")
+    min_d, max_d = cur.fetchone()
+    cur.close()
+    if not min_d:
+        print('  [margin] 无样本'); return
+    # 检查 margin_daily 已有数据(增量)
+    cur = conn.cursor()
+    cur.execute("SELECT MAX(trade_date) FROM margin_daily")
+    last_td = cur.fetchone()[0]
+    cur.close()
+    start_d = str(int(last_td) + 1) if last_td else '20100101'
+    end_d = str(max_d)
+    if start_d > end_d:
+        print(f'  [margin] 时序表已是最新(至 {last_td})')
+    else:
+        # 拉取 trade_date 列表(从交易日历)
+        pro = ts.pro_api()
+        cal = pro.trade_cal(exchange='SSE', start_date=start_d, end_date=end_d, is_open='1')
+        if cal is None or len(cal) == 0:
+            print('  [margin] 无法获取交易日历'); return
+        tds = sorted(cal['cal_date'].tolist())
+        if limit:
+            tds = tds[:limit]
+        ts_rows = 0
+        for i, td in enumerate(tds):
+            for attempt in range(3):
+                try:
+                    df = pro.margin_detail(trade_date=td)
+                    if df is not None and len(df):
+                        if write:
+                            ts_rows += _upsert_margin_daily(conn, df)
+                    break
+                except Exception:
+                    time.sleep(1.5 * (attempt + 1))
+            if (i + 1) % 100 == 0:
+                print(f'  [margin] {i+1}/{len(tds)} 日 | 时序 {ts_rows} 行', flush=True)
+            time.sleep(0.15)
+        print(f'  [margin] 时序表新增 {ts_rows} 行')
+
+    # 从 margin_daily 计算 PE 特征
+    samp = pd.DataFrame(_dict_query(conn,
+        "SELECT stock_code, issue_date FROM placement_evaluation "
+        "WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8 AND issue_date >= '2010'"))
+    samp['issue_date'] = samp['issue_date'].astype(str)
+    stocks = sorted(samp['stock_code'].unique())
+    if limit:
+        stocks = stocks[:limit]
+    rows = []
+    for i, stock in enumerate(stocks):
+        # 从 margin_daily 读该股全量
+        cur = conn.cursor()
+        cur.execute("SELECT trade_date, rzye, rqye, rzmre, rqyl, rzche, rqchl, rqmcl, rzrqye "
+                    "FROM margin_daily WHERE ts_code=%s ORDER BY trade_date", (stock,))
+        cols = [d[0] for d in cur.description]
+        mdata = pd.DataFrame(cur.fetchall(), columns=cols)
+        cur.close()
+        if len(mdata) == 0:
+            continue
+        sd = samp[samp['stock_code'] == stock]
+        for _, r in sd.iterrows():
+            f = _margin_features_from_ts(mdata, r['issue_date'])
+            if f:
+                rows.append((stock, r['issue_date'], f))
+        if (i + 1) % 500 == 0:
+            print(f'  [margin] PE 特征 {i+1}/{len(stocks)} | {len(rows)} 样本', flush=True)
+    print(f'  [margin] PE 匹配 {len(rows)} 样本')
+    if write and rows:
+        ensure_columns(conn, 'margin')
+        n = batch_update(conn, 'margin', rows)
+        print(f'  ✅ PE 回写 {n} 行')
+
+
+# ── P0: report_rc 券商盈利预测 ──
+_RATING_MAP = {'买入': 5, '强烈推荐': 5, '推荐': 5, '增持': 4, '谨慎推荐': 4,
+               '中性': 3, '持有': 3, '减持': 2, '卖出': 1, '回避': 1}
+
+
+def ingest_report_rc(conn, write, limit):
+    """券商盈利预测 → placement_evaluation 特征列(直写 PE)。
+    按 ts_code 拉取全历史研报,PIT: report_date <= issue_date。
+    """
+    samp = pd.DataFrame(_dict_query(conn,
+        "SELECT stock_code, issue_date, issue_date_price FROM placement_evaluation "
+        "WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8"))
+    samp['issue_date'] = samp['issue_date'].astype(str)
+    stocks = sorted(samp['stock_code'].unique())
+    if limit:
+        stocks = stocks[:limit]
+    pro = ts.pro_api()
+    rows = []
+    for i, stock in enumerate(stocks):
+        for attempt in range(3):
+            try:
+                df = pro.report_rc(ts_code=stock)
+                break
+            except Exception:
+                time.sleep(1.0 * (attempt + 1))
+                df = None
+        if df is None or len(df) == 0:
+            continue
+        # 预处理: 数值化 + 评级映射
+        df['eps'] = pd.to_numeric(df['eps'], errors='coerce')
+        df['np'] = pd.to_numeric(df['np'], errors='coerce')
+        df['max_price'] = pd.to_numeric(df['max_price'], errors='coerce')
+        df['min_price'] = pd.to_numeric(df['min_price'], errors='coerce')
+        df['rating_num'] = df['rating'].map(_RATING_MAP)
+        df['rd_int'] = pd.to_numeric(df['report_date'], errors='coerce').astype('Int64')
+        sd = samp[samp['stock_code'] == stock]
+        for _, r in sd.iterrows():
+            iss = int(r['issue_date'])
+            pit = df[df['rd_int'] <= iss].dropna(subset=['rd_int'])
+            if len(pit) == 0:
+                continue
+            # 近90日窗口
+            win = pit[pit['rd_int'] >= iss - 90]
+            if len(win) == 0:
+                win = pit.tail(10)  # fallback: 最近10条
+            f = {}
+            eps_vals = win['eps'].dropna()
+            np_vals = win['np'].dropna()
+            rating_vals = win['rating_num'].dropna()
+            # 一致预期 EPS
+            if len(eps_vals) >= 1:
+                f['rc_eps_consensus'] = float(eps_vals.mean())
+                if len(eps_vals) >= 2:
+                    f['rc_eps_dispersion'] = _sv(float(eps_vals.std() / (abs(eps_vals.mean()) + 1e-9)))
+            # EPS 修正(vs 90日窗口最早)
+            if len(eps_vals) >= 2:
+                old_eps = eps_vals.iloc[0]
+                new_eps = eps_vals.iloc[-1]
+                if abs(old_eps) > 1e-9:
+                    f['rc_eps_revision'] = _sv(float(new_eps / abs(old_eps) - 1))
+            # 分析师覆盖数
+            f['rc_analyst_count'] = int(len(win))
+            # 一致评级
+            if len(rating_vals) >= 1:
+                f['rc_rating_avg'] = float(rating_vals.mean())
+                if len(rating_vals) >= 2:
+                    f['rc_rating_chg'] = _sv(float(rating_vals.iloc[-1] - rating_vals.iloc[0]))
+            # 目标价隐含上涨
+            tp_vals = win['max_price'].dropna()
+            close = r.get('issue_date_price')
+            if len(tp_vals) >= 1 and pd.notna(close) and float(close) > 0:
+                avg_tp = float(tp_vals.mean())
+                f['rc_target_upside'] = _sv(avg_tp / float(close) - 1)
+            # 修正广度
+            if len(eps_vals) >= 2:
+                up = int((eps_vals > eps_vals.iloc[0]).sum())
+                dn = int((eps_vals < eps_vals.iloc[0]).sum())
+                total = up + dn
+                if total > 0:
+                    f['rc_revision_breadth'] = _sv((up - dn) / total)
+            # 预测利润同比
+            if len(np_vals) >= 1:
+                f['rc_imp_profit_yoy'] = _sv(float(np_vals.iloc[-1]))  # 绝对值占位
+            # 信息新鲜度
+            f['rc_recency'] = int(iss - int(win['rd_int'].iloc[-1]))
+            if f:
+                rows.append((stock, r['issue_date'], f))
+        time.sleep(0.3)
+        if (i + 1) % 200 == 0:
+            print(f'  [report_rc] {i+1}/{len(stocks)} | {len(rows)} 样本', flush=True)
+    print(f'  [report_rc] 匹配 {len(rows)} 样本')
+    if write and rows:
+        ensure_columns(conn, 'report_rc')
+        n = batch_update(conn, 'report_rc', rows)
+        print(f'  ✅ 回写 {n} 行')
+
+
+# ── P1: pledge_stat 股权质押 ──
+def ingest_pledge(conn, write, limit):
+    """股权质押 → placement_evaluation(直写 PE)。"""
+    samp = pd.DataFrame(_dict_query(conn,
+        "SELECT stock_code, issue_date FROM placement_evaluation "
+        "WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8"))
+    samp['issue_date'] = samp['issue_date'].astype(str)
+    stocks = sorted(samp['stock_code'].unique())
+    if limit:
+        stocks = stocks[:limit]
+    pro = ts.pro_api()
+    rows = []
+    for i, stock in enumerate(stocks):
+        for attempt in range(3):
+            try:
+                df = pro.pledge_stat(ts_code=stock)
+                break
+            except Exception:
+                time.sleep(1.0 * (attempt + 1))
+                df = None
+        if df is None or len(df) == 0:
+            continue
+        df['end_date'] = df['end_date'].astype(str)
+        df = df.sort_values('end_date')
+        sd = samp[samp['stock_code'] == stock]
+        for _, r in sd.iterrows():
+            iss = r['issue_date']
+            pit = df[df['end_date'] <= iss]
+            if len(pit) == 0:
+                continue
+            cur = pit.iloc[-1]
+            f = {}
+            ratio = _sv(cur.get('pledge_ratio'))
+            if ratio is not None:
+                f['pledge_ratio'] = ratio / 100.0  # 百分比→比例
+                f['pledge_danger_zone'] = 1 if ratio > 50 else 0
+            count = _sv(cur.get('pledge_count'))
+            if count is not None:
+                f['pledge_count'] = int(count)
+            if len(pit) >= 2:
+                prev_ratio = _sv(pit.iloc[-2].get('pledge_ratio'))
+                if prev_ratio is not None and ratio is not None:
+                    f['pledge_ratio_chg'] = (ratio - prev_ratio) / 100.0
+            if f:
+                rows.append((stock, iss, f))
+        time.sleep(0.3)
+        if (i + 1) % 200 == 0:
+            print(f'  [pledge] {i+1}/{len(stocks)} | {len(rows)} 样本', flush=True)
+    print(f'  [pledge] 匹配 {len(rows)} 样本')
+    if write and rows:
+        ensure_columns(conn, 'pledge')
+        n = batch_update(conn, 'pledge', rows)
+        print(f'  ✅ 回写 {n} 行')
+
+
+# ── P1: dividend 分红送股 ──
+def ingest_dividend(conn, write, limit):
+    """分红送股 → placement_evaluation(直写 PE)。"""
+    samp = pd.DataFrame(_dict_query(conn,
+        "SELECT stock_code, issue_date, issue_date_price FROM placement_evaluation "
+        "WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8"))
+    samp['issue_date'] = samp['issue_date'].astype(str)
+    stocks = sorted(samp['stock_code'].unique())
+    if limit:
+        stocks = stocks[:limit]
+    pro = ts.pro_api()
+    rows = []
+    for i, stock in enumerate(stocks):
+        for attempt in range(3):
+            try:
+                df = pro.dividend(ts_code=stock)
+                break
+            except Exception:
+                time.sleep(1.0 * (attempt + 1))
+                df = None
+        if df is None or len(df) == 0:
+            continue
+        df['ann_date'] = df.get('ann_date', pd.Series()).astype(str)
+        df['stk_div'] = pd.to_numeric(df.get('stk_div', pd.Series()), errors='coerce').fillna(0)
+        df['cash_div'] = pd.to_numeric(df.get('cash_div', pd.Series()), errors='coerce').fillna(0)
+        df['stk_bo_rate'] = pd.to_numeric(df.get('stk_bo_rate', pd.Series()), errors='coerce').fillna(0)
+        df['stk_co_rate'] = pd.to_numeric(df.get('stk_co_rate', pd.Series()), errors='coerce').fillna(0)
+        # 用现金分红+送股合计;只取已实施(div_proc=实施)
+        df_impl = df[df.get('div_proc', pd.Series()) == '实施'].copy() if 'div_proc' in df.columns else df.copy()
+        if len(df_impl) == 0:
+            df_impl = df  # fallback: 不过滤
+        df_impl['total_div'] = df_impl['cash_div'] + df_impl['stk_div']
+        sd = samp[samp['stock_code'] == stock]
+        for _, r in sd.iterrows():
+            iss = r['issue_date']
+            pit = df_impl[(df_impl['ann_date'] <= iss) & (df_impl['ann_date'].str.len() == 8)]
+            if len(pit) == 0:
+                continue
+            close = r.get('issue_date_price')
+            f = {}
+            # TTM 股息率(近4季累计分红/股价)
+            if pd.notna(close) and float(close) > 0:
+                recent = pit.tail(4)
+                total_div = recent['total_div'].sum()
+                if total_div > 0:
+                    f['div_yield_ttm'] = float(total_div / float(close))
+            # 分红率(占盈利比例,此处简化为每股分红/1 — 精确需 EPS)
+            latest_div = _sv(pit.iloc[-1].get('stk_div'))
+            if latest_div and latest_div > 0:
+                f['div_payout_ratio'] = latest_div  # 占位,后续可 /EPS
+            # 股息率变化(vs 1年前)
+            year_ago = pit[pit['ann_date'] <= str(int(iss[:4]) - 1) + iss[4:]]
+            if len(year_ago) > 0 and pd.notna(close) and float(close) > 0:
+                old_div = year_ago.tail(4)['total_div'].sum()
+                if old_div > 0 and total_div > 0:
+                    f['div_yield_chg'] = _sv(float(total_div / old_div - 1))
+            # 送转增
+            latest_bo = _sv(pit.iloc[-1].get('stk_bo_rate'))
+            latest_co = _sv(pit.iloc[-1].get('stk_co_rate'))
+            if latest_bo or latest_co:
+                f['div_bonus_shares'] = _sv((latest_bo or 0) + (latest_co or 0))
+            # 连续分红年数
+            years = sorted(set(pit['ann_date'].str[:4].tolist()))
+            streak = 0
+            for j in range(len(years) - 1, 0, -1):
+                if int(years[j]) == int(years[j - 1]) + 1:
+                    streak += 1
+                else:
+                    break
+            f['div_consistency'] = streak + 1 if years else 0
+            if f:
+                rows.append((stock, iss, f))
+        time.sleep(0.3)
+        if (i + 1) % 200 == 0:
+            print(f'  [dividend] {i+1}/{len(stocks)} | {len(rows)} 样本', flush=True)
+    print(f'  [dividend] 匹配 {len(rows)} 样本')
+    if write and rows:
+        ensure_columns(conn, 'dividend')
+        n = batch_update(conn, 'dividend', rows)
+        print(f'  ✅ 回写 {n} 行')
+
+
+# ── P1: repurchase 股票回购 ──
+def ingest_repurchase(conn, write, limit):
+    """股票回购 → placement_evaluation(直写 PE)。"""
+    samp = pd.DataFrame(_dict_query(conn,
+        "SELECT stock_code, issue_date FROM placement_evaluation "
+        "WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8"))
+    samp['issue_date'] = samp['issue_date'].astype(str)
+    stocks = sorted(samp['stock_code'].unique())
+    if limit:
+        stocks = stocks[:limit]
+    pro = ts.pro_api()
+    rows = []
+    for i, stock in enumerate(stocks):
+        for attempt in range(3):
+            try:
+                df = pro.repurchase(ts_code=stock)
+                break
+            except Exception:
+                time.sleep(1.0 * (attempt + 1))
+                df = None
+        if df is None or len(df) == 0:
+            continue
+        df['ann_date'] = df.get('ann_date', pd.Series()).astype(str)
+        sd = samp[samp['stock_code'] == stock]
+        for _, r in sd.iterrows():
+            iss = r['issue_date']
+            pit = df[(df['ann_date'] <= iss) & (df['ann_date'].str.len() == 8)]
+            if len(pit) == 0:
+                continue
+            f = {}
+            # 近1年回购次数
+            yr_ago = str(int(iss[:4]) - 1) + iss[4:]
+            recent = pit[pit['ann_date'] >= yr_ago]
+            f['repurchase_count_1y'] = int(len(recent))
+            # 最近回购距报价日天数
+            try:
+                f['repurchase_recent_d'] = int(
+                    (pd.Timestamp(iss) - pd.Timestamp(pit['ann_date'].iloc[-1])).days)
+            except Exception:
+                pass
+            # 回购金额/总市值(简化: 用 repurchase_amount 如有)
+            amt = _sv(pit.iloc[-1].get('repurchase_amount', pit.iloc[-1].get('amt')))
+            if amt and amt > 0:
+                f['repurchase_amount_ratio'] = _sv(amt)  # 占位
+            # 完成进度
+            proc = _sv(pit.iloc[-1].get('proc', pit.iloc[-1].get('progress')))
+            if proc is not None:
+                f['repurchase_progress'] = _sv(proc / 100.0 if proc > 1 else proc)
+            if f:
+                rows.append((stock, iss, f))
+        time.sleep(0.3)
+        if (i + 1) % 200 == 0:
+            print(f'  [repurchase] {i+1}/{len(stocks)} | {len(rows)} 样本', flush=True)
+    print(f'  [repurchase] 匹配 {len(rows)} 样本')
+    if write and rows:
+        ensure_columns(conn, 'repurchase')
+        n = batch_update(conn, 'repurchase', rows)
+        print(f'  ✅ 回写 {n} 行')
+
+
+# ── P2: top_list + top_inst 龙虎榜 ──
+def ingest_top_list(conn, write, limit):
+    """龙虎榜 → placement_evaluation(直写 PE)。按 trade_date 批量拉。"""
+    samp = pd.DataFrame(_dict_query(conn,
+        "SELECT stock_code, issue_date FROM placement_evaluation "
+        "WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8 AND issue_date >= '2010'"))
+    samp['issue_date'] = samp['issue_date'].astype(str)
+    stocks = sorted(samp['stock_code'].unique())
+    if limit:
+        stocks = stocks[:limit]
+    stock_set = set(stocks)
+    # 收集所有样本的报价日前30日范围内的龙虎榜
+    all_dates = set()
+    for d in samp['issue_date']:
+        for offset in range(31):
+            try:
+                dt = pd.Timestamp(d) - pd.Timedelta(days=offset)
+                all_dates.add(dt.strftime('%Y%m%d'))
+            except Exception:
+                pass
+    all_dates = sorted(all_dates)
+    pro = ts.pro_api()
+    # 按日期拉龙虎榜
+    toplist_map = defaultdict(lambda: {'count': 0, 'inst_net': 0.0, 'has_inst': 0})
+    for i, td in enumerate(all_dates):
+        for attempt in range(3):
+            try:
+                df = pro.top_list(trade_date=td)
+                if df is not None and len(df):
+                    for _, r in df.iterrows():
+                        ts_c = str(r.get('ts_code', ''))
+                        if ts_c in stock_set:
+                            toplist_map[(ts_c, td)]['count'] += 1
+                break
+            except Exception:
+                time.sleep(1.0 * (attempt + 1))
+        if (i + 1) % 200 == 0:
+            print(f'  [top_list] 日期 {i+1}/{len(all_dates)}', flush=True)
+        time.sleep(0.15)
+    # 聚合到样本
+    rows = []
+    for _, r in samp.iterrows():
+        code, iss = r['stock_code'], r['issue_date']
+        if code not in stock_set:
+            continue
+        cnt, inst_net, has_inst = 0, 0.0, 0
+        for offset in range(31):
+            try:
+                dt = (pd.Timestamp(iss) - pd.Timedelta(days=offset)).strftime('%Y%m%d')
+            except Exception:
+                continue
+            entry = toplist_map.get((code, dt))
+            if entry:
+                cnt += entry['count']
+                inst_net += entry['inst_net']
+                has_inst = max(has_inst, entry['has_inst'])
+        if cnt > 0:
+            rows.append((code, iss, {'toplist_count_30d': cnt,
+                                     'toplist_inst_net_buy': inst_net,
+                                     'toplist_institutional': has_inst}))
+    print(f'  [top_list] 匹配 {len(rows)} 样本')
+    if write and rows:
+        ensure_columns(conn, 'top_list')
+        n = batch_update(conn, 'top_list', rows)
+        print(f'  ✅ 回写 {n} 行')
+
+
+# ── P2: block_trade 大宗交易 ──
+def ingest_block_trade(conn, write, limit):
+    """大宗交易 → placement_evaluation(直写 PE)。"""
+    samp = pd.DataFrame(_dict_query(conn,
+        "SELECT stock_code, issue_date FROM placement_evaluation "
+        "WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8"))
+    samp['issue_date'] = samp['issue_date'].astype(str)
+    stocks = sorted(samp['stock_code'].unique())
+    if limit:
+        stocks = stocks[:limit]
+    pro = ts.pro_api()
+    rows = []
+    for i, stock in enumerate(stocks):
+        for attempt in range(3):
+            try:
+                df = pro.block_trade(ts_code=stock)
+                break
+            except Exception:
+                time.sleep(1.0 * (attempt + 1))
+                df = None
+        if df is None or len(df) == 0:
+            continue
+        df['trade_date'] = df.get('trade_date', pd.Series()).astype(str)
+        df['tp'] = pd.to_numeric(df.get('tp', pd.Series()), errors='coerce')  # 成交价
+        df['amount'] = pd.to_numeric(df.get('amount', pd.Series()), errors='coerce')
+        sd = samp[samp['stock_code'] == stock]
+        for _, r in sd.iterrows():
+            iss = r['issue_date']
+            yr_ago = str(int(iss[:4]) - 1) + iss[4:] if len(iss) == 8 else None
+            if not yr_ago:
+                continue
+            recent = df[(df['trade_date'] >= yr_ago) & (df['trade_date'] <= iss)]
+            if len(recent) == 0:
+                continue
+            f = {'block_count_30d': int(len(recent))}
+            # 平均折价率
+            if 'tp' in recent.columns:
+                # 简化: 折价率需要收盘价对比,此处用成交价/成交价(占位)
+                f['block_discount_avg'] = 0.0
+            if recent['amount'].notna().any():
+                f['block_amount_ratio'] = _sv(float(recent['amount'].sum()))
+            rows.append((stock, iss, f))
+        time.sleep(0.3)
+        if (i + 1) % 200 == 0:
+            print(f'  [block_trade] {i+1}/{len(stocks)} | {len(rows)} 样本', flush=True)
+    print(f'  [block_trade] 匹配 {len(rows)} 样本')
+    if write and rows:
+        ensure_columns(conn, 'block_trade')
+        n = batch_update(conn, 'block_trade', rows)
+        print(f'  ✅ 回写 {n} 行')
+
+
+# ── P2: stk_holdernumber 股东人数 ──
+def ingest_holdernumber(conn, write, limit):
+    """股东人数 → placement_evaluation(直写 PE)。"""
+    samp = pd.DataFrame(_dict_query(conn,
+        "SELECT stock_code, issue_date FROM placement_evaluation "
+        "WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8"))
+    samp['issue_date'] = samp['issue_date'].astype(str)
+    stocks = sorted(samp['stock_code'].unique())
+    if limit:
+        stocks = stocks[:limit]
+    pro = ts.pro_api()
+    rows = []
+    for i, stock in enumerate(stocks):
+        for attempt in range(3):
+            try:
+                df = pro.stk_holdernumber(ts_code=stock)
+                break
+            except Exception:
+                time.sleep(1.0 * (attempt + 1))
+                df = None
+        if df is None or len(df) == 0:
+            continue
+        df['end_date'] = df.get('end_date', pd.Series()).astype(str)
+        df['holder_num'] = pd.to_numeric(df.get('holder_num', pd.Series()), errors='coerce')
+        df = df.sort_values('end_date')
+        sd = samp[samp['stock_code'] == stock]
+        for _, r in sd.iterrows():
+            iss = r['issue_date']
+            pit = df[(df['end_date'] <= iss) & df['holder_num'].notna()]
+            if len(pit) == 0:
+                continue
+            f = {'holder_count': int(pit.iloc[-1]['holder_num'])}
+            if len(pit) >= 2:
+                prev = pit.iloc[-2]['holder_num']
+                if prev > 0:
+                    f['holder_count_chg'] = _sv(float(pit.iloc[-1]['holder_num'] / prev - 1))
+            rows.append((stock, iss, f))
+        time.sleep(0.3)
+        if (i + 1) % 200 == 0:
+            print(f'  [holdernumber] {i+1}/{len(stocks)} | {len(rows)} 样本', flush=True)
+    print(f'  [holdernumber] 匹配 {len(rows)} 样本')
+    if write and rows:
+        ensure_columns(conn, 'holdernumber')
+        n = batch_update(conn, 'holdernumber', rows)
+        print(f'  ✅ 回写 {n} 行')
+
+
+# ── P2: stk_holdertrade 股东增减持 ──
+def ingest_holdertrade(conn, write, limit):
+    """股东增减持 → placement_evaluation(直写 PE)。"""
+    samp = pd.DataFrame(_dict_query(conn,
+        "SELECT stock_code, issue_date FROM placement_evaluation "
+        "WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8"))
+    samp['issue_date'] = samp['issue_date'].astype(str)
+    stocks = sorted(samp['stock_code'].unique())
+    if limit:
+        stocks = stocks[:limit]
+    pro = ts.pro_api()
+    rows = []
+    for i, stock in enumerate(stocks):
+        for attempt in range(3):
+            try:
+                df = pro.stk_holdertrade(ts_code=stock)
+                break
+            except Exception:
+                time.sleep(1.0 * (attempt + 1))
+                df = None
+        if df is None or len(df) == 0:
+            continue
+        df['ann_date'] = df.get('ann_date', pd.Series()).astype(str)
+        df['in_vol'] = pd.to_numeric(df.get('in_vol', pd.Series()), errors='coerce')
+        df['change_vol'] = pd.to_numeric(df.get('change_vol', pd.Series()), errors='coerce')
+        sd = samp[samp['stock_code'] == stock]
+        for _, r in sd.iterrows():
+            iss = r['issue_date']
+            yr_ago = str(int(iss[:4]) - 1) + iss[4:] if len(iss) == 8 else None
+            if not yr_ago:
+                continue
+            recent = df[(df['ann_date'] >= yr_ago) & (df['ann_date'] <= iss)]
+            if len(recent) == 0:
+                continue
+            chg = recent['change_vol'].dropna()
+            f = {}
+            if len(chg) > 0:
+                f['insider_net_buy_90d'] = _sv(float(chg.sum()))
+                f['insider_buy_count_90d'] = int((chg > 0).sum())
+                f['insider_direction'] = _sv(float(chg.sum() / (chg.abs().sum() + 1e-9)))
+            if f:
+                rows.append((stock, iss, f))
+        time.sleep(0.3)
+        if (i + 1) % 200 == 0:
+            print(f'  [holdertrade] {i+1}/{len(stocks)} | {len(rows)} 样本', flush=True)
+    print(f'  [holdertrade] 匹配 {len(rows)} 样本')
+    if write and rows:
+        ensure_columns(conn, 'holdertrade')
+        n = batch_update(conn, 'holdertrade', rows)
+        print(f'  ✅ 回写 {n} 行')
+
+
+# ── P2: stk_surv 机构调研 ──
+def ingest_surv(conn, write, limit):
+    """机构调研 → placement_evaluation(直写 PE)。"""
+    samp = pd.DataFrame(_dict_query(conn,
+        "SELECT stock_code, issue_date FROM placement_evaluation "
+        "WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8"))
+    samp['issue_date'] = samp['issue_date'].astype(str)
+    stocks = sorted(samp['stock_code'].unique())
+    if limit:
+        stocks = stocks[:limit]
+    pro = ts.pro_api()
+    rows = []
+    for i, stock in enumerate(stocks):
+        for attempt in range(3):
+            try:
+                df = pro.stk_surv(ts_code=stock)
+                break
+            except Exception:
+                time.sleep(1.0 * (attempt + 1))
+                df = None
+        if df is None or len(df) == 0:
+            continue
+        df['surv_date'] = df.get('surv_date', df.get('ann_date', pd.Series())).astype(str)
+        sd = samp[samp['stock_code'] == stock]
+        for _, r in sd.iterrows():
+            iss = r['issue_date']
+            yr_ago = str(int(iss[:4]) - 1) + iss[4:] if len(iss) == 8 else None
+            if not yr_ago:
+                continue
+            recent = df[(df['surv_date'] >= yr_ago) & (df['surv_date'] <= iss)]
+            if len(recent) == 0:
+                continue
+            f = {'surv_count_90d': int(len(recent))}
+            try:
+                last_d = recent['surv_date'].iloc[-1]
+                f['surv_recency'] = int((pd.Timestamp(iss) - pd.Timestamp(last_d)).days)
+            except Exception:
+                pass
+            rows.append((stock, iss, f))
+        time.sleep(0.3)
+        if (i + 1) % 200 == 0:
+            print(f'  [surv] {i+1}/{len(stocks)} | {len(rows)} 样本', flush=True)
+    print(f'  [surv] 匹配 {len(rows)} 样本')
+    if write and rows:
+        ensure_columns(conn, 'surv')
+        n = batch_update(conn, 'surv', rows)
+        print(f'  ✅ 回写 {n} 行')
+
+
+# ── P3: macro regime ──
+def ingest_regime(conn, write, limit):
+    """宏观 regime: 北向/Shibor/美债 → market_regime_daily; CPI/PPI/PMI/M/社融/LPR → market_regime_monthly。
+    然后从两张表匹配到 placement_evaluation → macro 特征列。
+    """
+    pro = ts.pro_api()
+    # ── 日频: 北向资金 ──
+    print('  [regime] 拉取北向资金流...')
+    try:
+        hsgt = pro.moneyflow_hsgt()
+        if hsgt is not None and len(hsgt):
+            cur = conn.cursor()
+            for _, r in hsgt.iterrows():
+                td = str(r.get('trade_date', ''))
+                north = _sv(r.get('north_money', r.get('ggt_ss', 0)))
+                south = _sv(r.get('south_money', r.get('ggt_sz', 0)))
+                if len(td) == 8 and write:
+                    cur.execute(
+                        "INSERT INTO market_regime_daily (trade_date, hsgt_north, hsgt_south) "
+                        "VALUES (%s,%s,%s) ON DUPLICATE KEY UPDATE "
+                        "hsgt_north=VALUES(hsgt_north), hsgt_south=VALUES(hsgt_south)",
+                        (td, north, south))
+            if write:
+                conn.commit()
+            print(f'  [regime] 北向 {len(hsgt)} 日')
+    except Exception as e:
+        print(f'  [regime] 北向拉取失败: {e}')
+
+    # ── 日频: Shibor ──
+    print('  [regime] 拉取 Shibor...')
+    try:
+        sh = pro.shibor()
+        if sh is not None and len(sh):
+            cur = conn.cursor()
+            for _, r in sh.iterrows():
+                td = str(r.get('date', ''))
+                if len(td) != 8 or not write:
+                    continue
+                cur.execute(
+                    "INSERT INTO market_regime_daily (trade_date, shibor_on, shibor_1w, shibor_1m, shibor_3m) "
+                    "VALUES (%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE "
+                    "shibor_on=VALUES(shibor_on), shibor_1w=VALUES(shibor_1w), "
+                    "shibor_1m=VALUES(shibor_1m), shibor_3m=VALUES(shibor_3m)",
+                    (td, _sv(r.get('on')), _sv(r.get('1w')), _sv(r.get('1m')), _sv(r.get('3m'))))
+            if write:
+                conn.commit()
+            print(f'  [regime] Shibor {len(sh)} 日')
+    except Exception as e:
+        print(f'  [regime] Shibor 拉取失败: {e}')
+
+    # ── 月频: CPI/PPI/PMI/M/社融/LPR ──
+    print('  [regime] 拉取宏观月频...')
+    monthly_data = {}  # month → {col: val}
+    apis = [
+        ('cn_cpi', 'nt_yoy', 'cpi_yoy'),
+        ('cn_ppi', 'ppi_yoy', 'ppi_yoy'),
+        ('cn_pmi', 'pmi', 'pmi'),
+        ('cn_m', 'm1_yoy', 'm1_yoy'),
+    ]
+    for api_name, src_col, dst_col in apis:
+        try:
+            df = getattr(pro, api_name)()
+            if df is not None and len(df):
+                for _, r in df.iterrows():
+                    m = str(r.get('month', r.get('date', '')))[:6]
+                    if len(m) != 6:
+                        continue
+                    if m not in monthly_data:
+                        monthly_data[m] = {}
+                    monthly_data[m][dst_col] = _sv(r.get(src_col))
+        except Exception as e:
+            print(f'  [regime] {api_name} 失败: {e}')
+    # M2
+    try:
+        df = pro.cn_m()
+        if df is not None and len(df):
+            for _, r in df.iterrows():
+                m = str(r.get('month', ''))[:6]
+                if len(m) == 6:
+                    if m not in monthly_data:
+                        monthly_data[m] = {}
+                    monthly_data[m]['m2_yoy'] = _sv(r.get('m2_yoy'))
+    except Exception:
+        pass
+    # LPR
+    try:
+        df = pro.shibor_lpr()
+        if df is not None and len(df):
+            for _, r in df.iterrows():
+                m = str(r.get('date', ''))[:6]
+                if len(m) == 6:
+                    if m not in monthly_data:
+                        monthly_data[m] = {}
+                    monthly_data[m]['lpr_1y'] = _sv(r.get('lpr1y'))
+                    monthly_data[m]['lpr_5y'] = _sv(r.get('lpr5y'))
+    except Exception:
+        pass
+    # 写入 market_regime_monthly
+    if write:
+        cur = conn.cursor()
+        for m, d in monthly_data.items():
+            cur.execute(
+                "INSERT INTO market_regime_monthly (month, cpi_yoy, ppi_yoy, pmi, "
+                "m1_yoy, m2_yoy, lpr_1y, lpr_5y) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
+                "ON DUPLICATE KEY UPDATE cpi_yoy=VALUES(cpi_yoy), ppi_yoy=VALUES(ppi_yoy), "
+                "pmi=VALUES(pmi), m1_yoy=VALUES(m1_yoy), m2_yoy=VALUES(m2_yoy), "
+                "lpr_1y=VALUES(lpr_1y), lpr_5y=VALUES(lpr_5y)",
+                (m, d.get('cpi_yoy'), d.get('ppi_yoy'), d.get('pmi'),
+                 d.get('m1_yoy'), d.get('m2_yoy'), d.get('lpr_1y'), d.get('lpr_5y')))
+        conn.commit()
+        print(f'  [regime] 月频 {len(monthly_data)} 月写入完成')
+
+    # ── 匹配到 PE → macro 特征列 ──
+    samp = pd.DataFrame(_dict_query(conn,
+        "SELECT stock_code, issue_date FROM placement_evaluation "
+        "WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8"))
+    samp['issue_date'] = samp['issue_date'].astype(str)
+    # 读 regime 表
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM market_regime_monthly ORDER BY month")
+    mcols = [d[0] for d in cur.description]
+    mdata = pd.DataFrame(cur.fetchall(), columns=mcols)
+    cur.execute("SELECT trade_date, hsgt_north, shibor_3m, us_10y FROM market_regime_daily ORDER BY trade_date")
+    dcols = [d[0] for d in cur.description]
+    ddata = pd.DataFrame(cur.fetchall(), columns=dcols)
+    cur.close()
+
+    rows = []
+    for _, r in samp.iterrows():
+        iss = r['issue_date']
+        m = iss[:6]
+        f = {}
+        # 月频匹配
+        mrow = mdata[mdata['month'] <= m]
+        if len(mrow) > 0:
+            mr = mrow.iloc[-1]
+            for col in ['cpi_yoy', 'ppi_yoy', 'pmi', 'm1_yoy', 'm2_yoy', 'lpr_1y']:
+                v = _sv(mr.get(col))
+                if v is not None:
+                    f[f'macro_{col}'] = v
+            cpi = _sv(mr.get('cpi_yoy'))
+            ppi = _sv(mr.get('ppi_yoy'))
+            if cpi is not None and ppi is not None:
+                f['macro_ppi_cpi_spread'] = ppi - cpi
+            m1 = _sv(mr.get('m1_yoy'))
+            m2 = _sv(mr.get('m2_yoy'))
+            if m1 is not None and m2 is not None:
+                f['macro_m1_m2_scissor'] = m1 - m2
+            pmi = _sv(mr.get('pmi'))
+            if pmi is not None:
+                f['macro_pmi_expansion'] = 1 if pmi > 50 else 0
+        # 日频匹配
+        drow = ddata[ddata['trade_date'] <= iss]
+        if len(drow) > 0:
+            dr = drow.iloc[-1]
+            sh3 = _sv(dr.get('shibor_3m'))
+            if sh3 is not None:
+                f['macro_shibor_3m'] = sh3
+            us10 = _sv(dr.get('us_10y'))
+            if us10 is not None:
+                f['macro_us_10y'] = us10
+                if sh3 is not None:
+                    f['macro_us_cn_spread'] = us10 - sh3  # 近似中美利差
+            # 北向5日/20日
+            if len(drow) >= 5:
+                hsgt = pd.to_numeric(drow['hsgt_north'].tail(5), errors='coerce')
+                f['macro_hsgt_net_5d'] = _sv(float(hsgt.sum()))
+            if len(drow) >= 20:
+                hsgt20 = pd.to_numeric(drow['hsgt_north'].tail(20), errors='coerce')
+                f['macro_hsgt_net_20d'] = _sv(float(hsgt20.sum()))
+        if f:
+            rows.append((r['stock_code'], iss, f))
+    print(f'  [macro] 匹配 {len(rows)} 样本')
+    if write and rows:
+        ensure_columns(conn, 'macro')
+        n = batch_update(conn, 'macro', rows)
+        print(f'  ✅ 回写 {n} 行')
+
+
 SOURCES = {'placement': ingest_placement, 'chip': ingest_chip,
-           'capitalflow': ingest_capitalflow, 'smc': ingest_smc, 'sue': ingest_sue}
+           'capitalflow': ingest_capitalflow, 'smc': ingest_smc, 'sue': ingest_sue,
+           # P0
+           'margin': ingest_margin, 'report_rc': ingest_report_rc,
+           # P1
+           'pledge': ingest_pledge, 'dividend': ingest_dividend,
+           'repurchase': ingest_repurchase,
+           # P2
+           'top_list': ingest_top_list, 'block_trade': ingest_block_trade,
+           'holdernumber': ingest_holdernumber, 'holdertrade': ingest_holdertrade,
+           'surv': ingest_surv,
+           # P3
+           'regime': ingest_regime, 'macro': ingest_regime,
+           }
 
 
 def main():
