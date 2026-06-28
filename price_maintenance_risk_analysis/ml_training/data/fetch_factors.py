@@ -17,11 +17,14 @@
 """
 import argparse
 import glob
+import json
 import os
 import re
 import sys
 import time
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 
 import numpy as np
 import pandas as pd
@@ -258,6 +261,33 @@ def _upsert_nb_hold_daily(conn, stock, nb_df):
         rows)
     conn.commit()
     return len(rows)
+
+
+def _parallel_per_stock(stocks, worker_fn, max_workers=8, label=''):
+    """并行处理逐股任务。worker_fn(stock) → list[result]。返回合并的 results。
+    5000积分=500次/分,8线程×0.15s/次≈800次/分,安全范围内。
+    """
+    results = []
+    lock = Lock()
+    done = [0]
+    def _wrap(stock):
+        try:
+            rs = worker_fn(stock)
+            with lock:
+                done[0] += 1
+                if done[0] % 500 == 0:
+                    print(f'  [{label}] {done[0]}/{len(stocks)} | {len(results)+len(rs)} 样本', flush=True)
+            return rs
+        except Exception as e:
+            return []
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futs = {pool.submit(_wrap, s): s for s in stocks}
+        for fut in as_completed(futs):
+            rs = fut.result()
+            if rs:
+                results.extend(rs)
+    print(f'  [{label}] 完成 {len(stocks)} 股 | {len(results)} 样本')
+    return results
 
 
 def load_sample_keys(conn, since=None):
@@ -1020,7 +1050,7 @@ def ingest_report_rc(conn, write, limit):
 
 # ── P1: pledge_stat 股权质押 ──
 def ingest_pledge(conn, write, limit):
-    """股权质押 → placement_evaluation(直写 PE)。"""
+    """股权质押 → placement_evaluation(直写 PE, 8线程并发)。"""
     samp = pd.DataFrame(_dict_query(conn,
         "SELECT stock_code, issue_date FROM placement_evaluation "
         "WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8"))
@@ -1029,8 +1059,9 @@ def ingest_pledge(conn, write, limit):
     if limit:
         stocks = stocks[:limit]
     pro = ts.pro_api()
-    rows = []
-    for i, stock in enumerate(stocks):
+    samp_map = {s: g for s, g in samp.groupby('stock_code')}
+
+    def _worker(stock):
         for attempt in range(3):
             try:
                 df = pro.pledge_stat(ts_code=stock)
@@ -1039,11 +1070,11 @@ def ingest_pledge(conn, write, limit):
                 time.sleep(1.0 * (attempt + 1))
                 df = None
         if df is None or len(df) == 0:
-            continue
+            return []
         df['end_date'] = df['end_date'].astype(str)
         df = df.sort_values('end_date')
-        sd = samp[samp['stock_code'] == stock]
-        for _, r in sd.iterrows():
+        rows = []
+        for _, r in samp_map.get(stock, pd.DataFrame()).iterrows():
             iss = r['issue_date']
             pit = df[df['end_date'] <= iss]
             if len(pit) == 0:
@@ -1052,7 +1083,7 @@ def ingest_pledge(conn, write, limit):
             f = {}
             ratio = _sv(cur.get('pledge_ratio'))
             if ratio is not None:
-                f['pledge_ratio'] = ratio / 100.0  # 百分比→比例
+                f['pledge_ratio'] = ratio / 100.0
                 f['pledge_danger_zone'] = 1 if ratio > 50 else 0
             count = _sv(cur.get('pledge_count'))
             if count is not None:
@@ -1063,10 +1094,10 @@ def ingest_pledge(conn, write, limit):
                     f['pledge_ratio_chg'] = (ratio - prev_ratio) / 100.0
             if f:
                 rows.append((stock, iss, f))
-        time.sleep(0.3)
-        if (i + 1) % 200 == 0:
-            print(f'  [pledge] {i+1}/{len(stocks)} | {len(rows)} 样本', flush=True)
-    print(f'  [pledge] 匹配 {len(rows)} 样本')
+        time.sleep(0.15)
+        return rows
+
+    rows = _parallel_per_stock(stocks, _worker, max_workers=8, label='pledge')
     if write and rows:
         ensure_columns(conn, 'pledge')
         n = batch_update(conn, 'pledge', rows)
@@ -1075,7 +1106,7 @@ def ingest_pledge(conn, write, limit):
 
 # ── P1: dividend 分红送股 ──
 def ingest_dividend(conn, write, limit):
-    """分红送股 → placement_evaluation(直写 PE)。"""
+    """分红送股 → placement_evaluation(直写 PE, 8线程并发)。"""
     samp = pd.DataFrame(_dict_query(conn,
         "SELECT stock_code, issue_date, issue_date_price FROM placement_evaluation "
         "WHERE issue_date IS NOT NULL AND LENGTH(issue_date)=8"))
@@ -1084,8 +1115,9 @@ def ingest_dividend(conn, write, limit):
     if limit:
         stocks = stocks[:limit]
     pro = ts.pro_api()
-    rows = []
-    for i, stock in enumerate(stocks):
+    samp_map = {s: g for s, g in samp.groupby('stock_code')}
+
+    def _worker(stock):
         for attempt in range(3):
             try:
                 df = pro.dividend(ts_code=stock)
@@ -1094,47 +1126,42 @@ def ingest_dividend(conn, write, limit):
                 time.sleep(1.0 * (attempt + 1))
                 df = None
         if df is None or len(df) == 0:
-            continue
+            return []
         df['ann_date'] = df.get('ann_date', pd.Series()).astype(str)
         df['stk_div'] = pd.to_numeric(df.get('stk_div', pd.Series()), errors='coerce').fillna(0)
         df['cash_div'] = pd.to_numeric(df.get('cash_div', pd.Series()), errors='coerce').fillna(0)
         df['stk_bo_rate'] = pd.to_numeric(df.get('stk_bo_rate', pd.Series()), errors='coerce').fillna(0)
         df['stk_co_rate'] = pd.to_numeric(df.get('stk_co_rate', pd.Series()), errors='coerce').fillna(0)
-        # 用现金分红+送股合计;只取已实施(div_proc=实施)
         df_impl = df[df.get('div_proc', pd.Series()) == '实施'].copy() if 'div_proc' in df.columns else df.copy()
         if len(df_impl) == 0:
-            df_impl = df  # fallback: 不过滤
+            df_impl = df
         df_impl['total_div'] = df_impl['cash_div'] + df_impl['stk_div']
-        sd = samp[samp['stock_code'] == stock]
-        for _, r in sd.iterrows():
+        rows = []
+        for _, r in samp_map.get(stock, pd.DataFrame()).iterrows():
             iss = r['issue_date']
             pit = df_impl[(df_impl['ann_date'] <= iss) & (df_impl['ann_date'].str.len() == 8)]
             if len(pit) == 0:
                 continue
             close = r.get('issue_date_price')
             f = {}
-            # TTM 股息率(近4季累计分红/股价)
+            total_div = 0
             if pd.notna(close) and float(close) > 0:
                 recent = pit.tail(4)
                 total_div = recent['total_div'].sum()
                 if total_div > 0:
                     f['div_yield_ttm'] = float(total_div / float(close))
-            # 分红率(占盈利比例,此处简化为每股分红/1 — 精确需 EPS)
             latest_div = _sv(pit.iloc[-1].get('stk_div'))
             if latest_div and latest_div > 0:
-                f['div_payout_ratio'] = latest_div  # 占位,后续可 /EPS
-            # 股息率变化(vs 1年前)
+                f['div_payout_ratio'] = latest_div
             year_ago = pit[pit['ann_date'] <= str(int(iss[:4]) - 1) + iss[4:]]
             if len(year_ago) > 0 and pd.notna(close) and float(close) > 0:
                 old_div = year_ago.tail(4)['total_div'].sum()
                 if old_div > 0 and total_div > 0:
                     f['div_yield_chg'] = _sv(float(total_div / old_div - 1))
-            # 送转增
             latest_bo = _sv(pit.iloc[-1].get('stk_bo_rate'))
             latest_co = _sv(pit.iloc[-1].get('stk_co_rate'))
             if latest_bo or latest_co:
                 f['div_bonus_shares'] = _sv((latest_bo or 0) + (latest_co or 0))
-            # 连续分红年数
             years = sorted(set(pit['ann_date'].str[:4].tolist()))
             streak = 0
             for j in range(len(years) - 1, 0, -1):
@@ -1145,10 +1172,10 @@ def ingest_dividend(conn, write, limit):
             f['div_consistency'] = streak + 1 if years else 0
             if f:
                 rows.append((stock, iss, f))
-        time.sleep(0.3)
-        if (i + 1) % 200 == 0:
-            print(f'  [dividend] {i+1}/{len(stocks)} | {len(rows)} 样本', flush=True)
-    print(f'  [dividend] 匹配 {len(rows)} 样本')
+        time.sleep(0.15)
+        return rows
+
+    rows = _parallel_per_stock(stocks, _worker, max_workers=8, label='dividend')
     if write and rows:
         ensure_columns(conn, 'dividend')
         n = batch_update(conn, 'dividend', rows)
