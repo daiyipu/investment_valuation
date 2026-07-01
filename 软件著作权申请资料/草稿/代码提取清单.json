@@ -1,0 +1,234 @@
+{
+  "software_name": "投资估值系统",
+  "version": "V1.0",
+  "project_root": "/Users/davy/github/investment_valuation",
+  "file_count": 21,
+  "material_line_count": 9742,
+  "source_line_count": 11257,
+  "selected_source_line_count": 9721,
+  "lines_per_page": 50,
+  "total_pages": 195,
+  "target_pages": 60,
+  "available_candidate_line_count": 434956,
+  "available_candidate_pages": 8700,
+  "supplement_status": "候选源码可达到前30页/后30页要求",
+  "mode": "front30_back30",
+  "selection_file": "/Users/davy/github/investment_valuation/软件著作权申请资料/草稿/代码文件选择.json",
+  "outputs": [
+    "代码-前30页.md",
+    "代码-后30页.md"
+  ],
+  "files": [
+    {
+      "path": "frontend-vue/src/App.vue",
+      "source_line_count": 142,
+      "blank_line_count": 19,
+      "selected_line_start": 1,
+      "selected_line_end": 142,
+      "selected_line_count": 123,
+      "material_line_start": 1,
+      "material_line_end": 124
+    },
+    {
+      "path": "frontend-vue/src/main.ts",
+      "source_line_count": 9,
+      "blank_line_count": 2,
+      "selected_line_start": 1,
+      "selected_line_end": 9,
+      "selected_line_count": 7,
+      "material_line_start": 125,
+      "material_line_end": 132
+    },
+    {
+      "path": "frontend-vue/src/router/index.ts",
+      "source_line_count": 49,
+      "blank_line_count": 2,
+      "selected_line_start": 1,
+      "selected_line_end": 49,
+      "selected_line_count": 47,
+      "material_line_start": 133,
+      "material_line_end": 180
+    },
+    {
+      "path": "frontend-vue/src/views/Dashboard.vue",
+      "source_line_count": 156,
+      "blank_line_count": 23,
+      "selected_line_start": 1,
+      "selected_line_end": 156,
+      "selected_line_count": 133,
+      "material_line_start": 181,
+      "material_line_end": 314
+    },
+    {
+      "path": "frontend-vue/src/views/History.vue",
+      "source_line_count": 520,
+      "blank_line_count": 63,
+      "selected_line_start": 1,
+      "selected_line_end": 520,
+      "selected_line_count": 457,
+      "material_line_start": 315,
+      "material_line_end": 772
+    },
+    {
+      "path": "frontend-vue/src/views/ScenarioAnalysis.vue",
+      "source_line_count": 747,
+      "blank_line_count": 86,
+      "selected_line_start": 1,
+      "selected_line_end": 747,
+      "selected_line_count": 661,
+      "material_line_start": 773,
+      "material_line_end": 1434
+    },
+    {
+      "path": "frontend-vue/src/views/SensitivityAnalysis.vue",
+      "source_line_count": 493,
+      "blank_line_count": 60,
+      "selected_line_start": 1,
+      "selected_line_end": 493,
+      "selected_line_count": 433,
+      "material_line_start": 1435,
+      "material_line_end": 1868
+    },
+    {
+      "path": "frontend-vue/src/views/StressTest.vue",
+      "source_line_count": 594,
+      "blank_line_count": 69,
+      "selected_line_start": 1,
+      "selected_line_end": 594,
+      "selected_line_count": 525,
+      "material_line_start": 1869,
+      "material_line_end": 2394
+    },
+    {
+      "path": "frontend-vue/src/views/ValuationInput.vue",
+      "source_line_count": 2317,
+      "blank_line_count": 266,
+      "selected_line_start": 1,
+      "selected_line_end": 2317,
+      "selected_line_count": 2051,
+      "material_line_start": 2395,
+      "material_line_end": 4446
+    },
+    {
+      "path": "frontend-vue/src/views/ValuationResult.vue",
+      "source_line_count": 2028,
+      "blank_line_count": 254,
+      "selected_line_start": 1,
+      "selected_line_end": 2028,
+      "selected_line_count": 1774,
+      "material_line_start": 4447,
+      "material_line_end": 6221
+    },
+    {
+      "path": "backend/api/main.py",
+      "source_line_count": 97,
+      "blank_line_count": 17,
+      "selected_line_start": 1,
+      "selected_line_end": 97,
+      "selected_line_count": 80,
+      "material_line_start": 6222,
+      "material_line_end": 6302
+    },
+    {
+      "path": "backend/api/schemas.py",
+      "source_line_count": 227,
+      "blank_line_count": 34,
+      "selected_line_start": 1,
+      "selected_line_end": 227,
+      "selected_line_count": 193,
+      "material_line_start": 6303,
+      "material_line_end": 6496
+    },
+    {
+      "path": "backend/services/absolute_valuation.py",
+      "source_line_count": 414,
+      "blank_line_count": 68,
+      "selected_line_start": 1,
+      "selected_line_end": 414,
+      "selected_line_count": 346,
+      "material_line_start": 6497,
+      "material_line_end": 6843
+    },
+    {
+      "path": "backend/services/multi_product_valuation.py",
+      "source_line_count": 487,
+      "blank_line_count": 79,
+      "selected_line_start": 1,
+      "selected_line_end": 487,
+      "selected_line_count": 408,
+      "material_line_start": 6844,
+      "material_line_end": 7252
+    },
+    {
+      "path": "backend/services/relative_valuation.py",
+      "source_line_count": 525,
+      "blank_line_count": 78,
+      "selected_line_start": 1,
+      "selected_line_end": 525,
+      "selected_line_count": 447,
+      "material_line_start": 7253,
+      "material_line_end": 7700
+    },
+    {
+      "path": "backend/services/scenario_analysis.py",
+      "source_line_count": 439,
+      "blank_line_count": 76,
+      "selected_line_start": 1,
+      "selected_line_end": 439,
+      "selected_line_count": 363,
+      "material_line_start": 7701,
+      "material_line_end": 8064
+    },
+    {
+      "path": "backend/services/sensitivity_analysis.py",
+      "source_line_count": 425,
+      "blank_line_count": 70,
+      "selected_line_start": 1,
+      "selected_line_end": 425,
+      "selected_line_count": 355,
+      "material_line_start": 8065,
+      "material_line_end": 8420
+    },
+    {
+      "path": "backend/services/stress_test.py",
+      "source_line_count": 478,
+      "blank_line_count": 98,
+      "selected_line_start": 1,
+      "selected_line_end": 478,
+      "selected_line_count": 380,
+      "material_line_start": 8421,
+      "material_line_end": 8801
+    },
+    {
+      "path": "backend/services/valuation_engine.py",
+      "source_line_count": 504,
+      "blank_line_count": 78,
+      "selected_line_start": 1,
+      "selected_line_end": 504,
+      "selected_line_count": 426,
+      "material_line_start": 8802,
+      "material_line_end": 9228
+    },
+    {
+      "path": "frontend-vue/src/services/api.ts",
+      "source_line_count": 135,
+      "blank_line_count": 22,
+      "selected_line_start": 1,
+      "selected_line_end": 135,
+      "selected_line_count": 113,
+      "material_line_start": 9229,
+      "material_line_end": 9342
+    },
+    {
+      "path": "backend/utils/other_methods.py",
+      "source_line_count": 471,
+      "blank_line_count": 72,
+      "selected_line_start": 1,
+      "selected_line_end": 471,
+      "selected_line_count": 399,
+      "material_line_start": 9343,
+      "material_line_end": 9742
+    }
+  ],
+  "safe_software_filename": "投资估值系统"
+}

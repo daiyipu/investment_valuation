@@ -534,7 +534,7 @@ def _archive_and_register_scorecard(output_dir, features, eval_results, args, fi
             f.write(f'- {x}\n')
 
     try:
-        from deploy.model_registry import register_version
+        from ml_training.deploy.model_registry import register_version
         n = eval_results.get('n_samples')
         pos = eval_results.get('n_profit')
         pos_rate = float(pos) / float(n) if n else None
@@ -573,7 +573,7 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
 
     # ── 加载数据 ──
-    from train.train_models import prepare_features_full
+    from ml_training.train.train_models import prepare_features_full
     print('1. 加载特征数据...')
     if args.features_path.endswith('.parquet'):
         df = pd.read_parquet(args.features_path)
@@ -586,7 +586,7 @@ def main():
         sys.exit(1)
 
     # 统一排除清单 (与 compare_selection.py 共用 feature_exclusions)
-    from features.feature_exclusions import get_excluded_columns
+    from ml_training.features.feature_exclusions import get_excluded_columns
     excl = get_excluded_columns(X.columns)
     if excl:
         X = X.drop(columns=excl)

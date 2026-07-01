@@ -202,7 +202,7 @@ def group_sharpes(records, months=7):
     df = pd.DataFrame(records)
     if df.empty:
         return {}
-    df['month'] = df['date'].astype(str).str[4:6].astype(int)
+    df['month'] = df['date'].astype(str).str[5:7].astype(int)  # 🔧 修复: YYYY-MM-DD格式提取MM
     out = {}
     for m, g in df.groupby('month'):
         ls = g['ls'].values / 100.0
@@ -262,22 +262,77 @@ def group_by_year(records, months=7):
 
 
 # ─────────────── 主流程(读 panel, 不再运行时算特征) ───────────────
-def run(model_ver, panel_path, horizon, q=0.10):
-    """读 features_backtest.parquet → 逐截面打分 + 多空 + IC。
-    特征/收益已由 build_backtest_panel 预计算入 panel, 此处只 score_sc + 排序。"""
+def run(model_ver, horizon, q=0.10, sample_type='all'):
+    """直接从ml_features_wide表读取 → 逐截面打分 + 多空 + IC。
+    不再需要parquet文件，统一从数据库宽表读取。"""
+    import pymysql
+    from utils.db_manager import ValuationDB
+
     bundle = pickle.loads(load_predict_bundle(model_ver)['lr_bundle'])
     model_feats = bundle['features']
-    panel = pd.read_parquet(panel_path)
-    panel['报价日'] = panel['报价日'].astype(str)
+    conn = pymysql.connect(**ValuationDB.MYSQL_CONFIG)
+
+    # 构建查询SQL
+    label_col = f'{horizon}个月涨跌幅'
+    base_cols = ['股票代码', '报价日', label_col]
+
+    # 检查特征列
+    cur = conn.cursor()
+    cur.execute('SHOW COLUMNS FROM ml_features_wide')
+    all_cols = [c[0] for c in cur.fetchall()]
+
+    available_feats = [f for f in model_feats if f in all_cols]
+    if len(available_feats) < 5:
+        print(f'❌ 可用特征不足({len(available_feats)} < 5)，无法继续')
+        conn.close()
+        return
+
+    if len(available_feats) < len(model_feats):
+        print(f'⚠️ 缺少{len(model_feats) - len(available_feats)}个特征，使用{len(available_feats)}个可用特征')
+
+    # 构建特征列查询
+    feature_cols = available_feats
+    all_query_cols = base_cols + feature_cols
+    cols_quoted = ', '.join([f'`{c}`' if c in feature_cols or c == label_col else c for c in all_query_cols])
+
+    # 构建WHERE条件
+    where_clauses = [f'`{label_col}` IS NOT NULL']
+    if sample_type == 'placement':
+        where_clauses.append('sample_type="placement"')
+    elif sample_type == 'fake_quote':
+        where_clauses.append('sample_type="fake_quote"')
+
+    sql = f'SELECT {cols_quoted} FROM ml_features_wide WHERE {" AND ".join(where_clauses)}'
+
+    print(f'查询数据...')
+    panel = pd.read_sql(sql, conn)
+    conn.close()
+
+    # 重命名标签列为return格式
     ret_col = f'return_{horizon}m'
-    print(f'模型 {model_ver} | {len(model_feats)}特征 | {horizon}m | '
-          f'panel {len(panel)}行 {panel["报价日"].nunique()}截面')
+    panel = panel.rename(columns={label_col: ret_col})
+
+    panel['报价日'] = panel['报价日'].astype(str)
+
+    print(f'模型 {model_ver} | {len(available_feats)}特征 | {horizon}m | '
+          f'panel {len(panel)}行 {panel["报价日"].nunique()}截面 | 样本类型:{sample_type}')
 
     records = []
     for d, g in panel.groupby('报价日'):
         if len(g) < 50:
             continue
-        proba, _ = score_sc(bundle, g[model_feats].copy())
+
+        # 确保使用可用特征
+        available_feats = [f for f in model_feats if f in g.columns]
+        if len(available_feats) < 5:
+            continue
+
+        try:
+            proba, _ = score_sc(bundle, g[available_feats].copy())
+        except Exception as e:
+            print(f"  {d}: score_sc失败 {e}, 跳过")
+            continue
+
         s = g[ret_col]
         valid = s.notna()
         if valid.sum() < 50:
@@ -334,20 +389,27 @@ def run(model_ver, panel_path, horizon, q=0.10):
     print('=' * 70)
     print('决策门: ICIR>0.3 且 非重叠年化明显为正 且 ≥9/12 组夏普为正 → 进全量')
 
-    tag = os.path.basename(panel_path).replace('features_', '').replace('.parquet', '')
-    out = os.path.join(PKG, 'ml_training', 'output', f'backtest_ls_{horizon}m_{tag}.csv')
+    # 写出结果
+    out = os.path.join(PKG, 'ml_training', 'output', f'backtest_ls_{horizon}m_all_{model_ver[:10]}.csv')
     df.to_csv(out, index=False)
     print(f'写出: {out}')
 
 
 def main():
-    ap = argparse.ArgumentParser(description='全 A 多空组合回测 + IC/ICIR(读 panel)')
-    ap.add_argument('--horizon', default='7', help='模型期限(月), 默认7(须与 panel 一致)')
-    ap.add_argument('--panel', default=os.path.join(PKG, 'ml_training', 'data', 'features_backtest.parquet'),
-                    help='回测特征 panel(build_backtest_panel.py 产出)')
+    ap = argparse.ArgumentParser(description='全 A 多空组合回测 + IC/ICIR(直接读ml_features_wide表)')
+    ap.add_argument('--horizon', default='7', help='模型期限(月), 默认7')
+    ap.add_argument('--sample-type', default='all', choices=['all', 'placement', 'fake_quote'],
+                    help='样本类型: all(全量), placement(定增), fake_quote(全市场)')
+    ap.add_argument('--model', help='指定模型版本(不指定则用最新生产模型)')
     args = ap.parse_args()
-    ver = latest_gray_sc(args.horizon)
-    run(ver, args.panel, int(args.horizon))
+
+    if args.model:
+        ver = args.model
+    else:
+        ver = latest_gray_sc(args.horizon)
+        print(f'使用最新{args.horizon}m灰度SC模型: {ver}')
+
+    run(ver, int(args.horizon), sample_type=args.sample_type)
 
 
 if __name__ == '__main__':
