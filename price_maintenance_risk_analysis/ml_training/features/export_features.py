@@ -57,9 +57,14 @@ FCF_COL_MAP = {'revenue': '营收', 'operate_profit': '营业利润', 'net_incom
 
 def _pit_year(issue_date):
     """PIT 年: 月≥5 用上年(已披露), 否则前年(同 company_annual_scores 规则)。FCF/评分共用。"""
-    s = str(issue_date)
-    byr = int(s[:4]); bmo = int(s[4:6]) if len(s) >= 6 else 13
-    return byr - 1 if bmo >= 5 else byr - 2
+    s = str(issue_date).strip()
+    if not s or s == 'None' or s == 'nan' or len(s) < 4:
+        return None
+    try:
+        byr = int(s[:4]); bmo = int(s[4:6]) if len(s) >= 6 else 13
+        return byr - 1 if bmo >= 5 else byr - 2
+    except (ValueError, TypeError):
+        return None
 
 
 def _load_fcf_cache(codes):
@@ -88,6 +93,8 @@ def _fcf_pit_cols(code, issue_date, fcf_cache):
     按 (code, pit_year) memoize + 向量化(arr 代替 iterrows): 全A 534400 key 从 8min+ → ~1min。
     """
     py = _pit_year(issue_date)
+    if py is None:
+        return {}
     mkey = (str(code), py)
     cached = _FCF_PIT_MEMO.get(mkey)
     if cached is not None:
@@ -946,6 +953,13 @@ def main():
         ]
     print(f'   过滤后 {len(scored)} 只股票')
 
+    # 前置过滤: 剔除无效报价日(空值/非8位数字)
+    _before = len(scored)
+    scored = scored[scored['报价日'].astype(str).str.match(r'^\d{8}$', na=False)].copy()
+    _after = len(scored)
+    if _before > _after:
+        print(f'   ⚠️ 剔除 {_before - _after} 个无效报价日样本')
+
     stock_codes = scored['股票代码'].tolist()
 
     # ── 2. build_features: PIT 特征装配唯一入口(定增/回测/predict 三产线共用, 三层一入口·组装层) ──
@@ -960,6 +974,12 @@ def main():
         sys.path.insert(0, _scripts_dir)
     from features.build_backtest_panel import build_features as _build_features
     samples_df = pd.DataFrame(sample_keys, columns=['股票代码', '报价日'])
+    # 清洗: 剔除报价日为空/无效的样本(build_features 需要合法日期做 PIT)
+    _valid_mask = samples_df['报价日'].astype(str).str.match(r'^\d{8}$', na=False)
+    _dropped = (~_valid_mask).sum()
+    if _dropped:
+        print(f'   ⚠️ 剔除 {_dropped} 个无效报价日样本')
+        samples_df = samples_df[_valid_mask].reset_index(drop=True)
     db_feats = _build_features(samples_df, skip_placement=True).reset_index(drop=True)
     print(f'   build_features: {len(db_feats)} 行 × {len(db_feats.columns)} 列 (PIT, 与回测同源; 定增结构特征模型不用且在EXCLUDE内, scored带标签/最终结论)')
 
