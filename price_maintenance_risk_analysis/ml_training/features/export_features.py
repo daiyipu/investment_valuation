@@ -905,9 +905,13 @@ def main():
     parser = argparse.ArgumentParser(description='定增特征导出(全量)')
     parser.add_argument('excel_path', nargs='?', default=None,
                         help='(已废弃，评分/标签现从 DB 读取) 保留仅作兼容，不再使用')
-    parser.add_argument('--output', default=None, help='输出文件路径(默认ml_training/data/features.parquet)')
+    parser.add_argument('--output', default=None, help='输出文件路径(默认ml_training/data/features.parquet, 已废弃)')
     parser.add_argument('--no-mysql', action='store_true', help='跳过fund_risk_control数据')
     parser.add_argument('--limit', type=int, default=0, help='仅前 N 样本(0=全部, smoke 用)')
+    parser.add_argument('--db-register', action='store_true',
+                        help='直接注册到 ml_train_wide 表(DB 单一源，推荐)')
+    parser.add_argument('--tag', default=None,
+                        help='样本空间标签(用于 DB 注册，如 placement_train_20260628)')
     args = parser.parse_args()
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1055,13 +1059,27 @@ def main():
             # 尝试转为数值，失败的变NaN
             merged[c] = pd.to_numeric(merged[c], errors='coerce')
 
-    merged.to_parquet(output_path, index=False)
-    print(f'\n✅ 特征已保存: {output_path}')
-    print(f'   {len(merged)} 行 × {total_cols} 列')
+    # ── 输出: DB 注册(推荐) 或 parquet 文件(已废弃) ──
+    if args.db_register:
+        tag = args.tag or f'placement_train_{pd.Timestamp.now().strftime("%Y%m%d")}'
+        print(f'\n注册到 ml_train_wide DB (tag: {tag})...')
 
-    csv_path = output_path.replace('.parquet', '.csv')
-    merged.to_csv(csv_path, index=False)
-    print(f'   CSV(查看用): {csv_path}')
+        # 导入 register_panel
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'validate'))
+        from save_validation_db import register_panel
+
+        register_panel(merged, tag=tag, note=f'定增样本 {len(merged)}行 × {len(merged.columns)}列(含65新特征)')
+        print(f'✅ 已注册到 ml_train_wide: tag={tag}')
+        print(f'   {len(merged)} 行 × {len(merged.columns)} 列')
+    else:
+        # 已废弃：写 parquet 文件
+        merged.to_parquet(output_path, index=False)
+        print(f'\n✅ 特征已保存: {output_path}')
+        print(f'   {len(merged)} 行 × {total_cols} 列')
+
+        csv_path = output_path.replace('.parquet', '.csv')
+        merged.to_csv(csv_path, index=False)
+        print(f'   CSV(查看用): {csv_path}')
 
     # 字段说明
     schema_path = os.path.join(os.path.dirname(output_path), 'features_schema.md')
