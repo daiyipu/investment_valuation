@@ -11,7 +11,7 @@
 灰度阈值(语义约束 赢家>=+5%/输家<=-10%, 优选 n>=400 且正占比近 50%):
   1m[-10,+10] 3m[-15,+10] 6m[-20,+10] 7m[-20,+5] 12m[-20,+5]
 
-用法: python train_horizon_models.py <features_derived.parquet> [--split-year 2024]
+用法: python train_horizon_models.py <features_derived.parquet> [--use-mysql] [--sample-size N] [--split-year 2024]
 特征选择阈值固定在 feature_selection.py(N_IV/PSI_MAX/CORR_MAX/VIF_MAX), 不随运行变。
 输出: output/horizon_models_comparison.csv + output/per_horizon_features/*.csv + registry(10 条)
 """
@@ -97,9 +97,21 @@ def build_label(df, horizon, kind='gray'):
     return col, (lo, hi)
 
 
-def run(features_path, split_year=2024):
+def run(features_path, split_year=2024, use_mysql=False, sample_size=50000):
     from deploy.model_registry import register_version
-    raw = pd.read_parquet(features_path).dropna(subset=['报价日']).reset_index(drop=True)
+
+    # 数据加载
+    if use_mysql:
+        print("🔗 从MySQL宽表加载定增样本...")
+        import pymysql
+        conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', password='',
+                             database='investment_valuation', charset='utf8mb4')
+        query = f"SELECT * FROM ml_features_wide WHERE `定增决策` IS NOT NULL AND `7个月涨跌幅` IS NOT NULL ORDER BY RAND() LIMIT {sample_size}"
+        raw = pd.read_sql(query, conn)
+        conn.close()
+        print(f"✅ MySQL定增数据加载成功: {len(raw)}样本")
+    else:
+        raw = pd.read_parquet(features_path).dropna(subset=['报价日']).reset_index(drop=True)
     raw['_y'] = (pd.to_numeric(raw['报价日'], errors='coerce') // 10000).astype('Int64')
     dtr = raw[raw['_y'] <= split_year].drop(columns=['_y'])
     dte = raw[raw['_y'] >= split_year + 1].drop(columns=['_y'])
@@ -213,10 +225,17 @@ def run(features_path, split_year=2024):
 
 def main():
     ap = argparse.ArgumentParser(description='各期限独立特征集模型训练')
-    ap.add_argument('features_path', help='features_derived.parquet')
+    ap.add_argument('features_path', help='features_derived.parquet 或 --use-mysql时忽略')
+    ap.add_argument('--use-mysql', action='store_true', help='使用MySQL宽表数据')
+    ap.add_argument('--sample-size', type=int, default=50000, help='MySQL采样数量')
     ap.add_argument('--split-year', type=int, default=2024)
     args = ap.parse_args()
-    run(args.features_path, split_year=args.split_year)
+
+    # MySQL数据路径
+    if args.use_mysql:
+        args.features_path = 'mysql'
+
+    run(args.features_path, split_year=args.split_year, use_mysql=args.use_mysql, sample_size=args.sample_size)
 
 
 if __name__ == '__main__':

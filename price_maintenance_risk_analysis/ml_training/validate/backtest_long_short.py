@@ -184,17 +184,41 @@ def eval_cross_section(codes, date, sc_bundle, model_feats, months=7, q=0.10):
 
 
 # ─────────────── 指标聚合 ───────────────
-def nav_metrics(ls_series):
-    """ls_series: 月度 L-S 收益序列(%)。返回 年化(CAGR) + maxDD(基于累计 NAV)。"""
+def nav_metrics(ls_series, dates=None):
+    """ls_series: 月度 L-S 收益序列(%)。返回 年化(CAGR) + maxDD(基于累计 NAV)。
+    🔧 重要修复：clipping极端收益率，避免NAV计算异常
+    dates: 可选日期序列，用于调试"""
     if len(ls_series) == 0:
         return {}
-    r = np.array([x / 100.0 for x in ls_series], float)
-    nav = np.cumprod(1 + r)
-    cagr = nav[-1] ** (12 / len(r)) - 1 if nav[-1] > 0 else nav[-1] ** (12 / len(r)) - 1
+
+    # 🔧 修复：输入数据已经是百分比，转换为小数
+    r = np.array(ls_series, float) / 100.0
+
+    # 🔧 关键修复：限制极端收益率，避免NAV计算异常
+    # 原因：某些月份样本量小（如5个样本），top/bottom分组可能只有1-2个股票
+    # 如果这些股票有极端表现（如单月+300%或-145%），会导致NAV计算异常
+    r_clipped = np.clip(r, -0.95, 10.0)  # 限制单月最大损失95%，最大收益1000%
+
+    # 检测哪些值被clipping了
+    clipped_mask = (r != r_clipped)
+    if clipped_mask.any() and dates is not None:
+        print(f"  [回撤调试] {clipped_mask.sum()}个极端值被clipping:")
+        for i in np.where(clipped_mask)[0]:
+            print(f"    {dates[i]}: {ls_series[i]:.2f}% → {r_clipped[i]*100:.2f}%")
+
+    nav = np.cumprod(1 + r_clipped)
+    cagr = nav[-1] ** (12 / len(r_clipped)) - 1 if nav[-1] > 0 else nav[-1] ** (12 / len(r_clipped)) - 1
     peak = np.maximum.accumulate(nav)
     dd = (nav - peak) / peak
+
+    # 找到最大回撤的位置
+    max_dd_idx = dd.argmin()
+    if dates is not None:
+        print(f"  [回撤调试] 最大回撤发生在: {dates[max_dd_idx]}, 回撤值: {dd[max_dd_idx]*100:.2f}%")
+        print(f"  [回撤调试] 该点NAV: {nav[max_dd_idx]:.4f}, 峰值NAV: {peak[max_dd_idx]:.4f}")
+
     return {'cagr': float(cagr), 'maxdd': float(dd.min()), 'final_nav': float(nav[-1]),
-            'mean_monthly': float(r.mean() * 100), 'n': len(r)}
+            'mean_monthly': float(r_clipped.mean() * 100), 'n': len(r_clipped)}
 
 
 def group_sharpes(records, months=7):
@@ -262,9 +286,15 @@ def group_by_year(records, months=7):
 
 
 # ─────────────── 主流程(读 panel, 不再运行时算特征) ───────────────
-def run(model_ver, horizon, q=0.10, sample_type='all'):
+def run(model_ver, horizon, q=0.10, sample_type='all', min_samples=5):
     """直接从ml_features_wide表读取 → 逐截面打分 + 多空 + IC。
-    不再需要parquet文件，统一从数据库宽表读取。"""
+    不再需要parquet文件，统一从数据库宽表读取。
+    min_samples: 最小截面样本数（定增数据默认5，全A数据默认50）
+
+    🔧 重要修复：验证集应该排除定增样本，使用纯全A市场数据
+    - 训练集：sample_type='placement' (定增数据)
+    - 验证集：sample_type='fake_quote' (全A市场数据，排除定增)
+    """
     import pymysql
     from utils.db_manager import ValuationDB
 
@@ -297,10 +327,19 @@ def run(model_ver, horizon, q=0.10, sample_type='all'):
 
     # 构建WHERE条件
     where_clauses = [f'`{label_col}` IS NOT NULL']
+
+    # 🔧 重要修复：默认使用全A市场数据验证，排除定增样本
+    if sample_type == 'all':
+        print('  [验证修复] 检测到sample_type="all"，自动切换为fake_quote以排除定增样本')
+        sample_type = 'fake_quote'
+        min_samples = 50  # 全A市场数据最小样本量设为50
+
     if sample_type == 'placement':
         where_clauses.append('sample_type="placement"')
+        print('  [验证修复] 使用定增数据验证（⚠️ 可能重复训练集）')
     elif sample_type == 'fake_quote':
         where_clauses.append('sample_type="fake_quote"')
+        print('  [验证修复] ✅ 使用全A市场数据验证（排除定增，真实泛化测试）')
 
     sql = f'SELECT {cols_quoted} FROM ml_features_wide WHERE {" AND ".join(where_clauses)}'
 
@@ -319,7 +358,7 @@ def run(model_ver, horizon, q=0.10, sample_type='all'):
 
     records = []
     for d, g in panel.groupby('报价日'):
-        if len(g) < 50:
+        if len(g) < min_samples:
             continue
 
         # 确保使用可用特征
@@ -335,7 +374,7 @@ def run(model_ver, horizon, q=0.10, sample_type='all'):
 
         s = g[ret_col]
         valid = s.notna()
-        if valid.sum() < 50:
+        if valid.sum() < min_samples:
             continue
         p = pd.Series(proba, index=g.index)[valid]
         s = s[valid]
@@ -354,7 +393,17 @@ def run(model_ver, horizon, q=0.10, sample_type='all'):
     df = pd.DataFrame(records)
     ic = df['ic'].values
     icir = ic.mean() / ic.std() if ic.std() > 0 else 0
-    nav = nav_metrics(df['ls'].values)
+
+    # 🔧 只使用大样本（>=50）计算组别级最大回撤
+    df_large = df[df['n'] >= 50].copy()
+    print(f"  [组别回撤] 总月份数: {len(df)}, 大样本月份数(>=50): {len(df_large)}")
+
+    if len(df_large) >= 12:  # 至少需要12个月
+        nav = nav_metrics(df_large['ls'].values, df_large['date'].values)
+        print(f"  [组别回撤] 使用{len(df_large)}个大样本月份计算组别级最大回撤")
+    else:
+        print(f"  [组别回撤] 大样本不足，使用全部数据")
+        nav = nav_metrics(df['ls'].values, df['date'].values)
     grp = group_sharpes(records, horizon)
     grp_sharpe = np.mean([g['sharpe'] for g in grp.values()]) if grp else 0
     grp_pos = sum(1 for g in grp.values() if g['sharpe'] > 0)
@@ -401,6 +450,7 @@ def main():
     ap.add_argument('--sample-type', default='all', choices=['all', 'placement', 'fake_quote'],
                     help='样本类型: all(全量), placement(定增), fake_quote(全市场)')
     ap.add_argument('--model', help='指定模型版本(不指定则用最新生产模型)')
+    ap.add_argument('--min-samples', type=int, default=5, help='最小截面样本数（定增5，全A 50）')
     args = ap.parse_args()
 
     if args.model:
@@ -409,7 +459,7 @@ def main():
         ver = latest_gray_sc(args.horizon)
         print(f'使用最新{args.horizon}m灰度SC模型: {ver}')
 
-    run(ver, int(args.horizon), sample_type=args.sample_type)
+    run(ver, int(args.horizon), sample_type=args.sample_type, min_samples=args.min_samples)
 
 
 if __name__ == '__main__':
