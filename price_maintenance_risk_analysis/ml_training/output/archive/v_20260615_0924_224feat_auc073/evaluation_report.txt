@@ -1,0 +1,11 @@
+定增盈利预测模型评估报告
+盈利阈值: -10%
+特征模式: 全量数值特征
+特征数: 224
+样本数: 1497, 盈利占比: 52.3%
+
+LightGBM AUC: 0.732
+逻辑回归 AUC: 0.647
+
+逻辑回归系数表见: lr_coefficients_full.csv
+LightGBM特征重要性见: lgb_feature_importance_full.csv

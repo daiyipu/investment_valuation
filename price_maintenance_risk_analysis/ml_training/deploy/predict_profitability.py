@@ -37,15 +37,31 @@ _INTERVAL_RE = re.compile(r'^[\[(](.*?),\s*(.*?)[\])]$')
 def score_sc(sc_bundle, X_src_df):
     """SC 评分卡打分(模块级, 供 backtest 等外部复用): 特征 DataFrame → (概率, 档位1-10)。
     sc_bundle = pickle.loads(load_predict_bundle(ver)['lr_bundle']) 解包:
-      dict 含 features/medians/woe_bins/lr_model/proba_deciles。
+      dict 含 features/medians/woe_bins/lr_model/proba_deciles 或 kind='lr'的简单LR模型。
     X_src_df: 任意股票的特征 DataFrame(列含 sc_bundle['features']), 缺列自动 NaN→median 填。
     返回 (proba: np.ndarray, tier: np.ndarray[int] 1-10)。"""
-    from validate.eval_loyo import apply_woe as _aw
     feats = sc_bundle['features']
     medians = sc_bundle.get('medians', {})
     X_sc = pd.DataFrame(index=X_src_df.index)
     for f in feats:
         X_sc[f] = pd.to_numeric(X_src_df[f], errors='coerce') if f in X_src_df.columns else np.nan
+
+    # 支持简单的LR模型（没有woe_bins）
+    if sc_bundle.get('kind') == 'lr' or 'woe_bins' not in sc_bundle:
+        from sklearn.preprocessing import StandardScaler
+        scaler = sc_bundle['scaler'] if 'scaler' in sc_bundle else StandardScaler()
+        X_clean = X_sc.fillna(medians).replace([np.inf, -np.inf], 0)
+        X_scaled = scaler.transform(X_clean)
+        proba = sc_bundle['model'].predict_proba(X_scaled)[:, 1]
+        dec = sc_bundle.get('proba_deciles')
+        if dec:
+            tier = np.clip(np.searchsorted(dec, proba, side='right') + 1, 1, 10)
+        else:
+            tier = np.clip(np.ceil(pd.Series(proba).rank(pct=True) * 10), 1, 10)
+        return proba, tier.astype(int)
+
+    # 原有的scorecard模型逻辑
+    from validate.eval_loyo import apply_woe as _aw
     X_sc = X_sc.fillna(medians).replace([np.inf, -np.inf], 0)
     Xw = _aw(X_sc, feats, sc_bundle['woe_bins']).replace([np.inf, -np.inf], 0).fillna(0)
     proba = sc_bundle['lr_model'].predict_proba(Xw)[:, 1]
