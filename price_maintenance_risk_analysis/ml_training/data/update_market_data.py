@@ -76,6 +76,8 @@ def fetch_latest_data(stock_code='300735.SZ', days=500):
                 df['ts_code'] = stock_code
                 df['trade_date'] = df['trade_date'].astype(str).str.replace('-', '')
                 print(f"   使用AKShare获取{stock_code}数据: {len(df)}条")
+        except ImportError:
+            print(f"   AKShare未安装(Python 3.8+需要)，跳过降级")
         except Exception as e:
             print(f"   AKShare降级也失败: {e}")
 

@@ -208,7 +208,11 @@ const runSensitivityAnalysis = async () => {
     // 保存到 sessionStorage
     sessionStorage.setItem('valuationResults', JSON.stringify({
       ...parsed,
-      sensitivity: response.data
+      sensitivity: {
+        results: {
+          parameters: sensitivityParams.value
+        }
+      }
     }))
 
     // 重新初始化图表

@@ -166,6 +166,14 @@ def derive_financial_score_deltas(df):
                 slope[i] = np.polyfit(_years[mask], row[mask], 1)[0]
         new_cols[f'{m}_斜率'] = pd.Series(slope, index=df.index)
 
+        # 评分趋势: 从斜率计算 (摆脱placement_evaluation表依赖)
+        # 规则: 斜率 >= -0.5 为"通过", < -0.5 为"不通过"
+        trend = np.full(len(df), None, object=object)  # 存储字符串类型
+        has_slope = ~pd.isna(slope)
+        if has_slope.any():
+            trend[has_slope] = np.where(slope[has_slope] >= -0.5, '通过', '不通过')
+        new_cols[f'{m}_趋势'] = pd.Series(trend, index=df.index)
+
     for k, v in new_cols.items():
         df[k] = v
     coverage = {k: f'{v.notna().mean()*100:.1f}%' for k, v in new_cols.items()}
@@ -198,33 +206,58 @@ def _load_stock_to_idx():
 
 def derive_peer_valuation(df):
     """个股 PE/PS/PB/市值(PIT, daily_basic ≤报价日) + 同行均值/中位(截面 groupby 报价日×行业)。
+
+    增强版特性：
+    - 自动预取：确保所有样本股票的数据都被缓存
+    - 完整性报告：详细的数据覆盖统计
+    - 最近交易日匹配：使用searchsorted实现PIT回溯
+
     恢复历史 load_db_features(relative_valuation+peer_companies 快照, 非PIT)丢失的估值特征;
     本函数改从 daily_basic 时序表 PIT 切(≤报价日), 同行=截面均值(全A 含全成员)。
-    喂 derive_valuation_relative 产 PE_vs_行业/同行、PB_vs、PS_vs。需先 prefetch_daily_basic。"""
+    喂 derive_valuation_relative 产 PE_vs_行业/同行、PB_vs、PS_vs。
+    """
     print('\n  D类预: 个股估值PIT + 同行截面均值...')
+
     if '股票代码' not in df.columns or '报价日' not in df.columns:
         return df
+
+    # 增强版：自动预取所有股票数据
+    unique_codes = df['股票代码'].astype(str).unique()
+    cache_result = prefetch_daily_basic(unique_codes, verbose=True)
+
+    # 数据完整性检查
+    if cache_result['coverage'] < 0.8:  # 如果覆盖率低于80%，发出警告
+        print(f'    ⚠️ 警告: 数据覆盖率仅{cache_result["coverage"]*100:.1f}%，可能影响估值特征质量')
+
     s2i = _load_stock_to_idx()
     cols_map = {'个股PE': 'pe', '个股PS': 'ps', '个股PB': 'pb', '个股市值': 'total_mv'}
     out = {c: np.full(len(df), np.nan) for c in cols_map}
     dates = df['报价日'].astype(str).to_numpy()
     n_hit = 0
+    n_miss = 0
+
     for code, g in df.groupby('股票代码'):
         cached = _DAILY_BASIC_CACHE.get(str(code))
         if cached is None or cached[0] is None:
+            n_miss += len(g)
             continue
         sd = cached[0]; dbd = cached[1]
         for idx in g.index:
+            # 最近交易日匹配逻辑：找到最后一个小于等于报价日的交易日
             pos = int(np.searchsorted(sd, dates[idx], 'right')) - 1
             if pos < 0:
+                n_miss += 1
                 continue
             n_hit += 1
             for cn, dn in cols_map.items():
                 arr = dbd.get(dn)
                 if arr is not None and pos < len(arr):
                     out[cn][idx] = arr[pos]
+
+    # 赋值个股估值特征
     for cn in cols_map:
         df[cn] = out[cn]
+
     # 同行截面均值/中位(groupby 报价日×行业 → transform; 全A 含全成员)
     df['_行业idx'] = df['股票代码'].astype(str).map(s2i)
     valid = df['_行业idx'].notna()
@@ -236,8 +269,17 @@ def derive_peer_valuation(df):
             df.loc[valid, '同行' + short + '_均值'] = df[valid].groupby(['报价日', '_行业idx'])[cn].transform('mean')
             df.loc[valid, '同行' + short + '_中位'] = df[valid].groupby(['报价日', '_行业idx'])[cn].transform('median')
     df = df.drop(columns=['_行业idx'])
-    cov = {c: f'{df[c].notna().mean()*100:.0f}%' for c in ['个股PE', '个股PS', '同行PS_均值', '同行市值_均值']}
-    print(f'    +12特征(个股估值4+同行均值4+中位4, n_hit{n_hit}): {", ".join(f"{k}({v})" for k,v in cov.items())}')
+
+    # 增强版：详细的覆盖率报告
+    cov = {c: f'{df[c].notna().mean()*100:.1f}%' for c in ['个股PE', '个股PS', '个股PB', '个股市值',
+                                                        '同行PE_均值', '同行PB_均值', '同行PS_均值', '同行市值_均值']}
+    total_samples = len(df)
+    match_rate = n_hit / total_samples * 100 if total_samples > 0 else 0
+
+    print(f'    +12特征(个股估值4+同行均值4+中位4):')
+    print(f'      样本匹配: {n_hit:,}/{total_samples:,} ({match_rate:.1f}%), 缺失{n_miss:,}')
+    print(f'      覆盖率: {", ".join(f"{k}={v}" for k,v in cov.items() if k in cov)}')
+
     return df
 
 
@@ -1003,23 +1045,60 @@ def _get_daily_basic(code):
     return res
 
 
-def prefetch_daily_basic(codes, max_workers=12):
+def prefetch_daily_basic(codes, max_workers=12, verbose=True):
     """并发预取所有 unique 股票 daily_basic 入缓存。
-    本地优先(stock_daily_basic 批量读), 缺失的才 tushare+落盘。限流单股退避重试(3 次)。"""
+
+    增强版特性：
+    - 完整性验证：确保所有样本股票都被预取
+    - 详细报告：提供缓存覆盖率统计
+    - 重试机制：失败的股票会自动重试
+
+    Args:
+        codes: 股票代码列表
+        max_workers: 并发线程数
+        verbose: 是否输出详细信息
+    """
     from concurrent.futures import ThreadPoolExecutor, as_completed
     import time
+
+    # 去重并过滤已缓存的股票
     uniq = [c for c in dict.fromkeys(str(c) for c in codes) if c not in _DAILY_BASIC_CACHE]
+    total_requested = len(dict.fromkeys(str(c) for c in codes))
+
+    if verbose:
+        print(f'    daily_basic预取请求: {total_requested}只股票, {len(_DAILY_BASIC_CACHE)}只已缓存, {len(uniq)}只待预取')
+
     if not uniq:
-        print(f'    daily_basic 缓存已热({len(_DAILY_BASIC_CACHE)}), 跳过预取')
-        return
+        if verbose:
+            print(f'    daily_basic缓存已完整({len(_DAILY_BASIC_CACHE)}/{total_requested}), 跳过预取')
+        return {'total': total_requested, 'cached': len(_DAILY_BASIC_CACHE), 'fetched': 0, 'failed': 0}
+
+    # 第一步：批量读取本地数据
     local = _db_basic_bulk_read(uniq)
     for c, res in local.items():
         _DAILY_BASIC_CACHE[c] = res
+
+    # 第二步：准备需要tushare的股票
     todo = [c for c in uniq if _DAILY_BASIC_CACHE.get(c, (None, None))[0] is None]
+
+    if verbose:
+        print(f'    daily_basic本地读取: {len(local)}只, 待tushare: {len(todo)}只')
+
     if not todo:
-        print(f'    daily_basic 全本地命中 {len(local)} 只, 零 tushare')
-        return
-    print(f'    daily_basic: 本地 {len(local)}, 待 tushare {len(todo)} (max_workers={max_workers}, 落盘)...')
+        final_cached = sum(1 for c in dict.fromkeys(str(c) for c in codes) if _DAILY_BASIC_CACHE.get(c, (None, None))[0] is not None)
+        if verbose:
+            print(f'    daily_basic预取完成: 全部本地命中(缓存{final_cached}/{total_requested})')
+        return {
+            'total': total_requested,
+            'cached': final_cached,
+            'fetched': 0,
+            'failed': 0,
+            'coverage': final_cached / total_requested if total_requested > 0 else 0
+        }
+
+    # 第三步：并发tushare获取
+    if verbose:
+        print(f'    daily_basic开始tushare预取: {len(todo)}只股票(max_workers={max_workers})...')
 
     def _work(code):
         for attempt in range(3):
@@ -1027,21 +1106,44 @@ def prefetch_daily_basic(codes, max_workers=12):
                 res = _fetch_daily_basic_raw(code)
                 _DAILY_BASIC_CACHE[code] = res
                 _db_basic_save(code, res[0], res[1])   # 落盘 stock_daily_basic
-                return True
-            except Exception:
+                return True, code
+            except Exception as e:
+                if attempt == 2:  # 最后一次尝试
+                    return False, code
                 time.sleep(1.5 * (attempt + 1))
         _DAILY_BASIC_CACHE[code] = (None, None)
-        return False
+        return False, code
 
     ok = 0
+    failed = []
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
         futs = [ex.submit(_work, c) for c in todo]
         for n, fut in enumerate(as_completed(futs), 1):
-            if fut.result():
+            success, code = fut.result()
+            if success:
                 ok += 1
-            if n % 50 == 0:
-                print(f'    预取 {n}/{len(todo)} (成功 {ok})')
-    print(f'    预取完成: {ok}/{len(todo)} 成功(已落盘 stock_daily_basic)')
+            else:
+                failed.append(code)
+
+            if verbose and n % 50 == 0:
+                print(f'    预取进度: {n}/{len(todo)} (成功{ok}, 失败{len(failed)})')
+
+    # 计算最终缓存覆盖率
+    final_cached = sum(1 for c in dict.fromkeys(str(c) for c in codes) if _DAILY_BASIC_CACHE.get(c, (None, None))[0] is not None)
+
+    if verbose:
+        print(f'    daily_basic预取完成: {ok}/{len(todo)}tushare成功, {len(failed)}只失败')
+        print(f'    最终缓存覆盖率: {final_cached}/{total_requested} ({final_cached/total_requested*100:.1f}%)')
+        if failed:
+            print(f'    失败股票(前10只): {failed[:10]}')
+
+    return {
+        'total': total_requested,
+        'cached': final_cached,
+        'fetched': ok,
+        'failed': len(failed),
+        'coverage': final_cached / total_requested if total_requested > 0 else 0
+    }
 
 
 # ====== H/I类: 三浪/抵抗策略信号 (需 tushare 网络) ======
@@ -1676,6 +1778,19 @@ def run_derivation(df, skip_placement=False, run_stage2=True):
     因 manifest 无定增原料)。所有 derive_* 防御式: 缺输入列自动跳过, 不崩。
     不落盘、不写 DB 快照(由调用方决定)——便于 backtest panel 构建器内联调用。
     """
+    # ====== Pre-Stage 1: 预加载缓存（修复derive_peer_valuation依赖） ======
+    print('\n' + '='*60)
+    print('Pre-Stage: 预加载缓存')
+    print('='*60)
+    _nu = df['股票代码'].astype(str).nunique()
+    _all_codes = df['股票代码'].astype(str).unique().tolist()
+    print(f'  universe {_nu}股, 预加载daily_basic缓存...')
+    try:
+        prefetch_daily_basic(_all_codes, max_workers=12)
+        print(f'  ✅ daily_basic缓存预加载完成')
+    except Exception as e:
+        print(f'  ⚠️ daily_basic缓存预加载失败: {e}')
+
     # ====== Stage 1: Parquet-only ======
     print('\n' + '='*60)
     print('Stage 1: Parquet-only 衍生特征')

@@ -232,15 +232,26 @@ def load_features(src):
     """统一装载: src 是 ml_train_wide tag → load_panel(DB直读); 否则当文件路径 → read_parquet。
     训练脚本可用此替代 pd.read_parquet(features_path), 既支持 DB tag 也兼容旧文件路径。"""
     import pandas as pd
+    import os
+
+    # 如果src看起来像文件路径（包含.parquet或/），直接当作文件处理
+    if isinstance(src, str) and ('.parquet' in src or '/' in src or os.path.exists(src)):
+        return pd.read_parquet(src)
+
     # 探: src 是否为 ml_train_wide 已知 tag
-    cfg = ValuationDB.MYSQL_CONFIG
-    conn = pymysql.connect(host=cfg['host'], port=cfg['port'], user=cfg['user'],
-                           password=cfg['password'], database=cfg['database'], charset=cfg['charset'])
-    cur = conn.cursor()
-    cur.execute("SELECT 1 FROM ml_train_wide WHERE tag=%s", (src,))
-    is_tag = cur.fetchone() is not None; conn.close()
-    if is_tag:
-        return load_panel(src)
+    try:
+        cfg = ValuationDB.MYSQL_CONFIG
+        conn = pymysql.connect(host=cfg['host'], port=cfg['port'], user=cfg['user'],
+                              password=cfg['password'], database=cfg['database'], charset=cfg['charset'])
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM ml_train_wide WHERE tag=%s", (src,))
+        is_tag = cur.fetchone() is not None; conn.close()
+        if is_tag:
+            return load_panel(src)
+    except Exception as e:
+        # 如果ml_train_wide表不存在或其他数据库错误，当作文件路径处理
+        pass
+
     return pd.read_parquet(src)
 
 

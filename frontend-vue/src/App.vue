@@ -12,6 +12,7 @@ import { RouterLink, RouterView } from 'vue-router'
         <div class="nav-links">
           <RouterLink to="/" class="nav-link">首页</RouterLink>
           <RouterLink to="/valuation" class="nav-link">估值</RouterLink>
+          <RouterLink to="/data-query" class="nav-link">数据查询</RouterLink>
           <RouterLink to="/history" class="nav-link">历史记录</RouterLink>
           <RouterLink to="/scenario" class="nav-link">情景分析</RouterLink>
           <RouterLink to="/sensitivity" class="nav-link">敏感性</RouterLink>

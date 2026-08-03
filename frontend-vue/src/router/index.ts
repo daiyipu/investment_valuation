@@ -42,6 +42,11 @@ const router = createRouter({
       path: '/report',
       name: 'report',
       component: () => import('../views/Report.vue')
+    },
+    {
+      path: '/data-query',
+      name: 'data-query',
+      component: () => import('../views/DataQuery.vue')
     }
   ]
 })
